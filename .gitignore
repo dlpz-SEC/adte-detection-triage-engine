@@ -1,13 +1,27 @@
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+
+# AI/Tool scaffolding
+.claude/
+CLAUDE.md
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Environment
 .env
 .venv/
 venv/
-dist/
-build/
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
+
+# Coverage
 .coverage
 htmlcov/
-CLAUDE.md 
