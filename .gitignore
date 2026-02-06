@@ -10,3 +10,4 @@ build/
 .mypy_cache/
 .coverage
 htmlcov/
+CLAUDE.md 
