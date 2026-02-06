@@ -1,0 +1,168 @@
+{
+  "incident_id": "INC-2025-0044",
+  "title": "Medium-confidence impossible travel with new device",
+  "severity": "Medium",
+  "status": "New",
+  "created_time": "2025-01-17T16:45:00Z",
+  "entities": [
+    {
+      "entity_type": "Account",
+      "identifier": "eve@contoso.com",
+      "metadata": {
+        "aad_object_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "display_name": "Eve Nakamura",
+        "department": "Product Management",
+        "job_title": "Product Lead"
+      }
+    },
+    {
+      "entity_type": "IP",
+      "identifier": "103.41.124.78",
+      "metadata": {
+        "geo_city": "Osaka",
+        "geo_country": "JP",
+        "geo_lat": 34.6937,
+        "geo_lon": 135.5023,
+        "asn": "AS17676",
+        "isp": "SoftBank Corp."
+      }
+    },
+    {
+      "entity_type": "IP",
+      "identifier": "126.54.211.90",
+      "metadata": {
+        "geo_city": "Tokyo",
+        "geo_country": "JP",
+        "geo_lat": 35.6762,
+        "geo_lon": 139.6503,
+        "asn": "AS4713",
+        "isp": "NTT Communications"
+      }
+    },
+    {
+      "entity_type": "Host",
+      "identifier": "Eve-iPad-New",
+      "metadata": {
+        "os": "iPadOS 17",
+        "managed": false,
+        "first_seen": "2025-01-17T16:30:00Z"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "alert_id": "ALR-9920",
+      "rule_name": "Borderline impossible travel activity",
+      "description": "User traveled Tokyo to Osaka (~400 km) in 40 minutes — 600 km/h, near Shinkansen speed but borderline",
+      "tactics": ["InitialAccess"],
+      "sign_in_events": [
+        {
+          "user_principal_name": "eve@contoso.com",
+          "ip_address": "126.54.211.90",
+          "location": {
+            "lat": 35.6762,
+            "lon": 139.6503,
+            "city": "Tokyo",
+            "country": "JP"
+          },
+          "device_id": "dev-004",
+          "device_name": "Eve-MacBook",
+          "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "none",
+          "timestamp": "2025-01-17T15:50:00Z"
+        },
+        {
+          "user_principal_name": "eve@contoso.com",
+          "ip_address": "126.54.211.90",
+          "location": {
+            "lat": 35.6762,
+            "lon": 139.6503,
+            "city": "Tokyo",
+            "country": "JP"
+          },
+          "device_id": "dev-004",
+          "device_name": "Eve-MacBook",
+          "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+          "mfa_result": "Success",
+          "app_display_name": "Jira Cloud",
+          "risk_state": "none",
+          "timestamp": "2025-01-17T16:00:00Z"
+        }
+      ]
+    },
+    {
+      "alert_id": "ALR-9921",
+      "rule_name": "Sign-in from new device",
+      "description": "First authentication from unregistered iPad device",
+      "tactics": ["InitialAccess"],
+      "sign_in_events": [
+        {
+          "user_principal_name": "eve@contoso.com",
+          "ip_address": "103.41.124.78",
+          "location": {
+            "lat": 34.6937,
+            "lon": 135.5023,
+            "city": "Osaka",
+            "country": "JP"
+          },
+          "device_id": "dev-new-ipad-991",
+          "device_name": "Eve-iPad-New",
+          "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "none",
+          "timestamp": "2025-01-17T16:30:00Z"
+        },
+        {
+          "user_principal_name": "eve@contoso.com",
+          "ip_address": "103.41.124.78",
+          "location": {
+            "lat": 34.6937,
+            "lon": 135.5023,
+            "city": "Osaka",
+            "country": "JP"
+          },
+          "device_id": "dev-new-ipad-991",
+          "device_name": "Eve-iPad-New",
+          "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft Teams",
+          "risk_state": "none",
+          "timestamp": "2025-01-17T16:35:00Z"
+        },
+        {
+          "user_principal_name": "eve@contoso.com",
+          "ip_address": "103.41.124.78",
+          "location": {
+            "lat": 34.6937,
+            "lon": 135.5023,
+            "city": "Osaka",
+            "country": "JP"
+          },
+          "device_id": "dev-new-ipad-991",
+          "device_name": "Eve-iPad-New",
+          "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+          "mfa_result": "NotAttempted",
+          "app_display_name": "Outlook Mobile",
+          "risk_state": "none",
+          "timestamp": "2025-01-17T16:40:00Z"
+        }
+      ]
+    }
+  ],
+  "raw_payload": {
+    "properties": {
+      "incidentNumber": 44,
+      "classification": null,
+      "classificationReason": null,
+      "owner": { "assignedTo": null },
+      "additionalData": {
+        "alertsCount": 2,
+        "bookmarksCount": 0,
+        "commentsCount": 0
+      }
+    }
+  }
+}

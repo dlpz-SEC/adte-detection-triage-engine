@@ -1,0 +1,50 @@
+# False-Positive Registry
+# ============================================================
+# Known-benign patterns that should suppress or down-weight
+# alerts during triage.  Loaded by adte.intel.sigma_fp_registry.
+#
+# Each entry contains:
+#   pattern_type  – category key used by the triage engine
+#   description   – human-readable explanation
+#   cidrs         – list of CIDR ranges that match this pattern
+# ============================================================
+
+- pattern_type: corporate_vpn
+  description: >-
+    Corporate VPN egress points.  Logins from these IPs are expected
+    and should not trigger impossible-travel or geo-anomaly alerts.
+  cidrs:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+    - "198.18.0.0/15"
+
+- pattern_type: sso_quirk
+  description: >-
+    Known Azure AD / Entra ID SSO relay IPs.  Token refresh flows
+    sometimes originate from Microsoft-owned ranges that appear as
+    foreign IPs in sign-in logs.
+  cidrs:
+    - "20.190.128.0/18"
+    - "40.126.0.0/18"
+    - "13.107.6.0/24"
+    - "13.107.9.0/24"
+
+- pattern_type: travel_provider
+  description: >-
+    Major airline / hotel Wi-Fi and captive-portal egress IPs.
+    Logins from these IPs during travel windows are expected.
+  cidrs:
+    - "208.127.0.0/17"
+    - "159.43.0.0/16"
+    - "64.71.128.0/18"
+
+- pattern_type: cloud_nat
+  description: >-
+    Cloud-provider NAT gateway ranges commonly used by corporate
+    workloads.  Alerts from these IPs are usually CI/CD pipelines
+    or cloud-hosted applications, not user activity.
+  cidrs:
+    - "35.190.0.0/16"
+    - "34.96.0.0/14"
+    - "52.224.0.0/11"

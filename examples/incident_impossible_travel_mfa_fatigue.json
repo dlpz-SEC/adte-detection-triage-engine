@@ -1,0 +1,255 @@
+{
+  "incident_id": "INC-2025-0042",
+  "title": "Impossible travel followed by MFA fatigue attack",
+  "severity": "High",
+  "status": "New",
+  "created_time": "2025-01-15T15:02:00Z",
+  "entities": [
+    {
+      "entity_type": "Account",
+      "identifier": "alice@contoso.com",
+      "metadata": {
+        "aad_object_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "display_name": "Alice Johnson",
+        "department": "Engineering",
+        "job_title": "Senior Developer"
+      }
+    },
+    {
+      "entity_type": "IP",
+      "identifier": "198.51.100.23",
+      "metadata": {
+        "geo_city": "Moscow",
+        "geo_country": "RU",
+        "geo_lat": 55.7558,
+        "geo_lon": 37.6173,
+        "asn": "AS12345",
+        "isp": "Suspicious Hosting Ltd"
+      }
+    },
+    {
+      "entity_type": "IP",
+      "identifier": "72.229.28.185",
+      "metadata": {
+        "geo_city": "New York",
+        "geo_country": "US",
+        "geo_lat": 40.7128,
+        "geo_lon": -74.006,
+        "asn": "AS6128",
+        "isp": "Cablevision Systems"
+      }
+    },
+    {
+      "entity_type": "Host",
+      "identifier": "DESKTOP-UNKNOWN",
+      "metadata": {
+        "os": "Windows 10",
+        "risk": "high"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "alert_id": "ALR-9901",
+      "rule_name": "Impossible travel activity",
+      "description": "User authenticated from New York, then Moscow within 30 minutes",
+      "tactics": ["InitialAccess", "CredentialAccess"],
+      "sign_in_events": [
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "72.229.28.185",
+          "location": {
+            "lat": 40.7128,
+            "lon": -74.006,
+            "city": "New York",
+            "country": "US"
+          },
+          "device_id": "dev-001",
+          "device_name": "Alice-Laptop",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "none",
+          "timestamp": "2025-01-15T14:30:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": {
+            "lat": 55.7558,
+            "lon": 37.6173,
+            "city": "Moscow",
+            "country": "RU"
+          },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:00:00Z"
+        }
+      ]
+    },
+    {
+      "alert_id": "ALR-9902",
+      "rule_name": "MFA fatigue / push-spray detected",
+      "description": "12 MFA push attempts in 8 minutes with 11 denials — likely MFA fatigue attack",
+      "tactics": ["CredentialAccess", "Persistence"],
+      "sign_in_events": [
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Azure Portal",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:01:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Azure Portal",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:01:30Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Azure Portal",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:02:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Azure Portal",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:02:30Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:03:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:03:30Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Microsoft Teams",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:04:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Microsoft Teams",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:05:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Exchange Online",
+          "risk_state": "atRisk",
+          "timestamp": "2025-01-15T15:06:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "Exchange Online",
+          "risk_state": "confirmedCompromised",
+          "timestamp": "2025-01-15T15:07:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Denied",
+          "app_display_name": "SharePoint Online",
+          "risk_state": "confirmedCompromised",
+          "timestamp": "2025-01-15T15:08:00Z"
+        },
+        {
+          "user_principal_name": "alice@contoso.com",
+          "ip_address": "198.51.100.23",
+          "location": { "lat": 55.7558, "lon": 37.6173, "city": "Moscow", "country": "RU" },
+          "device_id": "",
+          "device_name": "DESKTOP-UNKNOWN",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+          "mfa_result": "Success",
+          "app_display_name": "SharePoint Online",
+          "risk_state": "confirmedCompromised",
+          "timestamp": "2025-01-15T15:09:00Z"
+        }
+      ]
+    }
+  ],
+  "raw_payload": {
+    "properties": {
+      "incidentNumber": 42,
+      "classification": null,
+      "classificationReason": null,
+      "owner": { "assignedTo": null }
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "incident_id": "INC-2025-0043",
+  "title": "Unusual sign-in location detected",
+  "severity": "Medium",
+  "status": "New",
+  "created_time": "2025-01-16T11:15:00Z",
+  "entities": [
+    {
+      "entity_type": "Account",
+      "identifier": "bob@contoso.com",
+      "metadata": {
+        "aad_object_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "display_name": "Bob Williams",
+        "department": "Sales",
+        "job_title": "Regional Sales Manager"
+      }
+    },
+    {
+      "entity_type": "IP",
+      "identifier": "10.8.0.45",
+      "metadata": {
+        "geo_city": "Paris",
+        "geo_country": "FR",
+        "geo_lat": 48.8566,
+        "geo_lon": 2.3522,
+        "asn": "AS64512",
+        "isp": "Contoso Corporate VPN"
+      }
+    },
+    {
+      "entity_type": "IP",
+      "identifier": "10.8.0.12",
+      "metadata": {
+        "geo_city": "London",
+        "geo_country": "GB",
+        "geo_lat": 51.5074,
+        "geo_lon": -0.1278,
+        "asn": "AS64512",
+        "isp": "Contoso Corporate VPN"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "alert_id": "ALR-9910",
+      "rule_name": "Sign-in from unusual location",
+      "description": "User signed in from Paris, a new location not in baseline",
+      "tactics": ["InitialAccess"],
+      "sign_in_events": [
+        {
+          "user_principal_name": "bob@contoso.com",
+          "ip_address": "10.8.0.12",
+          "location": {
+            "lat": 51.5074,
+            "lon": -0.1278,
+            "city": "London",
+            "country": "GB"
+          },
+          "device_id": "dev-003",
+          "device_name": "Bob-Surface",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "none",
+          "timestamp": "2025-01-16T08:05:00Z"
+        },
+        {
+          "user_principal_name": "bob@contoso.com",
+          "ip_address": "10.8.0.12",
+          "location": {
+            "lat": 51.5074,
+            "lon": -0.1278,
+            "city": "London",
+            "country": "GB"
+          },
+          "device_id": "dev-003",
+          "device_name": "Bob-Surface",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft Teams",
+          "risk_state": "none",
+          "timestamp": "2025-01-16T08:07:00Z"
+        },
+        {
+          "user_principal_name": "bob@contoso.com",
+          "ip_address": "10.8.0.45",
+          "location": {
+            "lat": 48.8566,
+            "lon": 2.3522,
+            "city": "Paris",
+            "country": "FR"
+          },
+          "device_id": "dev-003",
+          "device_name": "Bob-Surface",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+          "mfa_result": "Success",
+          "app_display_name": "Salesforce",
+          "risk_state": "none",
+          "timestamp": "2025-01-16T11:10:00Z"
+        },
+        {
+          "user_principal_name": "bob@contoso.com",
+          "ip_address": "10.8.0.45",
+          "location": {
+            "lat": 48.8566,
+            "lon": 2.3522,
+            "city": "Paris",
+            "country": "FR"
+          },
+          "device_id": "dev-003",
+          "device_name": "Bob-Surface",
+          "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+          "mfa_result": "Success",
+          "app_display_name": "Microsoft 365",
+          "risk_state": "none",
+          "timestamp": "2025-01-16T11:12:00Z"
+        }
+      ]
+    }
+  ],
+  "raw_payload": {
+    "properties": {
+      "incidentNumber": 43,
+      "classification": null,
+      "classificationReason": null,
+      "owner": { "assignedTo": null },
+      "additionalData": {
+        "alertsCount": 1,
+        "bookmarksCount": 0,
+        "commentsCount": 0
+      }
+    }
+  }
+}
