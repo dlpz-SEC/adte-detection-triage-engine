@@ -102,6 +102,10 @@ Example verdicts:
 - [ ] KQL rule pack for upstream detection
 - [ ] SOAR playbook export (Logic Apps / Sentinel Automation)
 
+## Development
+
+This project was built with AI-assisted drafting and scaffolding to accelerate iteration. All code was reviewed, tested, and modified by hand. Final logic, signal weights, safety gates, and architectural decisions are deterministic and human-owned.
+
 ## License
 
 MIT
