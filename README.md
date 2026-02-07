@@ -1,5 +1,23 @@
 # ADTE — Autonomous Detection & Triage Engine
 
+<div align="center">
+
+![SOC Engineering](https://img.shields.io/badge/SOC%20Engineering-Incident%20Triage-0B1220?style=for-the-badge&logo=microsoftsecurity&logoColor=white)
+![Detection Logic](https://img.shields.io/badge/Detection%20Logic-Risk--Based%20Decisioning-1D4ED8?style=for-the-badge&logo=opensearch&logoColor=white)
+![Automation](https://img.shields.io/badge/Automation-Safe%20Response%20Orchestration-DC2626?style=for-the-badge&logo=githubactions&logoColor=white)
+![Explainability](https://img.shields.io/badge/Explainability-Transparent%20Verdicts-6D28D9?style=for-the-badge&logo=googledocs&logoColor=white)
+
+</p>
+
+![Microsoft Sentinel](https://img.shields.io/badge/SIEM-Microsoft%20Sentinel-0078D4?style=for-the-badge&logo=microsoft&logoColor=white)
+![Microsoft Entra ID](https://img.shields.io/badge/Identity-Microsoft%20Entra%20ID-5E5ADB?style=for-the-badge&logo=microsoftentra&logoColor=white)
+![Python](https://img.shields.io/badge/Python-Engineering%20Logic-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Pytest](https://img.shields.io/badge/Testing-Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
+
+</div>
+
+
+
 Deterministic triage engine for Microsoft Sentinel incidents with weighted signal scoring, explainable verdicts, and defense-in-depth execution controls.
 
 ## What This Is
