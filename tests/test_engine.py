@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+import pytest
+
 from adte.engine import TriageEngine
 from adte.intel.sigma_fp_registry import FPRegistry
-from adte.models import NormalizedIncident
+from adte.models import GeoLocation, NormalizedIncident, SignInMetadata
 from adte.store.user_history import get_user_profile
 
 # Required keys in every triage output.
@@ -183,3 +187,115 @@ class TestEngineSignals:
         assert scores["impossible_travel"] > 0
         assert scores["device_novelty"] > 0
         assert scores["ip_reputation"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Signal skip & weight redistribution tests
+# ---------------------------------------------------------------------------
+
+def _make_sign_in(
+    *,
+    ip: str,
+    device_id: str = "",
+    mfa_result: str = "NotAttempted",
+    location: GeoLocation | None = None,
+    ts: str = "2024-06-15T12:00:00+00:00",
+) -> SignInMetadata:
+    """Helper: build a minimal SignInMetadata for skip/redistribution tests."""
+    return SignInMetadata(
+        user_principal_name="wazuh-host@test.local",
+        ip_address=ip,
+        location=location,
+        device_id=device_id,
+        device_name="test-device",
+        mfa_result=mfa_result,  # type: ignore[arg-type]
+        timestamp=datetime.fromisoformat(ts),
+    )
+
+
+def _make_incident(sign_ins: list[SignInMetadata]) -> NormalizedIncident:
+    """Helper: wrap sign-in events into a NormalizedIncident."""
+    return NormalizedIncident(
+        incident_id="TEST-SKIP-001",
+        user="wazuh-host@test.local",
+        sign_in_events=sign_ins,
+        severity="High",
+        created_time=datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
+    )
+
+
+class TestSignalSkipAndRedistribution:
+    """Test skip-and-redistribute behaviour for signals without evaluable data."""
+
+    def test_no_geo_skips_travel_signal(self, fp_registry: FPRegistry) -> None:
+        """All sign-in events with location=None → impossible_travel skipped."""
+        incident = _make_incident([_make_sign_in(ip="10.0.0.1", mfa_result="Success")])
+        profile = get_user_profile(incident.user)
+        engine = TriageEngine(incident, profile, fp_registry)
+        engine.enrich().score()
+        assert "impossible_travel" in engine._skipped_signals
+        scores = {name: result[0] for name, result in engine._signals.items()}
+        assert scores["impossible_travel"] == 0.0
+        detail = engine._signals["impossible_travel"][1]
+        assert "skipped" in detail.lower()
+
+    def test_no_mfa_events_skips_mfa_signal(self, fp_registry: FPRegistry) -> None:
+        """All MFA results NotAttempted → mfa_fatigue skipped."""
+        incident = _make_incident([_make_sign_in(
+            ip="10.0.0.1",
+            mfa_result="NotAttempted",
+            location=GeoLocation(lat=40.0, lon=-74.0, city="New York", country="US"),
+        )])
+        profile = get_user_profile(incident.user)
+        engine = TriageEngine(incident, profile, fp_registry)
+        engine.enrich().score()
+        assert "mfa_fatigue" in engine._skipped_signals
+        scores = {name: result[0] for name, result in engine._signals.items()}
+        assert scores["mfa_fatigue"] == 0.0
+        detail = engine._signals["mfa_fatigue"][1]
+        assert "skipped" in detail.lower()
+
+    def test_both_skipped_redistributes_weight(self, fp_registry: FPRegistry) -> None:
+        """No geo + no MFA: IP rep (20) + device novelty (15) → score 78, high_risk.
+
+        available_weight = 100 - 30 (travel) - 25 (mfa) = 45
+        round(35 * 100 / 45) = round(77.78) = 78
+        """
+        incident = _make_incident([_make_sign_in(
+            ip="198.51.100.23",    # malicious C2 IP → IP rep fires (20 pts)
+            device_id="unknown-wazuh-device-xyz",  # unknown → device novelty fires (15 pts)
+            mfa_result="NotAttempted",
+            location=None,
+        )])
+        profile = get_user_profile(incident.user)  # unknown user, empty known_devices
+        engine = TriageEngine(incident, profile, fp_registry)
+        output = engine.enrich().score().decide().to_output()
+        assert "impossible_travel" in engine._skipped_signals
+        assert "mfa_fatigue" in engine._skipped_signals
+        assert output["risk_score"] == 78
+        assert output["verdict"] == "high_risk"
+
+    def test_partial_geo_uses_available_pairs(self, fp_registry: FPRegistry) -> None:
+        """One event with location, one without → travel still evaluates."""
+        sign_ins = [
+            _make_sign_in(
+                ip="72.229.28.185",
+                mfa_result="Success",
+                location=GeoLocation(lat=40.7128, lon=-74.0060, city="New York", country="US"),
+                ts="2024-06-15T10:00:00+00:00",
+            ),
+            _make_sign_in(
+                ip="198.51.100.23",
+                mfa_result="Success",
+                location=None,  # no geo for second event
+                ts="2024-06-15T10:30:00+00:00",
+            ),
+        ]
+        incident = _make_incident(sign_ins)
+        profile = get_user_profile(incident.user)
+        engine = TriageEngine(incident, profile, fp_registry)
+        engine.enrich().score()
+        # impossible_travel should NOT be skipped — one valid event exists but
+        # no pair can be formed (only 1 located event), so falls through to
+        # "Insufficient location data" (not skipped, just score 0).
+        assert "impossible_travel" not in engine._skipped_signals

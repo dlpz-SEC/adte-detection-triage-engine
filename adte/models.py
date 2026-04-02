@@ -129,7 +129,7 @@ class SignInMetadata(BaseModel):
 
     user_principal_name: str
     ip_address: str
-    location: GeoLocation
+    location: GeoLocation | None = None
     device_id: str = ""
     device_name: str = ""
     user_agent: str = ""
