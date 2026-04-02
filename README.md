@@ -155,14 +155,14 @@ Example verdicts:
 ## Example Output
 
 ### Sentinel Mock — Impossible Travel + MFA Fatigue (HIGH RISK)
-![Sentinel Mock - HIGH RISK](docs/images/phase1-sentinel-mock-high-risk.png)
+![Sentinel Mock - HIGH RISK](docs/PHASE%201%20SCREENSHOTS/phase1-sentinel-mock-high-risk.png)
 
 All 5 signals evaluable. Impossible travel (New York → Moscow in 30 min)
 and MFA fatigue (12 denials followed by approval) fire at full weight.
 Risk score 75/100, confidence 98%.
 
 ### Live Wazuh — SSH Brute Force (MEDIUM RISK)
-![Wazuh Live - MEDIUM RISK](docs/images/phase1-wazuh-live-medium-risk.png)
+![Wazuh Live - MEDIUM RISK](docs/PHASE%201%20SCREENSHOTS/phase1-wazuh-live-medium-risk.png)
 
 Real alerts ingested from Wazuh Indexer via OpenSearch API. Impossible
 travel and MFA signals skipped (unavailable for Wazuh alerts), weight
