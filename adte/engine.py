@@ -108,6 +108,7 @@ class TriageEngine:
 
         # Signal results (populated by score()).
         self._signals: dict[str, SignalResult] = {}
+        self._skipped_signals: set[str] = set()
         self._risk_score: int = 0
         self._confidence: int = 0
 
@@ -133,6 +134,8 @@ class TriageEngine:
         seen_ips: set[str] = set()
         for event in self._incident.sign_in_events:
             ip = event.ip_address
+            if not ip:
+                continue
             if ip in seen_ips:
                 continue
             seen_ips.add(ip)
@@ -153,15 +156,25 @@ class TriageEngine:
         self._signals["device_novelty"] = self._compute_device_novelty()
         self._signals["login_hour_anomaly"] = self._compute_login_hour_anomaly()
 
-        # Aggregate risk score (sum of weighted contributions).
-        self._risk_score = max(0, min(100, round(
-            sum(s[0] for s in self._signals.values())
-        )))
+        # Aggregate risk score with proportional weight redistribution for
+        # skipped signals (signals that had no evaluable data).
+        raw_sum = sum(s[0] for s in self._signals.values())
+        skipped_weight = sum(
+            SIGNAL_WEIGHTS[name] for name in self._skipped_signals
+        )
+        available_weight = 100 - skipped_weight
+        if available_weight < 100:
+            self._risk_score = max(0, min(100, round(
+                raw_sum * 100 / available_weight
+            )))
+        else:
+            self._risk_score = max(0, min(100, round(raw_sum)))
 
         # Confidence: coverage × agreement.
+        # Skipped signals do not contribute to coverage.
         fired = [s for s in self._signals.values() if s[0] > 0]
         non_fired = [s for s in self._signals.values() if s[0] == 0]
-        signals_present = len(self._signals)  # all are always evaluated
+        signals_present = len(SIGNAL_WEIGHTS) - len(self._skipped_signals)
         if fired:
             avg_confidence = sum(s[2] for s in fired) / len(fired)
         elif non_fired:
@@ -253,40 +266,53 @@ class TriageEngine:
         weight = SIGNAL_WEIGHTS["impossible_travel"]
         events = self._incident.sign_in_events
 
-        if len(events) < 2 and not self._profile.last_seen_location:
+        # Filter to events that have location data.
+        located_events = [e for e in events if e.location is not None]
+
+        if len(located_events) < 2 and not self._profile.last_seen_location:
+            if not located_events:
+                # No location data at all — skip the signal entirely and
+                # redistribute its weight proportionally to the remaining signals.
+                self._skipped_signals.add("impossible_travel")
+                return (
+                    0.0,
+                    "Location data unavailable — signal skipped; "
+                    "weight redistributed proportionally to remaining signals",
+                    0.0,
+                )
             return (0.0, "Insufficient location data for travel analysis", 0.3)
 
         max_speed: float = 0.0
         worst_pair: str = ""
 
-        # Build comparison pairs: include last_seen → first event if available.
+        # Build comparison pairs: include last_seen → first located event if available.
         pairs: list[tuple[str, float, float, datetime, str, float, float, datetime]] = []
 
-        if self._profile.last_seen_location and self._profile.last_seen_at and events:
-            first = events[0]
+        if self._profile.last_seen_location and self._profile.last_seen_at and located_events:
+            first = located_events[0]
             pairs.append((
                 f"{self._profile.last_seen_location.city or 'last_seen'}",
                 self._profile.last_seen_location.lat,
                 self._profile.last_seen_location.lon,
                 _ensure_aware(self._profile.last_seen_at),
-                f"{first.location.city or first.ip_address}",
-                first.location.lat,
-                first.location.lon,
+                f"{first.location.city or first.ip_address}",  # type: ignore[union-attr]
+                first.location.lat,  # type: ignore[union-attr]
+                first.location.lon,  # type: ignore[union-attr]
                 _ensure_aware(first.timestamp),
             ))
 
-        for i in range(len(events) - 1):
-            a, b = events[i], events[i + 1]
+        for i in range(len(located_events) - 1):
+            a, b = located_events[i], located_events[i + 1]
             if a.ip_address == b.ip_address:
                 continue
             pairs.append((
-                f"{a.location.city or a.ip_address}",
-                a.location.lat,
-                a.location.lon,
+                f"{a.location.city or a.ip_address}",  # type: ignore[union-attr]
+                a.location.lat,  # type: ignore[union-attr]
+                a.location.lon,  # type: ignore[union-attr]
                 _ensure_aware(a.timestamp),
-                f"{b.location.city or b.ip_address}",
-                b.location.lat,
-                b.location.lon,
+                f"{b.location.city or b.ip_address}",  # type: ignore[union-attr]
+                b.location.lat,  # type: ignore[union-attr]
+                b.location.lon,  # type: ignore[union-attr]
                 _ensure_aware(b.timestamp),
             ))
 
@@ -336,7 +362,14 @@ class TriageEngine:
         total_mfa = [e for e in events if e.mfa_result != "NotAttempted"]
 
         if not total_mfa:
-            return (0.0, "No MFA events to evaluate", 0.5)
+            # No MFA data at all — skip the signal and redistribute its weight.
+            self._skipped_signals.add("mfa_fatigue")
+            return (
+                0.0,
+                "No MFA events to evaluate — signal skipped; "
+                "weight redistributed proportionally to remaining signals",
+                0.0,
+            )
 
         # Sliding window: find the worst burst.
         max_denials_in_window: int = 0

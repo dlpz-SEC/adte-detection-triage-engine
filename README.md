@@ -61,13 +61,60 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed pipeline and modul
 git clone https://github.com/dlpz-SEC/adte-azure-sentinel-triage-engine.git
 cd adte-azure-sentinel-triage-engine
 pip install -e ".[dev]"
-pytest -v  # 71 tests
+pytest -v
 
-# Run triage on example incidents
+# Run triage on example incidents (mock source, default)
 python -m adte triage --input examples/incident_impossible_travel_mfa_fatigue.json --format pretty --explain
 python -m adte triage --input examples/incident_benign_vpn_travel.json --format pretty --explain
 python -m adte triage --input examples/incident_needs_human_ambiguous.json --format pretty --explain
 ```
+
+## Wazuh Integration
+
+Pull live alerts from a local Wazuh Indexer (OpenSearch at port 9200):
+
+```bash
+export ADTE_WAZUH_INDEXER_URL=https://localhost:9200   # default
+export ADTE_WAZUH_USER=wazuh-api-user
+export ADTE_WAZUH_PASS=your-password
+
+# Triage all alerts from the last 24 hours
+python -m adte triage --source wazuh --hours 24 --format pretty --explain
+
+# Limit to 100 alerts (warning logged if more exist)
+python -m adte triage --source wazuh --hours 6 --limit 100 --format json
+```
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ADTE_WAZUH_INDEXER_URL` | `https://localhost:9200` | Wazuh Indexer (OpenSearch) base URL |
+| `ADTE_WAZUH_USER` | *(required)* | Wazuh API username |
+| `ADTE_WAZUH_PASS` | *(required)* | Wazuh API password |
+
+**Signal behaviour for Wazuh alerts:**
+
+Wazuh alerts carry no geolocation data and no MFA events. The engine
+automatically skips those two signals and redistributes their combined
+weight (55 pts) proportionally across the three evaluable signals, so
+the full 0–100 scoring range remains reachable:
+
+| Signal | Wazuh behaviour |
+|--------|-----------------|
+| Impossible travel (30 pts) | **Skipped** — no geo data; weight redistributed |
+| MFA fatigue (25 pts) | **Skipped** — no MFA events; weight redistributed |
+| IP reputation (20 pts) | Evaluated normally |
+| Device novelty (15 pts) | Evaluated normally (agent ID used as device ID) |
+| Login hour anomaly (10 pts) | Evaluated normally |
+
+When both signals are skipped, the effective scale is `100/45`:
+- IP + device fire → score 78 → `high_risk`
+- IP alone → score 44 → `medium_risk`
+
+**Pagination and `--limit`:** ADTE pages through all available Wazuh alerts
+automatically (500 per request). Use `--limit N` to cap the total; a
+warning is printed to stderr when alerts are truncated.
 
 ## Signal Weights
 
@@ -98,27 +145,46 @@ See [docs/SAFETY.md](docs/SAFETY.md) for full gate logic and example scenarios.
 
 ## Test Coverage
 
-71 tests across 7 files — test_geo, test_intel, test_policy, test_engine, test_safety, test_llm_assist
+110 tests across 8 files — test_geo, test_intel, test_policy, test_engine, test_safety, test_llm_assist, test_wazuh_adapter
 
 Example verdicts:
 - `incident_impossible_travel_mfa_fatigue.json` → **HIGH_RISK** (75)
 - `incident_benign_vpn_travel.json` → **LOW_RISK** (5)
 - `incident_needs_human_ambiguous.json` → **MEDIUM_RISK** (43)
 
+## Example Output
+
+### Sentinel Mock — Impossible Travel + MFA Fatigue (HIGH RISK)
+![Sentinel Mock - HIGH RISK](docs/images/phase1-sentinel-mock-high-risk.png)
+
+All 5 signals evaluable. Impossible travel (New York → Moscow in 30 min)
+and MFA fatigue (12 denials followed by approval) fire at full weight.
+Risk score 75/100, confidence 98%.
+
+### Live Wazuh — SSH Brute Force (MEDIUM RISK)
+![Wazuh Live - MEDIUM RISK](docs/images/phase1-wazuh-live-medium-risk.png)
+
+Real alerts ingested from Wazuh Indexer via OpenSearch API. Impossible
+travel and MFA signals skipped (unavailable for Wazuh alerts), weight
+redistributed across remaining 3 signals. Unknown device and after-hours
+login detected. Risk score 56/100, confidence 40%.
+
 ## Limitations
 
-- Mock APIs only — no real Sentinel/Graph calls
+- Sentinel integration uses mock APIs — Wazuh Indexer integration is functional
 - Single-incident processing — no batch mode yet
 - No persistence — stateless between runs
 - LLM summary is optional polish, not decision input
 
 ## Roadmap
 
+- [x] Wazuh live alert integration
 - [ ] Real Sentinel REST API integration
-- [ ] Microsoft Graph API for Entra ID actions
+- [ ] Response action logging with exportable recommendations
 - [ ] Batch processing mode
 - [ ] KQL rule pack for upstream detection
-- [ ] SOAR playbook export (Logic Apps / Sentinel Automation)
+- [ ] SOAR-ready JSON action output for open-source orchestration tools
+- [ ] Multi-source threat intel enrichment (AbuseIPDB, VirusTotal, OTX)
 
 ## Development
 
