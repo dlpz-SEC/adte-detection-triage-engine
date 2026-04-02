@@ -9,8 +9,7 @@
 
 </p>
 
-![Microsoft Sentinel](https://img.shields.io/badge/SIEM-Microsoft%20Sentinel-0078D4?style=for-the-badge&logo=microsoft&logoColor=white)
-![Microsoft Entra ID](https://img.shields.io/badge/Identity-Microsoft%20Entra%20ID-5E5ADB?style=for-the-badge&logo=microsoftentra&logoColor=white)
+![Multi-Source SIEM](https://img.shields.io/badge/SIEM-Multi--Source%20Ingestion-0078D4?style=for-the-badge&logo=shield&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-Engineering%20Logic-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pytest](https://img.shields.io/badge/Testing-Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
 
@@ -18,11 +17,11 @@
 
 
 
-Deterministic triage engine for Microsoft Sentinel incidents with weighted signal scoring, explainable verdicts, and defense-in-depth execution controls.
+Deterministic, source-agnostic triage engine for security incidents — supports Sentinel, Wazuh, and more — with weighted signal scoring, explainable verdicts, and defense-in-depth execution controls.
 
 ## What This Is
 
-- Automated triage for Sentinel incidents using 5 weighted signals
+- Automated triage for security incidents from multiple sources using 5 weighted signals
 - Deterministic scoring (0-100 risk score, 0-100 confidence)
 - 6-layer safety gate system before any automated action
 - Explainable decisions with per-signal rationale
@@ -31,14 +30,15 @@ Deterministic triage engine for Microsoft Sentinel incidents with weighted signa
 ## What This Is NOT
 
 - Not a SOC replacement — human review required for medium/high risk
-- Not production-ready — uses mock APIs, needs real Sentinel/Graph integration
+- Not production-ready — uses mock APIs, needs real SIEM/API integration
 - Not a detection rule library — focuses on triage, not alert generation
 - Not magic — garbage signals in = garbage verdicts out
 
 ## Architecture
 
 ```
-Sentinel Incident
+Security Alert / Incident
+  (Sentinel mock, Wazuh, …)
        ↓
   [Normalize]
        ↓
@@ -50,7 +50,7 @@ Sentinel Incident
        ↓
 [Safety Gates] → 6 checks before any action
        ↓
-  [Execute]  → Mock adapters (Sentinel, Entra ID)
+  [Execute]  → Source adapters (Sentinel mock, Wazuh, Entra ID mock)
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed pipeline and module dependency map.
@@ -58,8 +58,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed pipeline and modul
 ## Quickstart
 
 ```bash
-git clone https://github.com/dlpz-SEC/adte-azure-sentinel-triage-engine.git
-cd adte-azure-sentinel-triage-engine
+git clone https://github.com/dlpz-SEC/adte-detection-triage-engine.git
+cd adte-detection-triage-engine
 pip install -e ".[dev]"
 pytest -v
 

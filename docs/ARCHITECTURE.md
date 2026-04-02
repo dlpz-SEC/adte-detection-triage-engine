@@ -22,7 +22,7 @@ ADTE follows the **NIST SP 800-61 Rev. 2** incident response lifecycle, implemen
                           NIST 800-61: Containment                v
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │   ┌──────────────┐   ┌─────────┐                                           │
-│   │ SAFETY GATES │──>│ EXECUTE │  (Sentinel API, Entra ID / Graph API)     │
+│   │ SAFETY GATES │──>│ EXECUTE │  (Sentinel adapter, Wazuh Indexer, Entra ID adapter)  │
 │   │ (6 layers)   │   │ (gated) │                                           │
 │   └──────────────┘   └─────────┘                                           │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -32,9 +32,9 @@ ADTE follows the **NIST SP 800-61 Rev. 2** incident response lifecycle, implemen
 
 ### 1. Ingest
 
-**Input:** Sentinel incident JSON file (or API response)
+**Input:** Security incident/alert payload (JSON) — from Sentinel, Wazuh, or other adapters
 
-The CLI reads a JSON file representing a Microsoft Sentinel incident with embedded alert entities and sign-in metadata. In production, this would be replaced by a Sentinel webhook or polling adapter.
+The CLI reads a JSON file representing a security incident/alert with embedded entities and sign-in metadata. In production, this would be replaced by a source-specific webhook or polling adapter (e.g. Sentinel, Wazuh Indexer).
 
 **Module:** `adte/cli.py` (`_load_incident`)
 

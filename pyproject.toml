@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "adte-azure-sentinel-triage-engine"
+name = "adte-detection-triage-engine"
 version = "0.1.0"
-description = "Automated Detection Triage Engine for Microsoft Sentinel"
+description = "Automated Detection Triage Engine — source-agnostic security alert triage with weighted signals and explainable verdicts"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
