@@ -94,7 +94,7 @@ export ADTE_KILL_SWITCH=false
 | `""` (empty, default) | All tenants permitted (open gate) |
 | `"tenant-a,tenant-b"` | Only listed tenants permitted |
 
-**Purpose:** In multi-tenant environments, restricts which Azure tenants ADTE is allowed to take actions in. Prevents a misconfigured deployment from modifying incidents in the wrong tenant.
+**Purpose:** In multi-tenant environments, restricts which source system tenants ADTE is allowed to take actions in. Prevents a misconfigured deployment from modifying incidents in the wrong tenant.
 
 ### Gate 5: User / Severity (`ADTE_USER_ALLOWLIST`)
 

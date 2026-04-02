@@ -2,7 +2,7 @@
 
 This document explains how to extend ADTE with real API integrations, new signal types, and additional enrichment sources.
 
-## Connecting to Real Microsoft Sentinel REST API
+## Connecting to the Real Sentinel REST API
 
 The current `SentinelAdapter` in `adte/adapters/sentinel.py` uses mock responses. To connect to the real Sentinel API:
 
@@ -76,7 +76,7 @@ def poll_incidents(client, rg, ws, since_minutes=15):
     return [SentinelIncident(**inc.as_dict()) for inc in incidents]
 ```
 
-## Connecting to Microsoft Graph API for Entra ID
+## Connecting to Microsoft Graph API (Entra ID)
 
 The current `EntraIDAdapter` in `adte/adapters/entra_id.py` uses mock responses. To connect to the real Graph API:
 

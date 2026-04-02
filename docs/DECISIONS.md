@@ -18,7 +18,7 @@ All signal weights sum to **100**, mapping directly to a 0-100 risk scale. Each 
 
 These signals were chosen because they:
 
-1. **Cover the most common identity-based attack patterns** observed in real-world SOC operations against Azure AD / Entra ID environments
+1. **Cover the most common identity-based attack patterns** observed in real-world SOC operations against enterprise identity environments (Entra ID, LDAP, etc.)
 2. **Are computable from Sentinel sign-in log data** without requiring endpoint telemetry or network flow analysis
 3. **Correlate with MITRE ATT&CK techniques** commonly seen in initial access and credential abuse campaigns
 4. **Have clear benign/malicious thresholds** that can be expressed as deterministic rules rather than requiring probabilistic models
