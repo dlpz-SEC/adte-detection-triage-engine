@@ -10,7 +10,7 @@ standard OpenSearch ``POST /{index}/_search`` endpoint using a range
 filter on ``@timestamp``.
 
 Environment variables:
-    ADTE_WAZUH_INDEXER_URL:  Base URL of the Wazuh Indexer
+    ADTE_WAZUH_HOST:         Base URL of the Wazuh Indexer
                              (default: ``https://localhost:9200``).
     ADTE_WAZUH_USER: Wazuh API username (required).
     ADTE_WAZUH_PASS: Wazuh API password (required).
@@ -21,20 +21,22 @@ step in structured incident analysis.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
+from urllib.parse import urlparse
+
+import warnings
 
 import requests
 import urllib3
 
 from adte.models import AlertEntity, GeoLocation, NormalizedIncident, SignInMetadata
 
-# Suppress self-signed certificate warnings for default local Wazuh instances.
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 _DEFAULT_INDEXER_URL = "https://localhost:9200"
+_DEFAULT_INDEXER_PORT = 9200
 _INDEXER_PAGE_SIZE = 500  # Maximum results per OpenSearch request.
 _ALERTS_INDEX = "wazuh-alerts-4.x-*"
 _log = logging.getLogger(__name__)
@@ -42,10 +44,92 @@ _log = logging.getLogger(__name__)
 # Values treated as "no real user extracted" in the data fields.
 _SKIP_USER_VALUES: frozenset[str] = frozenset({"", "-", "root", "SYSTEM", "N/A"})
 
+# SSRF protection: schemes that are valid for an OpenSearch endpoint.
+_ALLOWED_SCHEMES: frozenset[str] = frozenset({"https", "http"})
+
+# SSRF protection: hostnames that must never be targeted.
+# 169.254.169.254 is the IMDS endpoint on AWS, Azure, and GCP;
+# metadata.google.internal is GCP's DNS alias for the same service.
+_SSRF_BLOCKED_HOSTS: frozenset[str] = frozenset({
+    "169.254.169.254",
+    "metadata.google.internal",
+})
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
+
+def _normalise_indexer_url(raw: str) -> str:
+    """Normalise a Wazuh Indexer URL so it always has a scheme and port.
+
+    Accepts any of the following forms for ``ADTE_WAZUH_HOST``:
+
+    - Full URL:          ``https://192.168.1.10:9200``  (unchanged)
+    - Hostname + port:   ``192.168.1.10:9200``          → ``https://192.168.1.10:9200``
+    - Bare hostname/IP:  ``192.168.1.10``               → ``https://192.168.1.10:9200``
+
+    Args:
+        raw: Raw value read from the environment variable.
+
+    Returns:
+        A normalised URL with scheme ``https://`` and an explicit port.
+    """
+    # Add scheme so urlparse can extract host and port reliably.
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    parsed = urlparse(raw)
+    scheme = parsed.scheme or "https"
+    host = parsed.hostname or "localhost"
+    port = parsed.port or _DEFAULT_INDEXER_PORT
+    path = parsed.path.rstrip("/")
+    return f"{scheme}://{host}:{port}{path}"
+
+
+def _validate_indexer_url(url: str) -> None:
+    """Raise ``EnvironmentError`` if the URL could enable an SSRF attack.
+
+    Checks performed (in order):
+
+    1. Scheme must be ``https`` or ``http`` — rejects ``file://``, ``ftp://``,
+       and other non-HTTP schemes that could read local resources.
+    2. Host must not be in ``_SSRF_BLOCKED_HOSTS`` — prevents requests to
+       cloud instance-metadata services (AWS/Azure/GCP IMDS).
+    3. Host must not be a link-local address (``169.254.0.0/16``) — catches
+       numeric variants of the IMDS endpoint that evade name-based checks.
+
+    Args:
+        url: Fully normalised URL (output of ``_normalise_indexer_url``).
+
+    Raises:
+        EnvironmentError: If the URL fails any SSRF check.
+    """
+    parsed = urlparse(url)
+    scheme = parsed.scheme or ""
+    host = parsed.hostname or ""
+
+    if scheme not in _ALLOWED_SCHEMES:
+        raise EnvironmentError(
+            f"ADTE_WAZUH_HOST scheme {scheme!r} is not permitted — "
+            "only 'https' and 'http' are accepted."
+        )
+
+    if host in _SSRF_BLOCKED_HOSTS:
+        raise EnvironmentError(
+            f"ADTE_WAZUH_HOST targets {host!r}, which is a cloud instance-metadata "
+            "endpoint. SSRF protection: this host is blocked."
+        )
+
+    try:
+        addr = ipaddress.ip_address(host)
+        if addr.is_link_local:
+            raise EnvironmentError(
+                f"ADTE_WAZUH_HOST targets link-local address {host!r}. "
+                "SSRF protection: link-local addresses are blocked."
+            )
+    except ValueError:
+        pass  # Not a bare IP address — DNS resolution is the operator's responsibility.
 
 
 def _severity_from_level(level: int) -> Literal["Low", "Medium", "High", "Critical"]:
@@ -105,7 +189,12 @@ def _extract_user(alert: dict[str, Any]) -> str:
 def _extract_srcip(alert: dict[str, Any]) -> str:
     """Extract the source IP address from a Wazuh alert.
 
-    Tries ``data.srcip`` first, then falls back to ``agent.ip``.
+    Tries the following fields in priority order:
+
+    1. ``data.srcip``    — generic Wazuh / Syslog events
+    2. ``data.src_ip``   — Suricata / EVE-JSON events (``rule.groups`` contains
+                           ``"suricata"``)
+    3. ``agent.ip``      — fallback to the reporting agent's IP
 
     Args:
         alert: Raw Wazuh alert dict.
@@ -114,9 +203,10 @@ def _extract_srcip(alert: dict[str, Any]) -> str:
         An IP address string, or ``""`` if none is available.
     """
     data = alert.get("data", {})
-    srcip = data.get("srcip", "")
-    if srcip:
-        return srcip
+    for field in ("srcip", "src_ip"):
+        val = data.get(field, "")
+        if val:
+            return val
     return alert.get("agent", {}).get("ip", "")
 
 
@@ -172,7 +262,7 @@ class WazuhAdapter:
         url: str,
         user: str,
         password: str,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
     ) -> None:
         """Initialise the adapter.
 
@@ -181,21 +271,28 @@ class WazuhAdapter:
             user: Wazuh API username.
             password: Wazuh API password.
             verify_ssl: Whether to verify the server's TLS certificate.
-                Defaults to ``False`` for local self-signed setups.
+                Defaults to ``True``.  Set to ``False`` only for local
+                self-signed development instances (or via
+                ``ADTE_WAZUH_VERIFY_SSL=false``).
         """
-        self._url = url.rstrip("/")
+        self._url = _normalise_indexer_url(url)
+        _validate_indexer_url(self._url)
         self._user = user
         self._password = password
         self._verify_ssl = verify_ssl
         self._session = requests.Session()
         self._session.auth = (user, password)
 
+    def __repr__(self) -> str:
+        """Safe repr that never exposes credentials."""
+        return f"WazuhAdapter(url={self._url!r}, user={self._user!r})"
+
     @classmethod
     def from_env(cls) -> "WazuhAdapter":
         """Create a ``WazuhAdapter`` from environment variables.
 
         Reads:
-        - ``ADTE_WAZUH_INDEXER_URL`` (default: ``https://localhost:9200``)
+        - ``ADTE_WAZUH_HOST`` (default: ``https://localhost:9200``)
         - ``ADTE_WAZUH_USER`` (required)
         - ``ADTE_WAZUH_PASS`` (required)
 
@@ -206,9 +303,10 @@ class WazuhAdapter:
             EnvironmentError: If ``ADTE_WAZUH_USER`` or ``ADTE_WAZUH_PASS``
                 are not set.
         """
-        url = os.environ.get("ADTE_WAZUH_INDEXER_URL", _DEFAULT_INDEXER_URL)
+        url = os.environ.get("ADTE_WAZUH_HOST", _DEFAULT_INDEXER_URL)
         user = os.environ.get("ADTE_WAZUH_USER", "")
         password = os.environ.get("ADTE_WAZUH_PASS", "")
+        verify_ssl = os.environ.get("ADTE_WAZUH_VERIFY_SSL", "true").lower() != "false"
         if not user:
             raise EnvironmentError(
                 "ADTE_WAZUH_USER is not set. "
@@ -219,7 +317,15 @@ class WazuhAdapter:
                 "ADTE_WAZUH_PASS is not set. "
                 "Export the Wazuh API password before running --source wazuh."
             )
-        return cls(url=url, user=user, password=password)
+        if not verify_ssl:
+            parsed_host = urlparse(_normalise_indexer_url(url)).hostname or "localhost"
+            if parsed_host not in ("localhost", "127.0.0.1", "::1"):
+                raise EnvironmentError(
+                    f"ADTE_WAZUH_VERIFY_SSL=false is not permitted for non-local host {parsed_host!r}. "
+                    "Certificate verification may only be disabled for localhost connections. "
+                    "Use a valid TLS certificate or set ADTE_WAZUH_HOST to a localhost URL."
+                )
+        return cls(url=url, user=user, password=password, verify_ssl=verify_ssl)
 
     def fetch_alerts(
         self,
@@ -276,11 +382,17 @@ class WazuhAdapter:
                     }
                 },
             }
-            resp = self._session.post(
-                f"{self._url}/{_ALERTS_INDEX}/_search",
-                json=body,
-                verify=self._verify_ssl,
-            )
+            with warnings.catch_warnings():
+                if not self._verify_ssl:
+                    warnings.filterwarnings(
+                        "ignore", category=urllib3.exceptions.InsecureRequestWarning
+                    )
+                resp = self._session.post(
+                    f"{self._url}/{_ALERTS_INDEX}/_search",
+                    json=body,
+                    verify=self._verify_ssl,
+                    timeout=30,
+                )
             resp.raise_for_status()
             hits = resp.json().get("hits", {})
 

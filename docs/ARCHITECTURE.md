@@ -166,6 +166,47 @@ TriageEngine
     └── report: {nist_phase, incident_id, signal_summary, one_paragraph_summary, ...}
 ```
 
+## Security Controls
+
+### Authentication & Authorization
+
+All API endpoints are protected by a role-based access control (RBAC) system:
+
+| Role | Level | Access |
+|------|-------|--------|
+| `readonly` | 0 | Static frontend, health check, examples |
+| `analyst` | 1 | Triage, queue, verdicts, feedback, intel |
+| `senior_analyst` | 2 | Configuration view |
+| `admin` | 3 | DELETE endpoints (clear verdicts/feedback) |
+
+Authentication is via `X-ADTE-Key` header matched against per-role environment variables (`ADTE_API_KEY_ADMIN`, `ADTE_API_KEY_SENIOR`, `ADTE_API_KEY_ANALYST`, `ADTE_API_KEY_READONLY`).
+
+### Rate Limiting
+
+- `POST /api/triage`: 10 requests/minute per IP
+- `POST /api/feedback`: 30 requests/minute per IP
+- Returns JSON `{"error": "Rate limit exceeded"}` with HTTP 429
+
+### CORS
+
+Configured via `ADTE_CORS_ORIGINS` environment variable (comma-separated origins). Defaults to `http://localhost:5000` in development.
+
+### Input Validation
+
+- **FP Registry:** Strict IP/CIDR validation via `ipaddress` module before any filesystem write.
+- **LLM Prompts:** Alert-derived fields are sanitized (control characters stripped, injection patterns redacted, length-capped) before prompt assembly. System prompt includes a hard security boundary delimiter.
+- **SQLite:** All queries use parameterized `?` placeholders. Regression tests verify SQL injection payloads are stored as data, not executed.
+
+### Credential Safety
+
+- API keys are never logged or returned in full — the `/api/config` endpoint masks keys to `xxxx****xxxx` format.
+- Wazuh adapter's `__repr__` excludes the password field.
+- No credential values appear in any `_log.*` call across the codebase.
+
+### Queue Overflow Protection
+
+The alert router (`scripts/alert_router.py`) caps the in-memory `seen_ids` set at `MAX_QUEUE_SIZE=1000`. When full, the oldest half is evicted with a WARNING log.
+
 ## Key Design Principles
 
 1. **Determinism** — The same input always produces the same verdict. No randomness, no external state mutation during scoring.

@@ -1,0 +1,95 @@
+# Curated MITRE ATT&CK → Wazuh rule mapping
+# Used for deterministic technique labeling before LLM enrichment
+
+mappings:
+- rule_keywords: ["brute_force", "password_spray", "multiple_failed_login"]
+  mitre_tactic: "Credential Access"
+  mitre_technique_id: "T1110"
+  mitre_technique_name: "Brute Force"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["lateral_movement", "lateral_move", "move_laterally"]
+  mitre_tactic: "Lateral Movement"
+  mitre_technique_id: "T1021"
+  mitre_technique_name: "Remote Services"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["privilege_escalation", "privesc", "sudo_abuse"]
+  mitre_tactic: "Privilege Escalation"
+  mitre_technique_id: "T1548"
+  mitre_technique_name: "Abuse Elevation Control Mechanism"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["persistence", "establish_persistence", "maintain_access"]
+  mitre_tactic: "Persistence"
+  mitre_technique_id: "T1098"
+  mitre_technique_name: "Account Manipulation"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["data_exfiltration", "exfil", "data_staging"]
+  mitre_tactic: "Exfiltration"
+  mitre_technique_id: "T1020"
+  mitre_technique_name: "Automated Exfiltration"
+  nist_detect: "DE.CM-2"
+  nist_category: "Secure Configuration Management"
+
+- rule_keywords: ["defense_evasion", "log_deletion", "disable_defender"]
+  mitre_tactic: "Defense Evasion"
+  mitre_technique_id: "T1562"
+  mitre_technique_name: "Indicator Removal"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["discovery", "enumerate_users", "query_network"]
+  mitre_tactic: "Discovery"
+  mitre_technique_id: "T1087"
+  mitre_technique_name: "Account Discovery"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["command_execution", "execute_command", "remote_code"]
+  mitre_tactic: "Execution"
+  mitre_technique_id: "T1059"
+  mitre_technique_name: "Command and Scripting Interpreter"
+  nist_detect: "DE.CM-6"
+  nist_category: "Monitoring for Malicious Activity"
+
+# Engine signal name entries (used by llm_assist deterministic fallback)
+- rule_keywords: ["impossible_travel"]
+  mitre_tactic: "Initial Access"
+  mitre_technique_id: "T1078.004"
+  mitre_technique_name: "Valid Accounts: Cloud Accounts"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["mfa_fatigue"]
+  mitre_tactic: "Credential Access"
+  mitre_technique_id: "T1621"
+  mitre_technique_name: "Multi-Factor Authentication Request Generation"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["ip_reputation"]
+  mitre_tactic: "Command and Control"
+  mitre_technique_id: "T1071"
+  mitre_technique_name: "Application Layer Protocol"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["device_novelty"]
+  mitre_tactic: "Initial Access"
+  mitre_technique_id: "T1078"
+  mitre_technique_name: "Valid Accounts"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["login_hour_anomaly"]
+  mitre_tactic: "Initial Access"
+  mitre_technique_id: "T1078.004"
+  mitre_technique_name: "Valid Accounts: Cloud Accounts"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"

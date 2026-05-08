@@ -112,6 +112,8 @@ def get_user_profile(upn: str) -> UserProfile:
         found in the mock database a default empty profile is returned.
     """
     if upn in _MOCK_PROFILES:
+        # model_copy() returns a shallow copy so callers can't mutate the
+        # shared mock profile (e.g. engine.enrich() may modify fields in place).
         return _MOCK_PROFILES[upn].model_copy()
 
     # Unknown user — return a sparse profile.

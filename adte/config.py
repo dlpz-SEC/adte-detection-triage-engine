@@ -9,7 +9,11 @@ NIST 800-61 Phase: Containment, Eradication & Recovery — governs
 which automated containment actions the engine is permitted to take
 and provides an auditable record of blocked actions.
 
-Gate evaluation order (short-circuits on first failure):
+Gate evaluation (all 6 gates are always checked — no short-circuit):
+
+All failures are collected so that a single ``can_execute`` call surfaces
+every blocking constraint at once, enabling the caller to write a complete
+audit record of *why* an action was denied.
 
 1. **Kill switch** — emergency halt of all automated actions.
 2. **Dry-run mode** — global read-only mode (default: enabled).
@@ -71,6 +75,7 @@ class SafetyConfig(BaseSettings):
         "env_prefix": "ADTE_",
         "env_file": ".env",
         "env_file_encoding": "utf-8",
+        "extra": "ignore",  # .env contains non-safety vars (TI keys, RBAC keys); ignore them
     }
 
     # ------------------------------------------------------------------
@@ -131,6 +136,9 @@ class SafetyConfig(BaseSettings):
 
         # Gate 5: User allowlist OR high severity.
         high_sev = severity in ("High", "Critical")
+        # Empty user_allowlist means every user is implicitly permitted (open gate).
+        # High/Critical bypasses the list entirely so a sparse allowlist never
+        # silently swallows a critical incident.
         user_allowed = not self.user_allowlist or user_upn in self.user_allowlist
         if not user_allowed and not high_sev:
             reasons.append(
@@ -139,12 +147,15 @@ class SafetyConfig(BaseSettings):
             )
 
         # Gate 6: Action allowlist.
+        # Empty action_allowlist is also open — all action types are permitted.
         if self.action_allowlist and action_type not in self.action_allowlist:
             reasons.append(
                 f"Action {action_type!r} not in ACTION_ALLOWLIST "
                 f"({', '.join(self.action_allowlist)})"
             )
 
+        # All gates evaluated (no short-circuit) so reasons captures every
+        # blocking constraint — callers write the full list to the audit log.
         allowed = len(reasons) == 0
         return allowed, reasons
 

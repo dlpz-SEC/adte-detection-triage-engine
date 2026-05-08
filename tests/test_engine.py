@@ -101,6 +101,16 @@ class TestEngineOutputSchema:
         output = _run_pipeline(incident_true_positive, fp_registry)
         assert _OUTPUT_KEYS.issubset(output.keys())
 
+    def test_engine_llm_enrichment_key_present(
+        self,
+        incident_true_positive: NormalizedIncident,
+        fp_registry: FPRegistry,
+    ) -> None:
+        """to_output() always contains 'llm_enrichment'; value is dict or None."""
+        output = _run_pipeline(incident_true_positive, fp_registry)
+        assert "llm_enrichment" in output
+        assert isinstance(output["llm_enrichment"], (dict, type(None)))
+
     def test_engine_report_schema(
         self,
         incident_true_positive: NormalizedIncident,
