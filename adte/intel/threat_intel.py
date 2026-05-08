@@ -1,8 +1,11 @@
 """Threat intelligence lookups for IP reputation.
 
-Provides a mock-mode threat intel service with deterministic responses
-for known IP ranges, suitable for development, testing, and dry-run
-triage without requiring external API access.
+Public entry point for IP reputation checks.  Delegates to
+``ThreatIntelAggregator``, which queries live threat intel APIs when keys
+are configured (``ADTE_ABUSEIPDB_KEY``, ``ADTE_VT_API_KEY``,
+``ADTE_OTX_KEY``) and falls back to a deterministic mock when no keys are
+set — suitable for development, testing, and dry-run triage without
+requiring external API access.
 
 NIST 800-61 Phase: Detection & Analysis — enriches observables with
 threat context to support triage decisions.
@@ -11,87 +14,55 @@ threat context to support triage decisions.
 from __future__ import annotations
 
 import ipaddress
-from datetime import datetime, timezone
+import threading
 
+from adte.intel.aggregator import ThreatIntelAggregator
 from adte.models import ThreatIntelResult
 
-# ---------------------------------------------------------------------------
-# Deterministic mock IP ranges
-# ---------------------------------------------------------------------------
+# Module-level singleton — reused across requests so the per-IP result cache
+# persists and clients are not re-instantiated on every triage call.
+_aggregator: ThreatIntelAggregator | None = None
+_aggregator_lock = threading.Lock()
 
-_MALICIOUS_RANGES: list[tuple[ipaddress.IPv4Network, float, str, list[str]]] = [
-    # Known C2 infrastructure
-    (ipaddress.IPv4Network("198.51.100.0/24"), 0.95, "mock-c2-feed", ["c2", "cobalt-strike"]),
-    # Tor exit nodes
-    (ipaddress.IPv4Network("185.220.101.0/24"), 0.85, "mock-tor-list", ["tor-exit"]),
-    # Brute-force scanners
-    (ipaddress.IPv4Network("45.33.32.0/24"), 0.75, "mock-scanner-feed", ["scanner", "brute-force"]),
-    # Crypto-mining pool proxies
-    (ipaddress.IPv4Network("203.0.113.0/24"), 0.70, "mock-mining-feed", ["cryptominer", "proxy"]),
-]
 
-_SUSPICIOUS_RANGES: list[tuple[ipaddress.IPv4Network, float, str, list[str]]] = [
-    # Residential proxy network
-    (ipaddress.IPv4Network("100.64.0.0/16"), 0.45, "mock-proxy-feed", ["residential-proxy"]),
-    # Hosting provider frequently abused
-    (ipaddress.IPv4Network("192.0.2.0/24"), 0.40, "mock-abuse-db", ["hosting", "bulletproof"]),
-]
+def _get_aggregator() -> ThreatIntelAggregator:
+    """Return the module-level aggregator, creating it on first call.
+
+    Thread-safe: the lock ensures only one instance is created even under
+    concurrent Flask requests.
+
+    Returns:
+        The shared ``ThreatIntelAggregator`` instance.
+    """
+    global _aggregator
+    if _aggregator is None:
+        with _aggregator_lock:
+            if _aggregator is None:
+                _aggregator = ThreatIntelAggregator.from_env()
+    return _aggregator
 
 
 def check_threat_intel(ip: str) -> ThreatIntelResult:
-    """Look up an IP address against mock threat intelligence feeds.
+    """Look up an IP address against threat intelligence feeds.
 
-    The mock implementation uses deterministic IP-range matching so that
-    tests and dry-run triage produce repeatable results.
+    Validates the IP, then delegates to the module-level
+    ``ThreatIntelAggregator`` singleton which selects live API sources based
+    on configured environment variables or falls back to a deterministic mock
+    when none are set.  Results are cached per IP for the lifetime of the
+    server process.
 
     Args:
         ip: IPv4 address string to check (e.g. ``"198.51.100.14"``).
 
     Returns:
-        A ``ThreatIntelResult`` with reputation data.  For IPs that do
-        not match any known-bad range, ``is_malicious`` is ``False``
-        and ``confidence`` is ``0.0``.
+        A ``ThreatIntelResult`` with reputation data.
 
     Raises:
         ValueError: If *ip* is not a valid IPv4 address.
     """
     try:
-        addr = ipaddress.IPv4Address(ip)
+        ipaddress.IPv4Address(ip)
     except ipaddress.AddressValueError as exc:
         raise ValueError(f"Invalid IPv4 address: {ip!r}") from exc
 
-    now = datetime.now(timezone.utc)
-
-    # Check malicious ranges first (higher priority).
-    for network, confidence, source, tags in _MALICIOUS_RANGES:
-        if addr in network:
-            return ThreatIntelResult(
-                ip=ip,
-                is_malicious=True,
-                confidence=confidence,
-                source=source,
-                tags=tags,
-                queried_at=now,
-            )
-
-    # Check suspicious-but-not-confirmed ranges.
-    for network, confidence, source, tags in _SUSPICIOUS_RANGES:
-        if addr in network:
-            return ThreatIntelResult(
-                ip=ip,
-                is_malicious=False,
-                confidence=confidence,
-                source=source,
-                tags=tags,
-                queried_at=now,
-            )
-
-    # IP not found in any feed — benign by default.
-    return ThreatIntelResult(
-        ip=ip,
-        is_malicious=False,
-        confidence=0.0,
-        source="mock-no-match",
-        tags=[],
-        queried_at=now,
-    )
+    return _get_aggregator().check(ip)

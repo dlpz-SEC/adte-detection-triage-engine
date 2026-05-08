@@ -39,6 +39,8 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     dlon = lon2_r - lon1_r
 
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlon / 2) ** 2
+    # atan2 instead of acos gives better numerical stability for both tiny
+    # and near-antipodal distances (acos can return NaN when a ≈ 1.0).
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return _EARTH_RADIUS_KM * c

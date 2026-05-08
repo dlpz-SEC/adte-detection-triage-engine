@@ -241,3 +241,40 @@ class TestLogBlockedAction:
         assert len(parsed["reasons"]) == 2
         assert parsed["context"]["incident_id"] == "INC-TEST"
         assert "timestamp" in parsed
+
+
+# ---------------------------------------------------------------------------
+# Gate evaluation — all failures collected, no short-circuit
+# ---------------------------------------------------------------------------
+
+
+class TestAllGatesEvaluated:
+    """can_execute must collect every failure, not stop at the first."""
+
+    def test_multiple_failures_all_reported(self) -> None:
+        """When kill_switch, dry_run, and execution_enabled all fail, all three appear."""
+        cfg = SafetyConfig(kill_switch=True, dry_run=True, execution_enabled=False)
+        _, reasons = cfg.can_execute(
+            "CLOSE_INCIDENT", "tenant-1", "alice@example.com", "Low"
+        )
+        assert any("KILL_SWITCH" in r for r in reasons)
+        assert any("DRY_RUN" in r for r in reasons)
+        assert any("EXECUTION_ENABLED" in r for r in reasons)
+        assert len(reasons) >= 3
+
+    def test_gate_failures_after_kill_switch_still_collected(self) -> None:
+        """Gates after kill_switch are still evaluated and reported even though kill_switch fires."""
+        cfg = SafetyConfig(
+            kill_switch=True,
+            dry_run=True,
+            execution_enabled=False,
+            tenant_allowlist=["permitted-tenant"],
+        )
+        _, reasons = cfg.can_execute(
+            "UNKNOWN_ACTION", "other-tenant", "bob@example.com", "Low"
+        )
+        # All four reasons must appear — kill_switch did not short-circuit the rest.
+        assert any("KILL_SWITCH" in r for r in reasons)
+        assert any("DRY_RUN" in r for r in reasons)
+        assert any("EXECUTION_ENABLED" in r for r in reasons)
+        assert any("TENANT" in r.upper() for r in reasons)

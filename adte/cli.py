@@ -20,11 +20,15 @@ from __future__ import annotations
 
 import json
 import sys
-from enum import Enum
+
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # always finds repo-root .env regardless of CWD
+from enum import Enum
 from typing import Annotated, Any, Optional
 
 import typer
+from pydantic import ValidationError
 
 from adte.adapters.wazuh import WazuhAdapter
 from adte.config import SafetyConfig
@@ -56,6 +60,7 @@ class SourceType(str, Enum):
     """Alert source for the triage command."""
 
     mock = "mock"
+    normalized = "normalized"
     wazuh = "wazuh"
 
 
@@ -128,20 +133,20 @@ def _print_pretty(output: dict[str, Any], *, explain: bool) -> None:
     print()
 
 
-def _load_incident(path: Path) -> NormalizedIncident:
-    """Load and normalise a Sentinel incident from a JSON file.
+def _read_json(path: Path) -> Any:
+    """Read and parse a JSON file, exiting on error.
 
     Args:
-        path: Path to the incident JSON file.
+        path: Path to the JSON file.
 
     Returns:
-        A ``NormalizedIncident`` ready for the triage pipeline.
+        The parsed JSON value.
 
     Raises:
         typer.Exit: If the file is not found or contains invalid JSON.
     """
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         typer.echo(f"Error: file not found: {path}", err=True)
         raise typer.Exit(code=2)
@@ -149,11 +154,73 @@ def _load_incident(path: Path) -> NormalizedIncident:
         typer.echo(f"Error: invalid JSON in {path}: {exc}", err=True)
         raise typer.Exit(code=2)
 
+
+# _load_incident and _load_normalized_incident are structurally identical
+# (same error-handling blocks, same exit codes) and differ only in the
+# adapter step.  Kept separate so each function's docstring accurately
+# describes its schema contract without a confusing branch.
+def _load_incident(path: Path) -> NormalizedIncident:
+    """Load and normalise a Sentinel incident from a JSON file.
+
+    Expects a ``SentinelIncident``-shaped payload and converts it via
+    ``NormalizedIncident.from_sentinel()``.
+
+    Args:
+        path: Path to the Sentinel incident JSON file.
+
+    Returns:
+        A ``NormalizedIncident`` ready for the triage pipeline.
+
+    Raises:
+        typer.Exit: If the file is not found, contains invalid JSON,
+            or cannot be parsed as a ``SentinelIncident``.
+    """
+    raw = _read_json(path)
     try:
         sentinel = SentinelIncident(**raw)
         return NormalizedIncident.from_sentinel(sentinel)
-    except Exception as exc:
-        typer.echo(f"Error: failed to parse incident: {exc}", err=True)
+    except (ValidationError, TypeError, KeyError):
+        typer.echo(
+            "Error: incident does not match expected SentinelIncident schema — "
+            "check that all required fields are present.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    except Exception:
+        typer.echo("Error: failed to parse incident — unexpected format.", err=True)
+        raise typer.Exit(code=2)
+
+
+def _load_normalized_incident(path: Path) -> NormalizedIncident:
+    """Load a ``NormalizedIncident`` directly from a JSON file.
+
+    Deserializes the file as a ``NormalizedIncident`` without going
+    through the ``SentinelIncident`` adapter.  Use this when the input
+    is already in ADTE's normalized schema (e.g. a POST body forwarded
+    to the CLI, or output from a non-Sentinel source adapter).
+
+    Args:
+        path: Path to the ``NormalizedIncident`` JSON file.
+
+    Returns:
+        A ``NormalizedIncident`` ready for the triage pipeline.
+
+    Raises:
+        typer.Exit: If the file is not found, contains invalid JSON,
+            or cannot be validated as a ``NormalizedIncident``.
+    """
+    raw = _read_json(path)
+    try:
+        return NormalizedIncident.model_validate(raw)
+    except ValidationError:
+        typer.echo(
+            "Error: file does not match NormalizedIncident schema — "
+            "check that all required fields are present.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    except Exception:
+        typer.echo("Error: failed to parse NormalizedIncident — unexpected format.", err=True)
         raise typer.Exit(code=2)
 
 
@@ -247,15 +314,16 @@ def triage(
     actions.
     """
     # Validate mutually exclusive flags.
+    # dry_run defaults to True so we check sys.argv to distinguish an
+    # explicit --dry-run flag from the implicit default.
     if execute and dry_run and "--dry-run" in sys.argv:
         typer.echo("Error: --execute and --dry-run are mutually exclusive.", err=True)
         raise typer.Exit(code=2)
 
-    # --source mock requires --input.
-    if source == SourceType.mock and input_file is None:
+    # --source mock and --source normalized both require --input.
+    if source in (SourceType.mock, SourceType.normalized) and input_file is None:
         typer.echo(
-            "Error: --source mock requires --input <path>. "
-            "Provide a Sentinel incident JSON file.",
+            f"Error: --source {source.value} requires --input <path>.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -269,6 +337,8 @@ def triage(
     # Load incidents from the selected source.
     if source == SourceType.mock:
         incidents: list[NormalizedIncident] = [_load_incident(input_file)]  # type: ignore[arg-type]
+    elif source == SourceType.normalized:
+        incidents = [_load_normalized_incident(input_file)]  # type: ignore[arg-type]
     else:  # wazuh
         try:
             adapter = WazuhAdapter.from_env()

@@ -1,14 +1,31 @@
-"""Structured report generation for triage output.
+"""Narrative report fields for triage output (display only).
 
-Builds the NIST 800-61 aligned report section with optional
-LLM-assisted narrative summary.
+Adds the following fields to the ``report`` sub-dict that
+``TriageEngine._build_report()`` produces:
+
+  - one_paragraph_summary  - plain-English incident narrative
+  - analyst_notes          - actionable, per-verdict bullet points
+  - mitre_tactics          - MITRE ATT&CK tactic names
+  - mitre_techniques       - MITRE ATT&CK technique IDs and names
+  - nist_phases            - NIST CSF 2.0 category codes
+  - confidence_note        - advisory note on MITRE mapping confidence
+
+These fields are purely for human consumption — they do not feed back
+into the engine and have no effect on ``verdict``, ``risk_score``,
+``confidence``, or ``recommended_action``.
+
+Callers that consume the triage output programmatically can ignore
+the ``report`` key entirely; the authoritative decision fields are
+at the top level of the output dict.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from adte.llm_assist import generate_summary
+# _build_deterministic_summary is imported directly (bypassing generate_summary's
+# API-key detection) so that use_llm=False is a guaranteed no-network path.
+from adte.llm.assist import _build_deterministic_summary, generate_summary
 
 
 def generate_report(
@@ -31,17 +48,21 @@ def generate_report(
     Returns:
         The (mutated) ``report`` sub-dict with added narrative fields.
     """
+    # Mutates the existing report sub-dict in place; callers should not hold
+    # a separate reference to decision_output["report"] before calling this.
     report = decision_output.get("report", {})
 
     if use_llm:
-        summary = generate_summary(decision_output)
+        llm_result = generate_summary(decision_output)
     else:
-        from adte.llm_assist import _build_deterministic_summary
+        llm_result = _build_deterministic_summary(decision_output)
 
-        summary = _build_deterministic_summary(decision_output)
-
-    report["one_paragraph_summary"] = summary
-    report["analyst_notes"] = _build_analyst_notes(decision_output)
+    report["one_paragraph_summary"] = llm_result["narrative"]
+    report["mitre_tactics"]         = llm_result["mitre_tactics"]
+    report["mitre_techniques"]      = llm_result["mitre_techniques"]
+    report["nist_phases"]           = llm_result["nist_phases"]
+    report["confidence_note"]       = llm_result["confidence_note"]
+    report["analyst_notes"]         = _build_analyst_notes(decision_output)
 
     return report
 

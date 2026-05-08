@@ -117,6 +117,9 @@ class TriageEngine:
         self._recommended_action: str = ""
         self._actions: list[str] = []
 
+        # LLM enrichment artefact (populated by llm_enrich(), advisory only).
+        self._llm_enrichment: dict[str, Any] | None = None
+
     # ------------------------------------------------------------------
     # Pipeline stages
     # ------------------------------------------------------------------
@@ -144,6 +147,30 @@ class TriageEngine:
             self._fp_matches[ip] = ptype
         return self
 
+    def llm_enrich(self) -> "TriageEngine":
+        """Run LLM-based enrichment on the normalised incident.
+
+        Calls ``adte.llm.enrichment.enrich_alert()`` with the incident
+        serialised as a plain dict.  Stores the result in
+        ``_llm_enrichment``.  If enrichment raises any exception, stores
+        ``None`` and continues — this stage is advisory only and must
+        never interrupt the pipeline.
+
+        NIST 800-61 Phase: Detection & Analysis — context enrichment.
+
+        Returns:
+            ``self`` for fluent chaining.
+        """
+        try:
+            from adte.llm.enrichment import enrich_alert  # lazy import
+
+            self._llm_enrichment = enrich_alert(
+                self._incident.model_dump(mode="json")
+            )
+        except Exception:
+            self._llm_enrichment = None
+        return self
+
     def score(self) -> "TriageEngine":
         """Evaluate all signal classes and compute the aggregate risk score.
 
@@ -163,7 +190,9 @@ class TriageEngine:
             SIGNAL_WEIGHTS[name] for name in self._skipped_signals
         )
         available_weight = 100 - skipped_weight
-        if available_weight < 100:
+        if available_weight <= 0:
+            self._risk_score = 0
+        elif available_weight < 100:
             self._risk_score = max(0, min(100, round(
                 raw_sum * 100 / available_weight
             )))
@@ -227,10 +256,18 @@ class TriageEngine:
                 to generate a polished narrative summary.
 
         Returns:
-            A JSON-serialisable dict with keys: ``verdict``,
-            ``risk_score``, ``confidence``, ``recommended_action``,
-            ``actions``, ``rationale``, ``evidence``, ``safety``,
-            ``report``.
+            A JSON-serialisable dict with keys:
+
+            - ``verdict``, ``risk_score``, ``confidence``,
+              ``recommended_action``, ``actions``, ``rationale``,
+              ``evidence``, ``safety`` — the authoritative decision
+              fields; all set before ``report`` is built.
+            - ``report`` — narrative-only display fields
+              (``incident_id``, ``user``, ``severity``,
+              ``signal_summary``, ``one_paragraph_summary``,
+              ``analyst_notes``).  Never read by the engine for
+              decisions; safe to drop when consuming the API
+              programmatically.
         """
         output = {
             "verdict": self._verdict,
@@ -245,6 +282,7 @@ class TriageEngine:
             "evidence": self._build_evidence(),
             "safety": self._build_safety(),
             "report": self._build_report(),
+            "llm_enrichment": self._llm_enrichment,
         }
         output["report"] = generate_report(output, use_llm=use_llm)
         return output
@@ -383,10 +421,16 @@ class TriageEngine:
 
         # Check if a denial burst was eventually followed by a success
         # (the hallmark of fatigue capitulation).
-        fatigue_success = (
-            len(denied) >= _MFA_DENIAL_THRESHOLD
-            and any(e.mfa_result == "Success" for e in events if e.timestamp > denied[0].timestamp)
-        )
+        # Use min() to find the earliest denial regardless of list ordering —
+        # Wazuh returns events descending so denied[0] would be the newest.
+        if denied:
+            earliest_denial_ts = min(e.timestamp for e in denied)
+            fatigue_success = (
+                len(denied) >= _MFA_DENIAL_THRESHOLD
+                and any(e.mfa_result == "Success" for e in events if e.timestamp > earliest_denial_ts)
+            )
+        else:
+            fatigue_success = False
 
         if max_denials_in_window >= _MFA_DENIAL_THRESHOLD:
             confidence = min(1.0, max_denials_in_window / 10.0 + 0.3)
@@ -421,7 +465,7 @@ class TriageEngine:
         weight = SIGNAL_WEIGHTS["ip_reputation"]
 
         if not self._threat_intel_results:
-            return (0.0, "No IPs to evaluate", 0.3)
+            return (0.0, "No IPs to evaluate", 0.0)
 
         malicious_ips: list[str] = []
         benign_overrides: list[str] = []

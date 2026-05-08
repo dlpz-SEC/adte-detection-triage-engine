@@ -22,6 +22,10 @@ _SAFETY_ENV_VARS = [
     "ADTE_TENANT_ALLOWLIST",
     "ADTE_USER_ALLOWLIST",
     "ADTE_ACTION_ALLOWLIST",
+    # Threat intel API keys — cleared between tests to keep mock fallback active.
+    "ADTE_ABUSEIPDB_KEY",
+    "ADTE_VT_API_KEY",
+    "ADTE_OTX_KEY",
 ]
 
 

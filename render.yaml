@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: adte-detection-triage-engine
+    runtime: python
+    plan: free
+    buildCommand: pip install . && cd frontend && npm install && npm run build
+    startCommand: gunicorn adte.server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: ADTE_DRY_RUN
+        value: "true"
+      - key: ADTE_EXECUTION_ENABLED
+        value: "false"
+      - key: ADTE_KILL_SWITCH
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

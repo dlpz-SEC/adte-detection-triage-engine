@@ -1,0 +1,16 @@
+{
+  "name": "adte-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/app.jsx --bundle --outfile=bundle.js --platform=browser --target=es2020 --minify",
+    "build:dev": "esbuild src/app.jsx --bundle --outfile=bundle.js --platform=browser --target=es2020 --sourcemap"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

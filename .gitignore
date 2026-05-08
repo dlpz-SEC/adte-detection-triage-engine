@@ -6,6 +6,7 @@
 # AI/Tool scaffolding
 .claude/
 CLAUDE.md
+*.skill
 
 # Python
 __pycache__/
@@ -25,3 +26,10 @@ venv/
 # Coverage
 .coverage
 htmlcov/
+
+# Database files (runtime artefacts — not source)
+*.db
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/bundle.js

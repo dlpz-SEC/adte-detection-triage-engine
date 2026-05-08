@@ -182,6 +182,25 @@ class TestExtractSrcip:
         alert = {"data": {}, "agent": {"ip": "10.0.0.1"}}
         assert _extract_srcip(alert) == "10.0.0.1"
 
+    def test_suricata_src_ip_field(self) -> None:
+        """data.src_ip is used for Suricata/EVE-JSON alerts when srcip is absent."""
+        alert = {
+            "data": {"src_ip": "3.169.231.61", "dest_ip": "192.168.127.128"},
+            "rule": {"groups": ["suricata", "ids"]},
+            "agent": {"ip": "10.0.0.1"},
+        }
+        assert _extract_srcip(alert) == "3.169.231.61"
+
+    def test_srcip_preferred_over_src_ip(self) -> None:
+        """data.srcip takes priority over data.src_ip when both are present."""
+        alert = {"data": {"srcip": "45.33.32.5", "src_ip": "3.169.231.61"}, "agent": {}}
+        assert _extract_srcip(alert) == "45.33.32.5"
+
+    def test_dest_ip_not_used_as_source(self) -> None:
+        """data.dest_ip is never returned as the source IP."""
+        alert = {"data": {"dest_ip": "192.168.127.128"}, "agent": {}}
+        assert _extract_srcip(alert) == ""
+
     def test_empty_when_no_ip(self) -> None:
         """Returns empty string when no IP is available."""
         alert = {"data": {}, "agent": {}}
@@ -376,20 +395,36 @@ class TestFromEnv:
             WazuhAdapter.from_env()
 
     def test_default_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ADTE_WAZUH_INDEXER_URL defaults to https://localhost:9200."""
+        """ADTE_WAZUH_HOST defaults to https://localhost:9200."""
         monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
         monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
-        monkeypatch.delenv("ADTE_WAZUH_INDEXER_URL", raising=False)
+        monkeypatch.delenv("ADTE_WAZUH_HOST", raising=False)
         adapter = WazuhAdapter.from_env()
         assert adapter._url == "https://localhost:9200"
 
     def test_custom_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ADTE_WAZUH_INDEXER_URL override is respected."""
-        monkeypatch.setenv("ADTE_WAZUH_INDEXER_URL", "https://wazuh-indexer.internal:9200")
+        """ADTE_WAZUH_HOST override is respected."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "https://wazuh-indexer.internal:9200")
         monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
         monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
         adapter = WazuhAdapter.from_env()
         assert adapter._url == "https://wazuh-indexer.internal:9200"
+
+    def test_bare_ip_gets_scheme_and_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Bare IP without scheme or port is normalised to https://{ip}:9200."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "192.168.127.128")
+        monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
+        monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
+        adapter = WazuhAdapter.from_env()
+        assert adapter._url == "https://192.168.127.128:9200"
+
+    def test_ip_with_port_no_scheme_gets_https(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """IP:port without scheme gets https:// prepended."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "192.168.127.128:9200")
+        monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
+        monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
+        adapter = WazuhAdapter.from_env()
+        assert adapter._url == "https://192.168.127.128:9200"
 
     def test_indexer_uses_basic_auth(self) -> None:
         """WazuhAdapter sets HTTP Basic Auth on the session at construction."""
@@ -397,6 +432,66 @@ class TestFromEnv:
             url="https://localhost:9200", user="admin", password="pass"
         )
         assert adapter._session.auth == ("admin", "pass")
+
+
+# ---------------------------------------------------------------------------
+# SSRF protection — _validate_indexer_url
+# ---------------------------------------------------------------------------
+
+
+class TestSSRFProtection:
+    """WazuhAdapter rejects URLs that could enable SSRF attacks."""
+
+    def _make(self, url: str) -> "WazuhAdapter":
+        return WazuhAdapter(url=url, user="u", password="p")
+
+    def test_imds_ip_blocked(self) -> None:
+        """169.254.169.254 (AWS/Azure/GCP IMDS) is always rejected."""
+        with pytest.raises(EnvironmentError, match="instance-metadata"):
+            self._make("https://169.254.169.254:9200")
+
+    def test_imds_via_http_blocked(self) -> None:
+        """IMDS endpoint is blocked regardless of scheme."""
+        with pytest.raises(EnvironmentError, match="instance-metadata"):
+            self._make("http://169.254.169.254/latest/meta-data/")
+
+    def test_gcp_metadata_hostname_blocked(self) -> None:
+        """metadata.google.internal (GCP metadata DNS alias) is rejected."""
+        with pytest.raises(EnvironmentError, match="instance-metadata"):
+            self._make("http://metadata.google.internal/computeMetadata/v1/")
+
+    def test_link_local_range_blocked(self) -> None:
+        """Any 169.254.x.x link-local address is rejected."""
+        with pytest.raises(EnvironmentError, match="link-local"):
+            self._make("https://169.254.0.1:9200")
+
+    def test_file_scheme_blocked(self) -> None:
+        """file:// scheme is rejected — prevents local file reads."""
+        with pytest.raises(EnvironmentError, match="not permitted"):
+            self._make("file:///etc/passwd")
+
+    def test_ftp_scheme_blocked(self) -> None:
+        """Non-HTTP schemes other than https/http are rejected."""
+        with pytest.raises(EnvironmentError, match="not permitted"):
+            self._make("ftp://internal-host:21")
+
+    def test_https_localhost_allowed(self) -> None:
+        """https://localhost is a legitimate development target."""
+        adapter = self._make("https://localhost:9200")
+        assert "localhost" in adapter._url
+
+    def test_https_private_ip_allowed(self) -> None:
+        """Private RFC 1918 IPs (non-link-local) are permitted."""
+        adapter = self._make("https://192.168.1.50:9200")
+        assert "192.168.1.50" in adapter._url
+
+    def test_from_env_imds_blocked(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """from_env() also rejects IMDS URLs set via ADTE_WAZUH_HOST."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "https://169.254.169.254:9200")
+        monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
+        monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
+        with pytest.raises(EnvironmentError, match="instance-metadata"):
+            WazuhAdapter.from_env()
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +625,49 @@ class TestFetchIncidents:
         assert isinstance(incidents[0], NormalizedIncident)
         assert incidents[0].incident_id == "e2e-001"
         assert incidents[0].user == "root-account"
+
+
+# ---------------------------------------------------------------------------
+# TLS certificate verification enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestVerifySSLEnforcement:
+    """from_env() must raise EnvironmentError when ADTE_WAZUH_VERIFY_SSL=false
+    is combined with a non-localhost ADTE_WAZUH_HOST."""
+
+    def test_verify_ssl_false_for_remote_host_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """VERIFY_SSL=false + remote host must raise EnvironmentError."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "https://wazuh.internal:9200")
+        monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
+        monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
+        monkeypatch.setenv("ADTE_WAZUH_VERIFY_SSL", "false")
+
+        with pytest.raises(EnvironmentError, match="not permitted for non-local host"):
+            WazuhAdapter.from_env()
+
+    def test_verify_ssl_false_for_localhost_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """VERIFY_SSL=false is permitted when the host is localhost."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "https://localhost:9200")
+        monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
+        monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
+        monkeypatch.setenv("ADTE_WAZUH_VERIFY_SSL", "false")
+
+        adapter = WazuhAdapter.from_env()
+        assert adapter._verify_ssl is False
+
+    def test_verify_ssl_true_for_remote_host_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """VERIFY_SSL=true (default) is always permitted regardless of host."""
+        monkeypatch.setenv("ADTE_WAZUH_HOST", "https://wazuh.prod.example.com:9200")
+        monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
+        monkeypatch.setenv("ADTE_WAZUH_PASS", "secret")
+        monkeypatch.setenv("ADTE_WAZUH_VERIFY_SSL", "true")
+
+        adapter = WazuhAdapter.from_env()
+        assert adapter._verify_ssl is True
