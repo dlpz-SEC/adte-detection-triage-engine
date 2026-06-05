@@ -381,9 +381,8 @@ import ReactDOM from 'react-dom/client';
     function VerdictBadge({ verdict, riskScore }) {
       const display = getDisplayVerdict(verdict);
       const cls = VERDICT_BADGE_CLASS[display] || 'badge-low';
-      const pulse = display === 'high_risk';
       return (
-        <span className={`badge ${cls} ${pulse ? 'pulse-high' : ''}`} style={{ fontSize: '0.7rem', padding: '4px 12px' }}>
+        <span className={`badge ${cls}`} style={{ fontSize: '0.7rem', padding: '4px 12px' }}>
           {VERDICT_LABEL[display] || display}
         </span>
       );
@@ -421,7 +420,6 @@ import ReactDOM from 'react-dom/client';
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
               <span className="mono" style={{
                 fontSize: '3rem', fontWeight: 700, color, lineHeight: 1,
-                textShadow: `0 0 24px ${color}99, 0 0 8px ${color}66`,
                 animation: 'countUp 0.4s ease-out both',
               }}>{riskScore}</span>
               <span className="mono" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/100</span>
@@ -429,7 +427,7 @@ import ReactDOM from 'react-dom/client';
             </div>
           </div>
           <div className="score-bar-track">
-            <div className="score-bar-fill" style={{ width: `${pct}%`, background: color, boxShadow: `0 0 8px ${color}88` }} />
+            <div className="score-bar-fill" style={{ width: `${pct}%`, background: color }} />
           </div>
         </div>
       );
@@ -592,7 +590,7 @@ import ReactDOM from 'react-dom/client';
       return (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
           {cards.map((card, i) => (
-            <div key={card.label} className="stat-card animate-in" style={{ animationDelay: `${i * 0.08}s`, borderLeft: `4px solid ${card.color}`, background: `linear-gradient(90deg, color-mix(in srgb, ${card.color} 6%, var(--bg-surface)) 0%, var(--bg-surface) 60%)` }}>
+            <div key={card.label} className="stat-card animate-in" style={{ animationDelay: `${i * 0.08}s`, borderLeft: `4px solid ${card.color}` }}>
               <div className="stat-label">{card.label}</div>
               {loading && rows === null
                 ? <div className="skeleton" style={{ height: 32, width: '60%', margin: '4px 0' }} />

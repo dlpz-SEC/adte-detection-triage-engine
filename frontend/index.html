@@ -102,25 +102,20 @@
       from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    @keyframes pulse-high {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0.4); }
-      50%      { box-shadow: 0 0 0 6px rgba(249,115,22,0); }
-    }
     @keyframes skeleton-pulse {
       0%, 100% { opacity: 0.4; }
       50%      { opacity: 0.15; }
     }
     @keyframes mitre-flash {
-      0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.8); background: rgba(59,130,246,0.18); }
-      60%  { box-shadow: 0 0 0 10px rgba(59,130,246,0); background: rgba(59,130,246,0.1); }
-      100% { box-shadow: none; background: transparent; }
+      0%   { background: rgba(59,130,246,0.18); }
+      60%  { background: rgba(59,130,246,0.1); }
+      100% { background: transparent; }
     }
     .mitre-highlight-flash { animation: mitre-flash 0.75s ease 2; border-color: var(--accent) !important; }
     .animate-in {
       animation: fadeInUp 0.35s ease-out forwards;
       opacity: 0;
     }
-    .pulse-high { animation: pulse-high 2s ease-in-out infinite; }
     .skeleton {
       animation: skeleton-pulse 1.5s ease-in-out infinite;
       background: var(--border);

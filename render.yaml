@@ -14,7 +14,10 @@ services:
         value: "false"
       - key: ADTE_KILL_SWITCH
         value: "false"
-      - key: OPENAI_API_KEY
+      # Set to the Render service URL (e.g. https://adte-xxxx.onrender.com) in the
+      # dashboard. Without it, CORS denies every cross-origin request and the UI
+      # cannot reach the API from the deployed origin.
+      - key: ADTE_CORS_ORIGINS
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false

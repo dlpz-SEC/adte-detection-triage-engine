@@ -71,8 +71,6 @@ SIGNAL_WEIGHTS: dict[str, int] = {
     "login_hour_anomaly": WEIGHT_LOGIN_HOUR_ANOMALY,
 }
 
-_TOTAL_WEIGHT: int = sum(SIGNAL_WEIGHTS.values())  # 100
-
 # ---------------------------------------------------------------------------
 # Verdict thresholds
 # ---------------------------------------------------------------------------

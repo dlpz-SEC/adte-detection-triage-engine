@@ -26,7 +26,6 @@ from adte.intel.sigma_fp_registry import FPRegistry
 from adte.intel.threat_intel import check_threat_intel
 from adte.models import (
     NormalizedIncident,
-    SignInMetadata,
     ThreatIntelResult,
     UserProfile,
 )

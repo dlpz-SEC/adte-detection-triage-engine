@@ -83,14 +83,6 @@ class MitreMapper:
                 return mapping
         return None
 
-    def get_all_tactics(self) -> list[str]:
-        """Return all unique MITRE tactics in the mapping, sorted.
-
-        Returns:
-            Sorted list of unique tactic name strings.
-        """
-        return sorted(set(m.get("mitre_tactic") for m in self.mappings))
-
 
 def get_techniques(signal_names: list[str]) -> list[str]:
     """Return deduplicated ATT&CK technique IDs for a list of fired signal names.

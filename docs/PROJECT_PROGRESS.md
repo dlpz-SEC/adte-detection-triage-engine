@@ -6,7 +6,7 @@ A detailed, chronological account of every major decision, feature, and fix made
 
 ## Project Overview
 
-**ADTE (Autonomous Detection & Triage Engine)** is a deterministic, source-agnostic security incident triage engine. It ingests alerts from multiple SIEM sources, normalises them into a common schema, scores across five weighted signals, and produces a structured verdict with per-signal rationale and recommended actions — all governed by a six-layer safety gate system that defaults to blocking all automated execution.
+**ADTE (Autonomous Detection & Triage Engine)** is a deterministic, source-agnostic security incident triage engine. It ingests alerts from multiple SIEM sources, normalises them into a common schema, scores across five weighted signals, and produces a structured verdict with per-signal rationale and a recommended action. ADTE recommends, it does not act: it performs no automated containment, and every medium/high verdict is flagged for human review. (Historical note: earlier phases described a six-layer execution-gate model; that unwired execution layer was removed in Phase 23 — see below.)
 
 The engine is not a black box. Every verdict can be fully explained: which signals fired, why, at what confidence, and what the recommended containment action is. Human review is explicitly required for medium and high risk verdicts.
 
@@ -1365,10 +1365,103 @@ Hint footer below the table explains all destinations. All interactive elements 
 
 ---
 
+## Phase 22 — Verdict Export Endpoint + Render CORS Config
+
+**Scope:** Complete the audit-trail story with a downloadable export, and fix the Render
+deployment's CORS configuration. Test count 252 → 260.
+
+### 22-A — `GET /api/verdicts/export` (`adte/server.py`)
+
+A new endpoint streams the verdict audit log as a downloadable file. It reuses the existing
+`query_verdicts()` filters so the export matches what the Verdict History view shows.
+
+- **Role:** `analyst` (same as `GET /api/verdicts`); **rate limit:** 10/minute
+- **`format`** — `csv` (default) or `json`; invalid values return 400
+- **`verdict`** — optional exact-match filter (e.g. `high_risk`)
+- **`since`** — optional ISO 8601 lower bound on `logged_at`; invalid values return 400
+- **`limit`** — default 1000, capped at 10000 (higher than the 500 cap on the paginated view
+  because an export is a deliberate bulk pull)
+- **CSV** is generated with the stdlib `csv.DictWriter` against an explicit column list
+  (`_EXPORT_COLUMNS`) so the file layout is stable regardless of SQLite column order. Both
+  formats return a `Content-Disposition: attachment` header with a UTC-timestamped filename
+  (`adte_verdicts_YYYYMMDDTHHMMSSZ.csv`/`.json`).
+
+No new dependencies — stdlib `csv` + `io`, and `Response` from Flask.
+
+**Tests (`tests/test_verdict_export.py`) — 8 new:** default-format-is-csv, csv-contains-data,
+json-format, format-case-insensitive, verdict-filter-passthrough, invalid-format-400,
+invalid-since-400, empty-db-header-only-csv. The fixture mirrors `test_feedback.py`'s
+test-client pattern (TESTING=True, DB_PATH monkeypatched to a tmp database seeded via
+`log_verdict`).
+
+### 22-B — `render.yaml` env var fixes
+
+- **`ADTE_CORS_ORIGINS`** added as `sync: false`. The CORS layer in `server.py` denies all
+  cross-origin requests when this is unset, so the deployed UI could not reach the API from
+  the Render origin. The value must be set to the Render service URL in the dashboard.
+- **`OPENAI_API_KEY`** removed — OpenAI is not implemented anywhere in the engine; the
+  declaration was misleading noise.
+
+### Investigated but intentionally not done — wiring `llm_enrich()`
+
+`enrich_alert()` keys on a `rule_description` field that `NormalizedIncident` does not have,
+so wiring `.llm_enrich()` into the pipeline as-is returns a constant mock blob
+(`T0000`/`Unknown`/`Manual review required`) on every triage — misleading, and redundant with
+the real `get_techniques(fired)` mapping the route already computes. Left `null` until
+`enrich_alert()` is adapted to map actual `NormalizedIncident` fields. See `Handoff.md` §5.3.
+
+---
+
+## Phase 23 — Triage-Only Consolidation (Execution Layer Removed)
+
+**Scope:** Resolve the long-standing tension between ADTE's documented "execution /
+containment" arm and the fact that nothing ever wired it. Decision: commit to ADTE
+being a **triage-only** engine — it ingests, scores, and *recommends*; it performs no
+automated containment. Remove the dead enforcement code and resync all docs to match.
+Test count 260 → **242**.
+
+### What was removed
+
+| Removed | Why |
+|---------|-----|
+| `adte/config.py` (`SafetyConfig` + `can_execute` + `log_blocked_action`) | `can_execute()` was never called at runtime — only by `test_safety.py`. The `SafetyConfig` built in `cli.py` was a dead local, discarded immediately. |
+| `tests/test_safety.py` (18 tests) | Sole consumer of `can_execute`. 260 → 242. |
+| `cli.py` `--execute` / `--dry-run` flags + mutual-exclusivity check | Only fed the discarded `SafetyConfig`; meaningless without an execution path. |
+| Unused `SafetyConfig` import in `conftest.py`; now-unused `sys` import in `cli.py` | Dead imports surfaced by the above. |
+| `openai`, `azure-identity`, `azure-monitor-query` (runtime), `pytest-asyncio` (dev) deps | `openai` never imported (Phase 15/22 already called it misleading); `azure-*` only appeared in deleted EXTENSIONS example code; no async code exists. |
+| (Prior session) `adapters/sentinel.py`, `adapters/entra_id.py` | Mock-only action adapters, never imported — the only intended consumers of the execution layer. |
+
+### What was kept (deliberately)
+
+- **Displayed safety posture** — `engine._build_safety()` advisory flags
+  (`human_review_required`, `automated_actions_permitted`) and the `/api/config`
+  gate fields both read env vars directly, not `SafetyConfig`. They survive as
+  *informational* output. `docs/SAFETY.md` now documents the `ADTE_KILL_SWITCH` /
+  `ADTE_DRY_RUN` / etc. env vars as a **reserved configuration model for a future
+  execution layer — not currently enforced**.
+- **LLM enrichment scaffolding** — `llm/enrichment.py`, `TriageEngine.llm_enrich()`,
+  and the top 8 `mitre_technique_map.yaml` entries are retained as planned future
+  work (still unwired; `llm_enrichment` stays `null`).
+
+### Docs resynced
+
+`ARCHITECTURE.md` (removed Execute stage + 6-gate block + deleted adapters from the
+module map), `SAFETY.md` (rewritten to the "recommend, never act" model), `EXTENSIONS.md`
+(removed Sentinel/Graph/action-execution sections; kept signal + enrichment guides),
+`README.md` (242/12 tests, 9 views, removed broken demo image, recommend-only framing,
+execution layer moved to roadmap), `server.py` CSP docstring (matched the actual
+locked-down policy).
+
+> **Note on the DO-NOT-MODIFY rule and the 260-test gate:** this phase deliberately
+> overrode both, on explicit user instruction. The 5-signal scoring logic in `engine.py`
+> is untouched; only dead execution-layer code and its tests were removed.
+
+---
+
 ## Open Items
 
-- **Real Sentinel REST API** — the mock adapter covers response actions; live ingestion from Azure Monitor / SecurityIncidents table is not implemented.
-- **`llm_enrich()` in server pipeline** — `TriageEngine.llm_enrich()` and `adte/llm/enrichment.py` are fully implemented but not called in the server's `/api/triage` route. The `llm_enrichment` field in the response is always `null`.
-- **Verdict export** — the SQLite audit log persists verdicts locally; no CSV/JSON export endpoint yet.
+- **`llm_enrich()` in server pipeline** — implemented and tested but intentionally not wired; `enrich_alert()` must first be adapted to map real `NormalizedIncident` fields (it currently keys on a non-existent `rule_description` and always returns a mock blob). `llm_enrichment` stays `null` until then. Retained as planned future work.
+- **Automated containment / response-execution layer** — removed in Phase 23; ADTE is recommend-only. If revived, `docs/SAFETY.md` documents the reserved env-var gating contract it is expected to honour.
+- **Real Sentinel REST API** — live ingestion from Azure Monitor / SecurityIncidents table is not implemented (ADTE accepts the Sentinel incident JSON *format* only).
 - **Batch processing for mock source** — `--source mock` processes one file at a time; a `--batch` flag for a directory of incidents is not implemented.
 - **SOAR-ready output** — the verdict JSON is structured but not yet validated against any SOAR platform's action schema.

@@ -41,7 +41,7 @@ Each signal is weighted by its real-world reliability and combined into a 0–10
 
 The verdict is **deterministic** — the same incident always produces the same score, the same rationale, the same recommended action. There is no black box. Every decision can be explained signal by signal.
 
-Before any automated action executes, six independent safety gates must all pass. The system is fail-closed by default: dry-run mode on, execution disabled, kill switch available. A human can always halt the engine immediately.
+ADTE recommends, it does not act. The pipeline ends at an explainable verdict and a *recommended* action; every medium/high verdict is flagged for human review. Acting on a verdict — disabling an account, revoking sessions, closing an incident — is left to the analyst or a downstream SOAR/ticketing workflow. There is no code path in ADTE that mutates an external system.
 
 ADTE is not a SOC replacement. It is a force multiplier — it handles the mechanical triage so analysts can focus on the cases that actually need human judgment.
 
@@ -51,14 +51,14 @@ ADTE is not a SOC replacement. It is a force multiplier — it handles the mecha
 
 - Automated triage for security incidents from multiple sources using 5 weighted signals
 - Deterministic scoring (0-100 risk score, 0-100 confidence)
-- 6-layer safety gate system before any automated action
+- Human-in-the-loop by default — recommends an action, never executes one
 - Explainable decisions with per-signal rationale
-- CLI for dry-run analysis and batch processing
+- CLI and web UI for running triage and reviewing verdicts
 
 ## What This Is NOT
 
 - Not a SOC replacement — human review required for medium/high risk
-- Not production-ready — uses mock APIs, needs real SIEM/API integration
+- Not an actuator — it recommends containment, it does not perform it
 - Not a detection rule library — focuses on triage, not alert generation
 - Not magic — garbage signals in = garbage verdicts out
 
@@ -66,7 +66,7 @@ ADTE is not a SOC replacement. It is a force multiplier — it handles the mecha
 
 ```
 Security Alert / Incident
-  (Sentinel mock, Wazuh, …)
+  (Wazuh live, Sentinel-format JSON)
        ↓
   [Normalize]
        ↓
@@ -76,9 +76,8 @@ Security Alert / Incident
        ↓
    [Policy]  → Verdict: LOW / MEDIUM / HIGH
        ↓
-[Safety Gates] → 6 checks before any action
-       ↓
-  [Execute]  → Source adapters (Sentinel mock, Wazuh, Entra ID mock)
+   [Report]  → Verdict + per-signal rationale + recommended action
+                (returned to analyst / web UI / downstream workflow)
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed pipeline and module dependency map.
@@ -99,14 +98,12 @@ python -m adte triage --input examples/incident_needs_human_ambiguous.json --for
 
 ## Demo
 
-Interactive web UI for running triage on incident JSON and reviewing verdicts live.  No CLI required — paste any `NormalizedIncident` JSON, or use the **Load** buttons to pre-fill one of the three bundled scenarios, then click **Run Triage**.
+Interactive web UI for running triage on incident JSON and reviewing verdicts live.  No CLI required — paste any `NormalizedIncident` JSON, or use the **Quick Load** tiles to pre-fill one of the four bundled scenarios (critical / high / medium / low), then click **Run Triage**.
 
 ```bash
 python -m adte.server
 # Open http://localhost:5000
 ```
-
-![Demo UI placeholder](docs/demo-placeholder.png)
 
 ## Wazuh Integration
 
@@ -213,27 +210,23 @@ Weights sum to 100. See [docs/DECISIONS.md](docs/DECISIONS.md) for threshold log
 
 ## Safety Model
 
-Six gates evaluated in order — ALL must pass for execution:
+ADTE's safety guarantee is architectural: it has no code path that mutates an
+external system. It produces verdicts and *recommended* actions; every
+medium/high verdict is flagged `human_review_required`, and acting on it is a
+human or downstream-system decision.
 
-1. **Kill Switch** — `ADTE_KILL_SWITCH=true` halts everything
-2. **Dry Run** — `ADTE_DRY_RUN=true` (default) blocks writes
-3. **Execution Enabled** — `ADTE_EXECUTION_ENABLED=true` required
-4. **Tenant Allowlist** — must be in `ADTE_TENANT_ALLOWLIST`
-5. **User/Severity Gate** — user in allowlist OR severity >= High
-6. **Action Allowlist** — action type in `ADTE_ACTION_ALLOWLIST`
-
-Default config blocks everything. You must explicitly disable dry-run AND enable execution to take any action.
-
-See [docs/SAFETY.md](docs/SAFETY.md) for full gate logic and example scenarios.
+See [docs/SAFETY.md](docs/SAFETY.md) for the full safety model, including the
+environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-213 tests across 10 files — test_geo, test_intel, test_policy, test_engine, test_safety, test_llm_assist, test_wazuh_adapter, test_feedback, test_mitre_mapper, test_sql_injection
+242 tests across 12 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_wazuh_adapter, test_feedback, test_mitre_mapper, test_sql_injection, test_audit_log, test_ticket_client, test_verdict_export
 
 Example verdicts:
+- `incident_account_takeover_tor_exfil.json` → **CRITICAL** (~99)
 - `incident_impossible_travel_mfa_fatigue.json` → **HIGH_RISK** (79)
-- `incident_benign_vpn_travel.json` → **LOW_RISK** (5)
 - `incident_needs_human_ambiguous.json` → **MEDIUM_RISK** (43)
+- `incident_benign_vpn_travel.json` → **LOW_RISK** (5)
 
 ## Example Output
 
@@ -293,9 +286,9 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 
 ## Limitations
 
-- Sentinel integration uses mock APIs — Wazuh Indexer integration is functional
+- Sentinel support is the incident JSON format only (no live Azure API) — Wazuh Indexer live ingestion is functional
+- Recommend-only — ADTE surfaces a recommended action but performs no automated containment
 - Batch processing limited to Wazuh source — mock source processes one incident file at a time
-- No persistence — stateless between runs
 - LLM summary is optional polish, not decision input
 
 ## Roadmap
@@ -304,14 +297,15 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Multi-source threat intel enrichment (AbuseIPDB, VirusTotal, OTX)
 - [x] Anthropic SDK integration — structured LLM summaries with deterministic fallback when no key configured
 - [x] Security audit — all HIGH/MEDIUM/LOW findings remediated
-- [x] Full 10-view web UI (Flask + single-file React SPA)
+- [x] Full 9-view web UI (Flask + esbuild-bundled React SPA)
 - [x] Alert router — Slack webhook integration with stdout fallback (`scripts/alert_router.py`)
 - [x] Auto-ticket pipeline — Linear and Trello ticket creation for high/medium risk verdicts (`scripts/ticket_client.py`)
 - [x] Verdict audit log — SQLite persistence of every triage verdict via `/api/verdicts` endpoint
 - [x] Analyst feedback loop — FP/TP labels via API + UI; FP IPs auto-promoted to FP registry
 - [x] MITRE ATT&CK + NIST 800-61 badges on all verdict surfaces (triage result, queue, history)
 - [x] Verdict History + Feedback History views with filter and clear controls
-- [ ] Real Sentinel REST API integration
+- [ ] Real Sentinel REST API integration (live Azure ingestion)
+- [ ] Automated containment/response-execution layer (gated) — currently recommend-only
 - [ ] Batch processing mode
 - [ ] KQL rule pack for upstream detection
 - [ ] SOAR-ready JSON action output for open-source orchestration tools
@@ -329,7 +323,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 
 ## Development
 
-This project was built with AI-assisted drafting and scaffolding to accelerate iteration. All code was reviewed, tested, and modified by hand. Final logic, signal weights, safety gates, and architectural decisions are deterministic and human-owned.
+This project was built with AI-assisted drafting and scaffolding to accelerate iteration. All code was reviewed, tested, and modified by hand. Final logic, signal weights, and architectural decisions are deterministic and human-owned.
 
 ## License
 

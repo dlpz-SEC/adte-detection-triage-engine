@@ -16,8 +16,10 @@ Usage::
 from __future__ import annotations
 
 import concurrent.futures
+import csv
 import functools
 import hmac
+import io
 import json
 import logging
 import secrets
@@ -31,7 +33,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)  # a
 import os
 from typing import Any
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -325,9 +327,10 @@ init_db(DB_PATH)
 def add_security_headers(response: Any) -> Any:
     """Inject defensive HTTP headers on every response.
 
-    unsafe-inline and unsafe-eval are required by the inline React/Babel
-    bundle until the frontend is compiled.  All other sources are locked
-    to 'self' or specific CDN allowlists.
+    The frontend is an esbuild-compiled bundle served from 'self', so the
+    script-src CSP needs no 'unsafe-inline'/'unsafe-eval'. Scripts are limited
+    to 'self' plus the cdnjs allowlist (Chart.js); styles/fonts to 'self' and
+    the Google Fonts hosts. All other sources default to 'self'.
     """
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -697,6 +700,91 @@ def verdicts() -> Any:
     return jsonify({"verdicts": rows, "count": len(rows)}), 200
 
 
+# Column order for the CSV export — explicit so the file layout is stable
+# regardless of SQLite's column ordering or the presence of soft-delete fields.
+_EXPORT_COLUMNS: list[str] = [
+    "id",
+    "incident_id",
+    "verdict",
+    "risk_score",
+    "confidence",
+    "recommended_action",
+    "mitre_techniques",
+    "nist_phase",
+    "source",
+    "timestamp",
+    "logged_at",
+]
+
+
+@app.route("/api/verdicts/export")
+@require_role("analyst")
+@limiter.limit("10/minute")
+def export_verdicts() -> Any:
+    """Export audit-log verdict rows as a downloadable CSV or JSON file.
+
+    Mirrors the filters of ``GET /api/verdicts`` but streams the result
+    as an attachment so analysts can pull the audit trail into a
+    spreadsheet or downstream tooling.
+
+    NIST 800-61 Phase: Post-Incident Activity — supports retrospective
+    review and reporting by exporting the persistent decision trail.
+
+    Query Parameters:
+        format:  ``"csv"`` (default) or ``"json"``.
+        verdict: Optional exact-match filter (e.g. ``"high_risk"``).
+        since:   Optional ISO 8601 lower bound on ``logged_at``.
+        limit:   Maximum rows (default 1000, capped at 10000).
+
+    Returns:
+        A ``text/csv`` or ``application/json`` attachment (200), or
+        ``{"error": "..."}`` on an invalid ``format`` or ``since`` (400).
+    """
+    fmt: str = (request.args.get("format") or "csv").lower()
+    if fmt not in ("csv", "json"):
+        return jsonify({"error": "format must be 'csv' or 'json'"}), 400
+
+    verdict_filter: str | None = request.args.get("verdict") or None
+    since: str | None = request.args.get("since") or None
+    if since is not None:
+        try:
+            datetime.fromisoformat(since)
+        except ValueError:
+            return jsonify({
+                "error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"
+            }), 400
+    try:
+        limit = max(1, min(10000, int(request.args.get("limit", 1000))))
+    except (TypeError, ValueError):
+        limit = 1000
+
+    rows = query_verdicts(DB_PATH, verdict_filter=verdict_filter, limit=limit, since=since)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    if fmt == "json":
+        body = json.dumps({"verdicts": rows, "count": len(rows)}, indent=2)
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.json"'
+            },
+        )
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_EXPORT_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({col: row.get(col, "") for col in _EXPORT_COLUMNS})
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.csv"'
+        },
+    )
+
+
 @app.route("/api/feedback", methods=["GET"])
 @require_role("analyst")
 @limiter.limit("60/minute")
@@ -968,9 +1056,10 @@ def config() -> Any:
         ``execution_enabled``, ``tenant_allowlist``,
         ``user_allowlist``, ``action_allowlist``.
     """
-    # _b, _l, _mask_key are defined locally because they read env vars
-    # that SafetyConfig also reads — keeping them here avoids exposing a
-    # secret-masking helper as a module-level symbol.
+    # _b, _l, _mask_key are defined locally and read the safety-config env
+    # vars directly. These vars are surfaced read-only here for analyst
+    # visibility; they are reserved for a future execution layer and do not
+    # gate anything today (ADTE performs no automated actions).
     def _b(key: str, default: str = "false") -> bool:
         return os.environ.get(key, default).lower() == "true"
 

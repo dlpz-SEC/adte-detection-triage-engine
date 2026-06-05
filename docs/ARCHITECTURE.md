@@ -15,17 +15,14 @@ ADTE follows the **NIST SP 800-61 Rev. 2** incident response lifecycle, implemen
 │                                                                  v         │
 │                                                            ┌────────┐      │
 │                                                            │ REPORT │      │
-│                                                            └────┬───┘      │
-│                                                                 │          │
-└─────────────────────────────────────────────────────────────────┼──────────┘
-                                                                  │
-                          NIST 800-61: Containment                v
-┌─────────────────────────────────────────────────────────────────────────────┐
-│   ┌──────────────┐   ┌─────────┐                                           │
-│   │ SAFETY GATES │──>│ EXECUTE │  (Sentinel adapter, Wazuh Indexer, Entra ID adapter)  │
-│   │ (6 layers)   │   │ (gated) │                                           │
-│   └──────────────┘   └─────────┘                                           │
+│                                                            └────────┘      │
+│                                                                            │
 └─────────────────────────────────────────────────────────────────────────────┘
+
+ADTE is a triage engine: it ends at a structured, explainable verdict and a
+*recommended* human-review action. It does not execute containment itself —
+acting on the verdict (disable account, revoke sessions, etc.) is left to the
+analyst or a downstream SOAR/ticketing workflow.
 ```
 
 ## Pipeline Stages
@@ -78,10 +75,12 @@ The aggregate risk score is `sum(signal_scores)`, clamped to [0, 100].
 
 **Input:** Risk score → **Output:** Verdict + recommended actions
 
-Maps the aggregate risk score to a categorical verdict using fixed thresholds:
-- `risk_score < 30` → `low_risk` → auto-close, update baseline
-- `30 ≤ risk_score ≤ 70` → `medium_risk` → escalate for analyst review
-- `risk_score > 70` → `high_risk` → disable account, revoke sessions, escalate P1
+Maps the aggregate risk score to a categorical verdict using fixed thresholds.
+Each verdict carries a *recommended* action for the analyst — ADTE surfaces it,
+it does not perform it:
+- `risk_score < 30` → `low_risk` → recommend auto-close / update baseline
+- `30 ≤ risk_score ≤ 70` → `medium_risk` → recommend analyst review
+- `risk_score > 70` → `high_risk` → recommend disable account, revoke sessions, escalate P1
 
 **Module:** `adte/engine.py` (`decide`), `adte/decision_policy.py` (`classify_verdict`)
 
@@ -93,19 +92,14 @@ Compiles a structured report section with incident metadata, signal summary, saf
 
 **Modules:** `adte/report.py`, `adte/llm_assist.py`
 
-### 7. Execute (Gated)
-
-**Input:** Decision output → **Output:** API responses (or block records)
-
-Automated containment actions (close incident, post comment, revoke tokens, reset password, disable account) are executed only after passing all six safety gates. Every blocked action is logged as structured JSON to stderr for audit.
-
-**Modules:** `adte/adapters/sentinel.py`, `adte/adapters/entra_id.py`, `adte/config.py`
+The pipeline ends here. The verdict, per-signal rationale, and recommended
+action are returned to the caller (CLI, web UI, or `/api/triage`); any
+containment is performed by a human or downstream system, not by ADTE.
 
 ## Module Dependency Map
 
 ```
 cli.py
-├── config.py (SafetyConfig)
 ├── engine.py (TriageEngine)
 │   ├── decision_policy.py (weights, thresholds, confidence)
 │   ├── report.py (generate_report)
@@ -119,8 +113,7 @@ cli.py
 │       └── geo.py (haversine, travel speed, impossible travel)
 ├── models.py (all Pydantic models)
 └── adapters/
-    ├── sentinel.py (SentinelAdapter)
-    └── entra_id.py (EntraIDAdapter)
+    └── wazuh.py (WazuhAdapter — live OpenSearch ingestion)
 ```
 
 ## Data Flow
@@ -211,6 +204,6 @@ The alert router (`scripts/alert_router.py`) caps the in-memory `seen_ids` set a
 
 1. **Determinism** — The same input always produces the same verdict. No randomness, no external state mutation during scoring.
 2. **Explainability** — Every signal produces a human-readable rationale string. The output includes full evidence and signal breakdowns.
-3. **Safety by default** — All automated actions are blocked out of the box. Six independent gates must all pass. The kill switch provides emergency halt.
-4. **Separation of concerns** — Enrichment, scoring, policy, and execution are isolated modules with clean interfaces.
-5. **Auditability** — Blocked actions are logged as structured JSON to stderr. The report section includes timestamps, signal scores, and NIST phase alignment.
+3. **Human-in-the-loop by default** — ADTE recommends, it does not act. Every medium/high verdict is flagged `human_review_required`; containment is always a human or downstream-system decision.
+4. **Separation of concerns** — Ingestion, enrichment, scoring, and policy are isolated modules with clean interfaces.
+5. **Auditability** — Every verdict is persisted to the SQLite audit log. The report section includes timestamps, signal scores, and NIST phase alignment.

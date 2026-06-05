@@ -9,7 +9,7 @@ format.
 Usage::
 
     python -m adte triage --input examples/incident_impossible_travel_mfa_fatigue.json
-    python -m adte triage --input incident.json --execute --format pretty --explain
+    python -m adte triage --input incident.json --format pretty --explain
     python -m adte triage --source wazuh --hours 24 --format pretty --explain
 
 NIST 800-61 Phase: Detection & Analysis — provides the operator
@@ -19,7 +19,6 @@ interface for invoking and reviewing automated triage results.
 from __future__ import annotations
 
 import json
-import sys
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -31,7 +30,6 @@ import typer
 from pydantic import ValidationError
 
 from adte.adapters.wazuh import WazuhAdapter
-from adte.config import SafetyConfig
 from adte.engine import TriageEngine
 from adte.intel.sigma_fp_registry import FPRegistry
 from adte.models import NormalizedIncident, SentinelIncident
@@ -270,20 +268,6 @@ def triage(
             min=1,
         ),
     ] = 1,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run",
-            help="Run in dry-run mode (default). No write actions.",
-        ),
-    ] = True,
-    execute: Annotated[
-        bool,
-        typer.Option(
-            "--execute",
-            help="Enable execution mode (sets DRY_RUN=false, EXECUTION_ENABLED=true).",
-        ),
-    ] = False,
     output_format: Annotated[
         OutputFormat,
         typer.Option(
@@ -310,16 +294,9 @@ def triage(
 
     Reads from a local Sentinel JSON file (--source mock, default) or
     fetches live alerts from Wazuh (--source wazuh).  Runs enrichment
-    and scoring and outputs the verdict with risk score and recommended
-    actions.
+    and scoring and outputs the verdict with risk score, per-signal
+    rationale, and the recommended human-review action.
     """
-    # Validate mutually exclusive flags.
-    # dry_run defaults to True so we check sys.argv to distinguish an
-    # explicit --dry-run flag from the implicit default.
-    if execute and dry_run and "--dry-run" in sys.argv:
-        typer.echo("Error: --execute and --dry-run are mutually exclusive.", err=True)
-        raise typer.Exit(code=2)
-
     # --source mock and --source normalized both require --input.
     if source in (SourceType.mock, SourceType.normalized) and input_file is None:
         typer.echo(
@@ -327,12 +304,6 @@ def triage(
             err=True,
         )
         raise typer.Exit(code=2)
-
-    # Resolve safety config from CLI flags + environment.
-    if execute:
-        safety = SafetyConfig(dry_run=False, execution_enabled=True)
-    else:
-        safety = SafetyConfig(dry_run=dry_run)
 
     # Load incidents from the selected source.
     if source == SourceType.mock:

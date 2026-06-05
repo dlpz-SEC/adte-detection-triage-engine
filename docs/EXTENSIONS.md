@@ -1,145 +1,14 @@
 # Extensions Guide
 
-This document explains how to extend ADTE with real API integrations, new signal types, and additional enrichment sources.
+This document explains how to extend ADTE with new signal types and additional
+enrichment sources.
 
-## Connecting to the Real Sentinel REST API
-
-The current `SentinelAdapter` in `adte/adapters/sentinel.py` uses mock responses. To connect to the real Sentinel API:
-
-### Prerequisites
-
-1. **Azure App Registration** with the following API permissions:
-   - `Microsoft Sentinel Contributor` role on the Sentinel workspace
-   - Or granular permissions: `Microsoft.SecurityInsights/incidents/read`, `Microsoft.SecurityInsights/incidents/write`, `Microsoft.SecurityInsights/incidents/comments/write`
-
-2. **Environment variables:**
-   ```bash
-   AZURE_TENANT_ID=your-tenant-id
-   AZURE_CLIENT_ID=your-app-client-id
-   AZURE_CLIENT_SECRET=your-app-client-secret
-   SENTINEL_SUBSCRIPTION_ID=your-subscription-id
-   SENTINEL_RESOURCE_GROUP=your-resource-group
-   SENTINEL_WORKSPACE_NAME=your-workspace-name
-   ```
-
-### Implementation
-
-Replace the mock execution blocks in `SentinelAdapter` with real API calls:
-
-```python
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.securityinsight import SecurityInsights
-
-class SentinelAdapter:
-    def __init__(self, tenant_id: str, safety_config: SafetyConfig) -> None:
-        self._tenant_id = tenant_id
-        self._safety = safety_config
-        self._credential = DefaultAzureCredential()
-        self._client = SecurityInsights(
-            credential=self._credential,
-            subscription_id=os.environ["SENTINEL_SUBSCRIPTION_ID"],
-        )
-        self._rg = os.environ["SENTINEL_RESOURCE_GROUP"]
-        self._ws = os.environ["SENTINEL_WORKSPACE_NAME"]
-
-    def post_incident_comment(self, incident_id, comment, **kwargs):
-        # ... safety gate check (keep as-is) ...
-
-        # Replace mock with real API call:
-        result = self._client.incident_comments.create_or_update(
-            resource_group_name=self._rg,
-            workspace_name=self._ws,
-            incident_id=incident_id,
-            incident_comment_id=str(uuid.uuid4()),
-            incident_comment={"properties": {"message": comment}},
-        )
-        return {"status": "executed", "action": "POST_COMMENT", ...}
-```
-
-### Incident Ingestion
-
-To poll for new incidents instead of reading from JSON files:
-
-```python
-def poll_incidents(client, rg, ws, since_minutes=15):
-    """Poll Sentinel for recent incidents."""
-    filter_str = (
-        f"properties/createdTimeUtc ge "
-        f"{(datetime.utcnow() - timedelta(minutes=since_minutes)).isoformat()}Z"
-    )
-    incidents = client.incidents.list(
-        resource_group_name=rg,
-        workspace_name=ws,
-        filter=filter_str,
-        orderby="properties/createdTimeUtc desc",
-    )
-    return [SentinelIncident(**inc.as_dict()) for inc in incidents]
-```
-
-## Connecting to Microsoft Graph API (Entra ID)
-
-The current `EntraIDAdapter` in `adte/adapters/entra_id.py` uses mock responses. To connect to the real Graph API:
-
-### Prerequisites
-
-1. **Azure App Registration** with the following API permissions (Application type):
-   - `User.ReadWrite.All` — for password reset and account disable
-   - `User.RevokeSessions.All` — for token revocation
-   - Admin consent granted for all permissions
-
-2. **Environment variables:**
-   ```bash
-   AZURE_TENANT_ID=your-tenant-id
-   AZURE_CLIENT_ID=your-app-client-id
-   AZURE_CLIENT_SECRET=your-app-client-secret
-   ```
-
-### Implementation
-
-Replace mock execution blocks with Graph SDK calls:
-
-```python
-from azure.identity import ClientSecretCredential
-from msgraph import GraphServiceClient
-
-class EntraIDAdapter:
-    def __init__(self, tenant_id: str, safety_config: SafetyConfig) -> None:
-        self._tenant_id = tenant_id
-        self._safety = safety_config
-        self._credential = ClientSecretCredential(
-            tenant_id=tenant_id,
-            client_id=os.environ["AZURE_CLIENT_ID"],
-            client_secret=os.environ["AZURE_CLIENT_SECRET"],
-        )
-        self._graph = GraphServiceClient(self._credential)
-
-    async def revoke_refresh_tokens(self, user_upn, severity):
-        # ... safety gate check (keep as-is) ...
-
-        # Replace mock with real Graph call:
-        result = await self._graph.users.by_user_id(user_upn) \
-            .revoke_sign_in_sessions.post()
-        return {"status": "executed", "action": "REVOKE_SESSIONS", ...}
-
-    async def disable_user(self, user_upn, severity):
-        # ... safety gate check (keep as-is) ...
-
-        from msgraph.generated.models.user import User
-        user_update = User(account_enabled=False)
-        await self._graph.users.by_user_id(user_upn).patch(user_update)
-        return {"status": "executed", "action": "DISABLE_ACCOUNT", ...}
-```
-
-### Dependencies
-
-Add to `pyproject.toml`:
-```toml
-dependencies = [
-    # ... existing ...
-    "msgraph-sdk>=1.0",
-    "azure-identity>=1.15",
-]
-```
+> **Scope note:** ADTE is a triage engine — it ingests, scores, and recommends.
+> An automated-containment / response-execution layer (acting on verdicts in
+> Sentinel, Entra ID, etc.) is a roadmap item, not part of the current codebase.
+> The extension points below all sit on the triage side of the pipeline. For a
+> new *ingestion* source, model it on the live `adte/adapters/wazuh.py` adapter,
+> which converts an external alert feed into `NormalizedIncident` objects.
 
 ## Adding New Signal Types
 
@@ -305,35 +174,17 @@ async def get_user_profile_from_graph(upn: str) -> UserProfile:
 ```
 
 The `UserProfile` model in `adte/models.py` already supports all necessary fields:
-- `known_devices: list[DeviceInfo]` — from Entra ID registered devices
+- `known_devices: list[DeviceInfo]` — registered device inventory
 - `baseline_login_hours: LoginHourRange` — from sign-in log time analysis
 - `last_seen_location: GeoLocation | None` — from most recent sign-in
 - `last_seen_at: datetime | None` — timestamp of last activity
-- `risk_level: str` — from Entra ID Identity Protection
+- `risk_level: str` — from an upstream identity-risk provider
 
-## Adding New Action Types
+## Adding New Recommended Actions
 
-### Step 1: Create the adapter method
-
-Add a new method to the appropriate adapter (`SentinelAdapter` or `EntraIDAdapter`):
-
-```python
-def quarantine_mailbox(self, user_upn: str, severity: str) -> dict:
-    action_type = "QUARANTINE_MAILBOX"
-    # ... standard safety gate check pattern ...
-```
-
-### Step 2: Register the action type
-
-Add the action type to `ADTE_ACTION_ALLOWLIST` in your environment:
-
-```bash
-ADTE_ACTION_ALLOWLIST=CLOSE_INCIDENT,POST_COMMENT,QUARANTINE_MAILBOX
-```
-
-### Step 3: Wire into the decision engine
-
-Update `engine.py` `decide()` to include the new action in the recommended actions list:
+The list of recommended actions per verdict lives in `engine.py` `decide()`
+(`self._actions`). These are advisory strings surfaced to the analyst — ADTE does
+not execute them. To add one, append it to the relevant verdict branch:
 
 ```python
 if self._verdict == "high_risk":
@@ -345,3 +196,6 @@ if self._verdict == "high_risk":
         "create_ticket_p1",
     ]
 ```
+
+Consuming these recommendations (e.g. driving a SOAR playbook) is the
+responsibility of a downstream system, not ADTE.

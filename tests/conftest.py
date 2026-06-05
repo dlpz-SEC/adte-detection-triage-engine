@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 
-from adte.config import SafetyConfig
 from adte.intel.sigma_fp_registry import FPRegistry
 from adte.models import NormalizedIncident, SentinelIncident
 from adte.store.user_history import get_user_profile
