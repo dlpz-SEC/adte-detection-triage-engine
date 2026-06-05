@@ -6,6 +6,7 @@
 # AI/Tool scaffolding
 .claude/
 CLAUDE.md
+Handoff.md
 *.skill
 
 # Python
