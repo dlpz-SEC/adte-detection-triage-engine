@@ -1,0 +1,35 @@
+# Keep the build context lean and secret-free. The frontend bundle is rebuilt
+# inside the image, and node_modules / venvs / caches must never be shipped.
+.git
+.gitignore
+.github
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend build artefacts (rebuilt in stage 1)
+frontend/node_modules/
+frontend/bundle.js
+
+# Secrets & runtime data (must not be baked into the image)
+.env
+*.db
+
+# Local tooling / docs not needed at runtime
+.claude/
+.vscode/
+.idea/
+tests/
+Handoff.md
