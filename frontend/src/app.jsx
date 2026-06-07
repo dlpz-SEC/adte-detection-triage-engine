@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 
-    const API_BASE = "http://localhost:5000";
+    // Same-origin: empty base means every fetch is relative ("/api/...", "/health"),
+    // so the UI talks to whatever origin served it — localhost:5000/8080 in dev, or the
+    // Railway/Render URL in prod. Hardcoding a host (e.g. http://localhost:5000) breaks
+    // the deployed app because the browser would call the user's own machine.
+    const API_BASE = "";
 
     // Session auth uses an HttpOnly cookie set by /api/auth/login.
     // The cookie is sent automatically by the browser — no JS-readable
