@@ -268,6 +268,10 @@ The `_call_claude()` function caught `Exception` broadly and returned `None` wit
 
 **M-4: MFA fatigue capitulation check — ordering bug for Wazuh (`engine.py`)**
 
+> *Historical note: field names below are pre-OCSF-migration. Today the engine reads
+> `auth_status == "success"`/`"failure"` over `type == "authentication"` events; see the OCSF
+> schema migration entry in the build sequence.*
+
 The fatigue capitulation check used `denied[0]` to find the first MFA denial and checked whether any success followed it:
 
 ```python

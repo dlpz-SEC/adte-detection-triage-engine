@@ -1,7 +1,7 @@
 {
   "incident_id": "INC-2025-0043",
   "title": "Unusual sign-in location detected",
-  "severity": "Medium",
+  "source": "azure_ad",
   "status": "New",
   "created_time": "2025-01-16T11:15:00Z",
   "entities": [
@@ -46,7 +46,7 @@
       "rule_name": "Sign-in from unusual location",
       "description": "User signed in from Paris, a new location not in baseline",
       "tactics": ["InitialAccess"],
-      "sign_in_events": [
+      "events": [
         {
           "user_principal_name": "bob@contoso.com",
           "ip_address": "10.8.0.12",
@@ -59,9 +59,9 @@
           "device_id": "dev-003",
           "device_name": "Bob-Surface",
           "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft 365",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-16T08:05:00Z"
         },
         {
@@ -76,9 +76,9 @@
           "device_id": "dev-003",
           "device_name": "Bob-Surface",
           "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft Teams",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-16T08:07:00Z"
         },
         {
@@ -93,9 +93,9 @@
           "device_id": "dev-003",
           "device_name": "Bob-Surface",
           "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Salesforce",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-16T11:10:00Z"
         },
         {
@@ -110,9 +110,9 @@
           "device_id": "dev-003",
           "device_name": "Bob-Surface",
           "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft 365",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-16T11:12:00Z"
         }
       ]

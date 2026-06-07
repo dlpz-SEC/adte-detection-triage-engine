@@ -132,23 +132,72 @@ def _validate_indexer_url(url: str) -> None:
         pass  # Not a bare IP address — DNS resolution is the operator's responsibility.
 
 
-def _severity_from_level(level: int) -> Literal["Low", "Medium", "High", "Critical"]:
-    """Map a Wazuh rule level (1–15) to an ADTE severity string.
+def _event_risk_from_level(level: int) -> Literal["none", "suspicious", "high", "confirmed"]:
+    """Map a Wazuh rule level (1–15) to a normalised ``event_risk`` band.
+
+    Wazuh provides no AAD-style risk label, so the rule level is mapped to
+    the source-agnostic ``event_risk`` enum.  Values outside the 1–15 range
+    are clamped to the nearest bound.
 
     Args:
         level: Wazuh ``rule.level`` integer.
 
     Returns:
-        One of ``"Low"``, ``"Medium"``, ``"High"``, ``"Critical"``.
-        Values outside the 1–15 range are clamped to the nearest bound.
+        One of ``"none"``, ``"suspicious"``, ``"high"``, ``"confirmed"``.
     """
     if level <= 3:
-        return "Low"
+        return "none"
     if level <= 7:
-        return "Medium"
+        return "suspicious"
     if level <= 11:
-        return "High"
-    return "Critical"
+        return "high"
+    return "confirmed"
+
+
+# Keyword hints used to classify a Wazuh alert into an OCSF event ``type``.
+_FILE_TYPE_HINTS: frozenset[str] = frozenset({
+    "syscheck", "fim", "file_integrity", "ossec_file",
+})
+_AUTH_TYPE_HINTS: frozenset[str] = frozenset({
+    "authentication", "auth", "login", "logon", "sshd", "pam",
+    "session", "password", "credential", "kerberos",
+})
+_NETWORK_TYPE_HINTS: frozenset[str] = frozenset({
+    "firewall", "ids", "ips", "suricata", "snort", "web", "attack",
+    "netflow", "network", "ddos", "scan", "shellshock", "http", "exploit",
+})
+_PROCESS_TYPE_HINTS: frozenset[str] = frozenset({
+    "process", "command", "exec", "audit", "syscall", "program_exec",
+})
+
+
+def _event_type_from_rule(rule: dict[str, Any]) -> Literal["authentication", "network", "process", "file"]:
+    """Classify a Wazuh alert into an OCSF-style event ``type``.
+
+    Inspects ``rule.groups`` and ``rule.description`` for keyword hints,
+    in priority order file → authentication → network → process.  Defaults
+    to ``"authentication"`` when no hint matches, since ADTE's behavioural
+    signals are authentication-centric.
+
+    Args:
+        rule: The ``rule`` sub-document of a Wazuh alert.
+
+    Returns:
+        One of ``"authentication"``, ``"network"``, ``"process"``, ``"file"``.
+    """
+    haystack = " ".join([
+        " ".join(str(g) for g in rule.get("groups", [])),
+        str(rule.get("description", "")),
+    ]).lower()
+    if any(h in haystack for h in _FILE_TYPE_HINTS):
+        return "file"
+    if any(h in haystack for h in _AUTH_TYPE_HINTS):
+        return "authentication"
+    if any(h in haystack for h in _NETWORK_TYPE_HINTS):
+        return "network"
+    if any(h in haystack for h in _PROCESS_TYPE_HINTS):
+        return "process"
+    return "authentication"
 
 
 def _extract_user(alert: dict[str, Any]) -> str:
@@ -434,19 +483,21 @@ class WazuhAdapter:
         Field mapping:
 
         - ``alert["id"]``                    → ``incident_id``
-        - ``rule.level`` via severity table  → ``severity``
+        - ``"wazuh"``                        → ``source``
         - ``alert["@timestamp"]``            → ``created_time``
         - ``_extract_user(alert)``           → ``user``
         - One ``SignInMetadata`` per alert:
-          - ``_extract_user``     → ``user_principal_name``
-          - ``_extract_srcip``    → ``ip_address``
-          - ``None``              → ``location`` (Wazuh provides no geo;
+          - ``_extract_user``         → ``user_principal_name``
+          - ``_event_type_from_rule`` → ``type``
+          - ``_extract_srcip``        → ``ip_address``
+          - ``None``                  → ``location`` (Wazuh provides no geo;
             the engine will skip the travel signal and redistribute weight)
-          - ``agent.id``          → ``device_id``
-          - ``agent.name``        → ``device_name``
-          - ``"NotAttempted"``    → ``mfa_result`` (Wazuh doesn't track MFA)
-          - ``rule.description``  → ``app_display_name``
-          - ``str(rule.level)``   → ``risk_state``
+          - ``agent.id``              → ``device_id``
+          - ``agent.name``            → ``device_name``
+          - ``None``                  → ``auth_status`` (Wazuh doesn't track
+            MFA; with no auth outcome the engine skips the MFA-fatigue signal)
+          - ``rule.description``      → ``app_display_name``
+          - ``_event_risk_from_level(rule.level)`` → ``event_risk``
         - Entities: Host always; IP and Account when extractable.
 
         Args:
@@ -460,7 +511,8 @@ class WazuhAdapter:
         rule = alert.get("rule", {})
         agent = alert.get("agent", {})
 
-        severity = _severity_from_level(rule.get("level", 1))
+        event_type = _event_type_from_rule(rule)
+        event_risk = _event_risk_from_level(rule.get("level", 0))
         user = _extract_user(alert)
         srcip = _extract_srcip(alert)
         # Wazuh Indexer uses @timestamp; fall back to timestamp for compatibility.
@@ -472,12 +524,14 @@ class WazuhAdapter:
         sign_in = SignInMetadata(
             user_principal_name=user,
             ip_address=srcip,
+            type=event_type,
             location=None,  # Wazuh does not provide geolocation data.
             device_id=agent.get("id", ""),
             device_name=agent.get("name", ""),
-            mfa_result="NotAttempted",
+            # Wazuh has no MFA outcome → auth_status left None so the engine
+            # skips the MFA-fatigue signal and redistributes its weight.
             app_display_name=rule.get("description", ""),
-            risk_state=str(rule.get("level", 0)),
+            event_risk=event_risk,
             timestamp=ts,
         )
 
@@ -513,9 +567,9 @@ class WazuhAdapter:
         return NormalizedIncident(
             incident_id=alert.get("id", "wazuh-unknown"),
             user=user,
-            sign_in_events=[sign_in],
+            source="wazuh",
+            events=[sign_in],
             entities=entities,
-            severity=severity,
             created_time=ts,
         )
 

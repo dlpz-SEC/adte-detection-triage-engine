@@ -72,6 +72,28 @@ _RECOMMENDED_ACTIONS: dict[Verdict, str] = {
 }
 
 
+def _severity_from_score(risk_score: int) -> str:
+    """Map the engine's 0–100 risk score to a display severity band.
+
+    Severity is engine-assigned (never taken from input): it is derived
+    from the computed risk score so the report/CLI display reflects the
+    engine's own judgement rather than any caller-supplied value.
+
+    Args:
+        risk_score: Aggregated risk score from signal evaluation (0–100).
+
+    Returns:
+        One of ``"Low"``, ``"Medium"``, ``"High"``, ``"Critical"``.
+    """
+    if risk_score >= 90:
+        return "Critical"
+    if risk_score > 70:
+        return "High"
+    if risk_score >= 30:
+        return "Medium"
+    return "Low"
+
+
 class TriageEngine:
     """Stateful triage pipeline for a single normalised incident.
 
@@ -134,7 +156,7 @@ class TriageEngine:
             ``self`` for fluent chaining.
         """
         seen_ips: set[str] = set()
-        for event in self._incident.sign_in_events:
+        for event in self._incident.events:
             ip = event.ip_address
             if not ip:
                 continue
@@ -257,10 +279,12 @@ class TriageEngine:
         Returns:
             A JSON-serialisable dict with keys:
 
-            - ``verdict``, ``risk_score``, ``confidence``,
+            - ``verdict``, ``source``, ``risk_score``, ``confidence``,
               ``recommended_action``, ``actions``, ``rationale``,
               ``evidence``, ``safety`` — the authoritative decision
-              fields; all set before ``report`` is built.
+              fields; all set before ``report`` is built.  ``source`` is
+              the incident's origin platform, carried through for the
+              audit log / verdict export.
             - ``report`` — narrative-only display fields
               (``incident_id``, ``user``, ``severity``,
               ``signal_summary``, ``one_paragraph_summary``,
@@ -270,6 +294,7 @@ class TriageEngine:
         """
         output = {
             "verdict": self._verdict,
+            "source": self._incident.source,
             "risk_score": self._risk_score,
             "confidence": self._confidence,
             "recommended_action": self._recommended_action,
@@ -301,7 +326,7 @@ class TriageEngine:
             ``(score, rationale, confidence)`` tuple.
         """
         weight = SIGNAL_WEIGHTS["impossible_travel"]
-        events = self._incident.sign_in_events
+        events = self._incident.events
 
         # Filter to events that have location data.
         located_events = [e for e in events if e.location is not None]
@@ -394,9 +419,15 @@ class TriageEngine:
             ``(score, rationale, confidence)`` tuple.
         """
         weight = SIGNAL_WEIGHTS["mfa_fatigue"]
-        events = self._incident.sign_in_events
-        denied = [e for e in events if e.mfa_result == "Denied"]
-        total_mfa = [e for e in events if e.mfa_result != "NotAttempted"]
+        events = self._incident.events
+        # MFA fatigue is an authentication-only concept: consider only
+        # authentication-type events that carry an auth outcome.  Events with
+        # auth_status=None (no MFA outcome — e.g. network/file events, or a
+        # sign-in where MFA was never attempted) do not count toward the
+        # signal, so an incident with no such events skips it entirely.
+        auth_events = [e for e in events if e.type == "authentication"]
+        denied = [e for e in auth_events if e.auth_status == "failure"]
+        total_mfa = [e for e in auth_events if e.auth_status is not None]
 
         if not total_mfa:
             # No MFA data at all — skip the signal and redistribute its weight.
@@ -426,7 +457,7 @@ class TriageEngine:
             earliest_denial_ts = min(e.timestamp for e in denied)
             fatigue_success = (
                 len(denied) >= _MFA_DENIAL_THRESHOLD
-                and any(e.mfa_result == "Success" for e in events if e.timestamp > earliest_denial_ts)
+                and any(e.auth_status == "success" for e in auth_events if e.timestamp > earliest_denial_ts)
             )
         else:
             fatigue_success = False
@@ -507,7 +538,7 @@ class TriageEngine:
             ``(score, rationale, confidence)`` tuple.
         """
         weight = SIGNAL_WEIGHTS["device_novelty"]
-        events = self._incident.sign_in_events
+        events = self._incident.events
 
         if not events:
             return (0.0, "No sign-in events to evaluate", 0.3)
@@ -555,7 +586,7 @@ class TriageEngine:
             ``(score, rationale, confidence)`` tuple.
         """
         weight = SIGNAL_WEIGHTS["login_hour_anomaly"]
-        events = self._incident.sign_in_events
+        events = self._incident.events
         baseline = self._profile.baseline_login_hours
 
         if not events:
@@ -615,7 +646,7 @@ class TriageEngine:
             "fp_matches": {
                 ip: ptype for ip, ptype in self._fp_matches.items() if ptype
             },
-            "sign_in_count": len(self._incident.sign_in_events),
+            "sign_in_count": len(self._incident.events),
             "unique_ips": list(self._threat_intel_results.keys()),
             "user": self._incident.user,
             "incident_id": self._incident.incident_id,
@@ -652,7 +683,7 @@ class TriageEngine:
         return {
             "nist_phase": "Detection & Analysis",
             "incident_id": self._incident.incident_id,
-            "severity": self._incident.severity,
+            "severity": _severity_from_score(self._risk_score),
             "user": self._incident.user,
             "verdict": self._verdict,
             "risk_score": self._risk_score,

@@ -626,8 +626,8 @@ def queue() -> Any:
             continue
 
         source_ip = (
-            incident.sign_in_events[0].ip_address or ""
-            if incident.sign_in_events
+            incident.events[0].ip_address or ""
+            if incident.events
             else ""
         )
         rationale = output.get("rationale", [])

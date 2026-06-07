@@ -129,12 +129,17 @@ Each signal method returns a confidence value based on data quality:
 
 ### Algorithm
 
-1. Collect all sign-in events with `mfa_result == "Denied"`
+1. Collect authentication events (`type == "authentication"`) with `auth_status == "failure"`
 2. Sliding window: for each denial, count subsequent denials within 10 minutes
 3. If the maximum burst ≥ 3 denials:
-   - Check for **fatigue capitulation**: a `Success` event after the denial burst
+   - Check for **fatigue capitulation**: an `auth_status == "success"` event after the denial burst
    - If capitulation detected: increase confidence by 0.2
 4. Score: full weight (25) if threshold met, zero otherwise
+
+> **Skip semantics:** events with `auth_status` of `None` (no MFA outcome — non-authentication
+> events, or sign-ins where MFA was never attempted) are excluded. An incident with no
+> authentication event carrying an `auth_status` skips the signal and its weight is
+> redistributed proportionally to the remaining signals.
 
 ### Parameters
 

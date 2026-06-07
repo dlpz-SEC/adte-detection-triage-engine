@@ -3,6 +3,12 @@
 Three end-to-end triage runs against the bundled mock incident files.
 Each scenario uses `--source mock` (no live SIEM connection required).
 
+> **Schema note (OCSF-inspired):** incidents use a source-agnostic schema — events live under
+> `events[]` (each with a `type`, `auth_status`, and `event_risk`) and the incident carries a
+> top-level `source`. `severity` is **not** an input field; it is derived by the engine from the
+> computed risk score (`<30` Low · `30–70` Medium · `>70` High · `≥90` Critical) and shown in the
+> output for display only.
+
 ---
 
 ## Scenario 1 — Impossible Travel + MFA Fatigue (HIGH RISK)
@@ -95,7 +101,7 @@ python -m adte triage \
 
   Incident:    INC-2025-0043
   User:        bob@contoso.com
-  Severity:    Medium
+  Severity:    Low
   Risk Score:  5/100
   Confidence:  55%
   Action:      Auto-close as benign — log for baseline update
