@@ -187,11 +187,13 @@ Authentication is via `X-ADTE-Key` header matched against per-role environment v
 
 - `POST /api/triage`: 10 requests/minute per IP
 - `POST /api/feedback`: 30 requests/minute per IP
+- `GET /api/verdicts/export`: 10 requests/minute per IP
+- `GET /api/config`: 10 requests/minute per IP
 - Returns JSON `{"error": "Rate limit exceeded"}` with HTTP 429
 
 ### CORS
 
-Configured via `ADTE_CORS_ORIGINS` environment variable (comma-separated origins). Defaults to `http://localhost:5000` in development.
+Configured via the `ADTE_CORS_ORIGINS` environment variable (comma-separated origins). Defaults to **deny-all** when unset (the self-hosted UI is same-origin); set it to the frontend origin(s) when the UI is hosted separately.
 
 ### Input Validation
 

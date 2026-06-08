@@ -2,7 +2,7 @@
 
 Provides mock user profiles with realistic baseline data for
 development and dry-run triage.  In production this would be
-backed by a database or the Microsoft Graph API.
+backed by a database or a directory service API.
 
 NIST 800-61 Phase: Detection & Analysis — supplies historical
 behavioral baselines for anomaly comparison.

@@ -51,7 +51,7 @@ class MitreMapper:
 
         Args:
             path: Path to the YAML file.  Defaults to
-                ``examples/mitre_technique_map.yaml`` in the repo root.
+                ``adte/data/mitre_technique_map.yaml`` relative to the package.
 
         Returns:
             A MitreMapper instance populated with the loaded mappings.

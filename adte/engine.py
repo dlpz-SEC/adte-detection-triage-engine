@@ -655,7 +655,8 @@ class TriageEngine:
     def _build_safety(self) -> dict[str, Any]:
         """Compile safety metadata for the output report.
 
-        NIST 800-61: records what automated actions are permitted and
+        ADTE is triage-only and executes no automated actions; these fields
+        surface reserved safety-gate env vars for analyst visibility and
         whether human review is required.
 
         Returns:
@@ -665,12 +666,12 @@ class TriageEngine:
             "human_review_required": self._verdict != "low_risk",
             "automated_actions_permitted": self._verdict == "high_risk",
             "kill_switch_note": (
-                "All automated actions honour ADTE_KILL_SWITCH. "
-                "Set ADTE_KILL_SWITCH=true to halt."
+                "ADTE_KILL_SWITCH is reserved for a future execution layer "
+                "and gates nothing today (ADTE is triage-only)."
             ),
             "dry_run_note": (
-                "ADTE_DRY_RUN=true prevents write/mutate operations. "
-                "Set ADTE_EXECUTION_ENABLED=true to allow actions."
+                "ADTE_DRY_RUN/ADTE_EXECUTION_ENABLED are reserved for a future "
+                "execution layer and gate nothing today (ADTE is triage-only)."
             ),
         }
 

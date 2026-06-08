@@ -149,39 +149,39 @@ import ReactDOM from 'react-dom/client';
 
     const GATES = [
       { id: 1, name: 'Kill Switch', env: 'ADTE_KILL_SWITCH', cfgKey: 'kill_switch',
-        desc: 'Immediately halts all automated actions engine-wide.',
+        desc: 'Reserved: would halt all automated actions engine-wide once an execution layer exists.',
         condition: 'ADTE_KILL_SWITCH=true',
-        action: 'All execution blocked; no actions taken.',
+        action: 'Reserved — no execution layer today; this gates nothing.',
         activeLabel: (v) => v ? ['TRIGGERED', 'var(--critical)'] : ['SAFE', 'var(--success)'],
       },
       { id: 2, name: 'Dry Run Mode', env: 'ADTE_DRY_RUN', cfgKey: 'dry_run',
-        desc: 'Logs all actions without executing writes or mutations.',
+        desc: 'Reserved: would log actions without executing writes once an execution layer exists.',
         condition: 'ADTE_DRY_RUN=true (default on)',
-        action: 'Actions logged but not executed.',
+        action: 'Reserved — no execution layer today; this gates nothing.',
         activeLabel: (v) => v ? ['ACTIVE', 'var(--medium)'] : ['DISABLED', 'var(--success)'],
       },
       { id: 3, name: 'Execution Enabled', env: 'ADTE_EXECUTION_ENABLED', cfgKey: 'execution_enabled',
-        desc: 'Master gate — execution opt-in required before any action runs.',
+        desc: 'Reserved: master execution opt-in for a future execution layer.',
         condition: 'ADTE_EXECUTION_ENABLED=true required',
-        action: 'Actions blocked until explicitly enabled.',
+        action: 'Reserved — no execution layer today; this gates nothing.',
         activeLabel: (v) => v ? ['ENABLED', 'var(--success)'] : ['BLOCKED', 'var(--medium)'],
       },
       { id: 4, name: 'Tenant Allowlist', env: 'ADTE_TENANT_ALLOWLIST', cfgKey: 'tenant_allowlist',
-        desc: 'Restricts automated actions to approved tenant IDs.',
+        desc: 'Reserved: would restrict actions to approved tenant IDs.',
         condition: 'Incident tenant must be in allowlist',
-        action: 'Actions blocked for non-listed tenants.',
+        action: 'Reserved — no execution layer today; this gates nothing.',
         activeLabel: (v) => (Array.isArray(v) && v.length > 0) ? ['CONFIGURED', 'var(--success)'] : ['OPEN', 'var(--medium)'],
       },
       { id: 5, name: 'User / Severity', env: 'ADTE_USER_ALLOWLIST', cfgKey: 'user_allowlist',
-        desc: 'Restricts actions to approved users OR High+ severity incidents.',
+        desc: 'Reserved: would restrict actions to approved users OR High+ severity incidents.',
         condition: 'User in allowlist OR severity High/Critical',
-        action: 'Low/Medium incidents need explicit user allowlisting.',
+        action: 'Reserved — no execution layer today; this gates nothing.',
         activeLabel: (v) => (Array.isArray(v) && v.length > 0) ? ['CONFIGURED', 'var(--success)'] : ['OPEN', 'var(--medium)'],
       },
       { id: 6, name: 'Action Allowlist', env: 'ADTE_ACTION_ALLOWLIST', cfgKey: 'action_allowlist',
-        desc: 'Restricts the permitted action types to an explicit set.',
+        desc: 'Reserved: would restrict permitted action types to an explicit set.',
         condition: 'Action type must be in allowlist',
-        action: 'Unlisted action types are rejected.',
+        action: 'Reserved — no execution layer today; this gates nothing.',
         activeLabel: (v) => (Array.isArray(v) && v.length > 0) ? ['CONFIGURED', 'var(--success)'] : ['OPEN', 'var(--medium)'],
       },
     ];
@@ -1373,7 +1373,7 @@ import ReactDOM from 'react-dom/client';
               <div className="panel">
                 <div className="panel-body" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
                   ADTE covers the <strong style={{ color: 'var(--accent)' }}>DETECT</strong> function.
-                  Response actions (<strong>RESPOND</strong>) are gated by the 6-layer safety control system.
+                  Response actions (<strong>RESPOND</strong>) are not implemented — ADTE recommends only; the safety-gate config is reserved for a future execution layer.
                 </div>
               </div>
             </div>
@@ -1693,7 +1693,7 @@ import ReactDOM from 'react-dom/client';
           <Breadcrumb view="safety" />
           <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>Safety Gates</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>
-            All 6 gates must pass before any automated action executes.
+            Reserved configuration for a future execution layer — ADTE is triage-only and executes no automated actions today. These gate values are read-only from /api/config.
           </p>
 
           {loading && (
@@ -2507,7 +2507,7 @@ import ReactDOM from 'react-dom/client';
 
           <div className="panel" style={{ borderLeft: '3px solid var(--accent)', maxWidth: 500, width: '100%', textAlign: 'left' }}>
             <div className="panel-body" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
-              <strong style={{ color: 'var(--text-secondary)' }}>Planned capabilities:</strong> on-demand incident summarisation, cross-alert correlation queries, guided MITRE technique drill-down, and natural language safety gate overrides with full audit trail.
+              <strong style={{ color: 'var(--text-secondary)' }}>Planned capabilities:</strong> on-demand incident summarisation, cross-alert correlation queries, and guided MITRE technique drill-down with full audit trail.
             </div>
           </div>
         </div>
@@ -2624,10 +2624,10 @@ import ReactDOM from 'react-dom/client';
 
       const handleLoadExample = useCallback(() => {
         if (!examples) return;
-        const key = EXAMPLE_KEYS[exampleCursor % 4];
+        const key = EXAMPLE_KEYS[exampleCursor % EXAMPLE_KEYS.length];
         setInputText(JSON.stringify(examples[key], null, 2));
         setLoadedKey(key);
-        setExampleCursor(c => (c + 1) % 4);
+        setExampleCursor(c => (c + 1) % EXAMPLE_KEYS.length);
         setResult(null); setError(null);
       }, [examples, exampleCursor]);
 

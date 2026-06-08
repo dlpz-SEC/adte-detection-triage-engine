@@ -1,9 +1,10 @@
 """Alert enrichment with MITRE ATT&CK and NIST CSF mappings.
 
 Enriches a normalized alert dict with tactic, technique, and NIST
-category data.  Uses a deterministic keyword lookup first; falls back
-to a mock response when no match is found (LLM enrichment to be wired
-in once an API key is available).
+category data via a deterministic keyword lookup, falling back to a
+low-confidence mock when no keyword matches.  NOTE: this module is NOT
+wired into the triage pipeline (``llm_enrichment`` is always null in
+triage output); the wired advisory LLM path lives in ``adte.llm.assist``.
 
 NIST 800-61 Phase: Detection & Analysis — context enrichment before
 triage scoring.
@@ -66,7 +67,8 @@ def enrich_alert(normalized_alert: dict[str, Any]) -> dict[str, Any]:
             ),
         }
 
-    # No deterministic match — return mock until LLM enrichment is wired in.
+    # No deterministic match — return a low-confidence mock. Not called by the
+    # triage pipeline; see adte.llm.assist for the wired LLM summary path.
     return {
         "source": "mock_llm",
         "mitre_tactic": "Unknown",

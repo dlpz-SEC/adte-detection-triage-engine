@@ -156,18 +156,18 @@ Role levels are numeric — higher roles inherit all lower-role access:
 
 | Role | Level | Env Var | Endpoints Accessible |
 |------|-------|---------|----------------------|
-| `readonly` | 0 | `ADTE_API_KEY_READONLY` | `GET /`, `GET /health`, `GET /api/examples` |
-| `analyst` | 1 | `ADTE_API_KEY_ANALYST` | All readonly + `POST /api/triage`, `GET /api/queue`, `GET /api/verdicts`, `GET /api/feedback`, `POST /api/feedback`, `GET /api/intel` |
+| `readonly` | 0 | `ADTE_API_KEY_READONLY` | `GET /`, `GET /health`, `GET /api/examples`, `GET /api/auth-check` |
+| `analyst` | 1 | `ADTE_API_KEY_ANALYST` | All readonly + `POST /api/triage`, `GET /api/queue`, `GET /api/verdicts`, `GET /api/feedback`, `POST /api/feedback`, `GET /api/intel`, `GET /api/verdicts/export` |
 | `senior_analyst` | 2 | `ADTE_API_KEY_SENIOR` | All analyst + `GET /api/config` |
 | `admin` | 3 | `ADTE_API_KEY_ADMIN` | All endpoints + `DELETE /api/verdicts`, `DELETE /api/feedback` |
 
-### All 12 Endpoints at a Glance
+### All 16 Endpoints at a Glance
 
 | # | Method | Path | Minimum Role | Description |
 |---|--------|------|-------------|-------------|
 | 1 | GET | `/` | readonly | Serve the frontend SPA |
 | 2 | GET | `/health` | readonly | Liveness probe (`{"status": "ok"}`) |
-| 3 | GET | `/api/examples` | readonly | Load the 3 bundled example incidents as NormalizedIncident JSON |
+| 3 | GET | `/api/examples` | readonly | Load the 4 bundled example incidents as NormalizedIncident JSON |
 | 4 | POST | `/api/triage` | analyst | Run full triage pipeline on a NormalizedIncident payload (rate: 10/min) |
 | 5 | GET | `/api/queue` | analyst | Wazuh live alert queue, triage-scored, with mock fallback |
 | 6 | GET | `/api/verdicts` | analyst | Audit log of past triage verdicts (filterable, newest first) |
@@ -177,6 +177,10 @@ Role levels are numeric — higher roles inherit all lower-role access:
 | 10 | DELETE | `/api/feedback` | admin | Clear all analyst feedback rows |
 | 11 | GET | `/api/intel` | analyst | Enrich a single IP against live threat intel sources |
 | 12 | GET | `/api/config` | senior_analyst | Read safety gate config + masked API key status + `llm_available` flag |
+| 13 | GET | `/api/verdicts/export` | analyst | Download the verdict audit log as CSV or JSON (rate: 10/min) |
+| 14 | GET | `/api/auth-check` | readonly | Verify an API key and return the resolved role |
+| 15 | POST | `/api/auth/login` | public | Exchange an API key for an HttpOnly session cookie |
+| 16 | POST | `/api/auth/logout` | public | Invalidate the current browser session |
 
 ---
 
@@ -305,9 +309,11 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 
 **Wazuh weight redistribution:** Wazuh alerts carry no geolocation or MFA data. The engine detects which signals are unevaluable and proportionally redistributes their combined 55-point weight across the three remaining signals, keeping the full 0–100 scoring range reachable.
 
-**6-Layer Safety Gates (all must pass for any automated action):**
+**Safety Gate Configuration (reserved — ADTE is triage-only):**
 
-| Gate | Env Var | Default | Description |
+> ADTE executes no automated actions. These env vars are surfaced read-only via `GET /api/config` and are **reserved for a future execution/containment layer** — they gate nothing in the current codebase. See `docs/SAFETY.md`.
+
+| Gate | Env Var | Default | Reserved purpose |
 |------|---------|---------|-------------|
 | 1. Kill Switch | `ADTE_KILL_SWITCH` | `false` | Emergency halt — overrides everything |
 | 2. Dry Run | `ADTE_DRY_RUN` | `true` | Blocks all write/mutate operations |
@@ -316,7 +322,7 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 | 5. User/Severity Gate | `ADTE_USER_ALLOWLIST` | empty (open) | Restrict to named UPNs unless severity ≥ High |
 | 6. Action Allowlist | `ADTE_ACTION_ALLOWLIST` | `CLOSE_INCIDENT,POST_COMMENT` | Whitelist of permitted action types |
 
-Default configuration blocks all automated actions. You must explicitly set `ADTE_DRY_RUN=false` AND `ADTE_EXECUTION_ENABLED=true` to permit any write operation.
+There is no execution layer today, so these gates enforce nothing — the table documents the intended contract for a future containment layer.
 
 ---
 
@@ -482,12 +488,12 @@ The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credent
 
 ### Current State
 
-ADTE is localhost-only. All components run in a single `python -m adte.server` process on port 5000 serving both the Flask API and the static frontend SPA.
+ADTE is deployed on **Render** (`render.yaml`, native Python runtime) and **Railway** (`Dockerfile` + `railway.json`), both auto-deploying from the `main` branch. It can also be run locally as a single `python -m adte.server` process on port 5000 serving both the Flask API and the static frontend SPA.
 
 ### Deployment Steps (when ready)
 
 1. **Choose a host:** Render (free tier), Railway, or a VPS (DigitalOcean, Hetzner).
-2. **Push the repo** — no build step needed; the frontend is a single `index.html`.
+2. **Push to `main`** — the deploy builds the frontend (esbuild bundles `frontend/src/app.jsx` → `frontend/bundle.js`; see the `render.yaml` buildCommand and the Dockerfile).
 3. **Set env vars on the host:** All `ADTE_API_KEY_*` vars, TI keys, Anthropic key, Wazuh credentials if accessible.
 4. **Set `ADTE_CORS_ORIGINS`** to the public domain (e.g., `https://adte.yourdomain.com`).
 5. **HTTPS only** — deploy behind a TLS terminator (Render/Railway handle this automatically).
@@ -594,9 +600,9 @@ pip install -e ".[dev]"
 
 ---
 
-### Tests Fail or Drop Below 213
+### Tests Fail or Drop Below 272
 
-The project enforces a 213-test minimum. If `pytest` reports fewer than 213 passing tests after any change, something regressed. Run:
+The project enforces a 272-test minimum. If `pytest` reports fewer than 272 passing tests after any change, something regressed. Run:
 ```powershell
 pytest -v --tb=short
 ```
@@ -604,4 +610,4 @@ and investigate any failures before proceeding.
 
 ---
 
-*Generated 2026-05-03. Reflects codebase state at commit `abb2c9f` (main branch).*
+*Generated 2026-06-08. Reflects codebase state at commit `0a80a20` (main branch, post-OCSF migration).*

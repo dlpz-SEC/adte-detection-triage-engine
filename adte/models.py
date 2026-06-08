@@ -149,7 +149,7 @@ class SignInMetadata(BaseModel):
 
 
 class AlertEntity(BaseModel):
-    """An entity extracted from a Sentinel alert.
+    """An entity extracted from a security alert.
 
     Entities are the observable artifacts (accounts, IPs, hosts, etc.)
     that link an alert to real-world objects for investigation.
@@ -203,15 +203,16 @@ class SentinelIncident(BaseModel):
 class NormalizedIncident(BaseModel):
     """Incident normalised for the ADTE triage pipeline.
 
-    Flattens and enriches a ``SentinelIncident`` into the shape the
-    decision engine expects: a single user, their sign-in events, and
-    the associated entities.
+    The canonical, source-agnostic schema the decision engine consumes:
+    a single user, their ``events``, and the associated entities.  It can
+    be produced from a ``SentinelIncident`` via ``from_sentinel()``, from a
+    Wazuh alert via the ``WazuhAdapter``, or constructed directly.
 
     NIST 800-61 Phase: Detection & Analysis — normalisation is the
     first step in structured incident analysis.
 
     Attributes:
-        incident_id: Unique incident identifier (carried from Sentinel).
+        incident_id: Unique incident identifier (carried from the source incident).
         user: Primary user principal name under investigation.
         source: Origin platform of the incident (``azure_ad``, ``wazuh``,
             ``okta``, ``generic``) — lets the engine apply source-aware

@@ -38,6 +38,8 @@ Weights sum to 100. The risk score is the raw weighted sum, clamped to `[0, 100]
 
 ### Six-layer safety gate system
 
+> **Removed in Phase 23 — historical.** This execution/containment layer was removed in Phase 23 (`SafetyConfig`/`can_execute` deleted). ADTE is now triage-only; these env vars are surfaced read-only in `/api/config` and gate nothing today — reserved for a possible future execution layer. The Phase 0 description below is kept as the historical record.
+
 All automated execution is fail-closed by default. Gates are evaluated in sequence — all six must pass before any action is taken:
 
 1. **Kill Switch** (`ADTE_KILL_SWITCH=true`) — halts everything, no exceptions
@@ -703,7 +705,7 @@ Full audit confirmed: no credential values appear in any `_log.*` call in the Wa
 ## Current State
 
 ### Test baseline
-**213 tests passing** across 10 files: `test_engine`, `test_geo`, `test_intel`, `test_policy`, `test_safety`, `test_llm_assist`, `test_wazuh_adapter`, `test_feedback`, `test_mitre_mapper`, `test_sql_injection`.
+**272 tests passing** across 13 files: `test_geo`, `test_intel`, `test_policy`, `test_engine`, `test_llm_assist`, `test_wazuh_adapter`, `test_feedback`, `test_mitre_mapper`, `test_sql_injection`, `test_audit_log`, `test_ticket_client`, `test_verdict_export`, `test_schema_migration`.
 
 ### File inventory
 
@@ -711,16 +713,13 @@ Full audit confirmed: no credential values appear in any `_log.*` call in the Wa
 adte/
   __init__.py, __main__.py
   cli.py              — Typer CLI: triage command, --source mock/wazuh/normalized
-  config.py           — SafetyConfig: 6-gate evaluation
   decision_policy.py  — SIGNAL_WEIGHTS, classify_verdict, compute_confidence
   engine.py           — TriageEngine: enrich → score → decide → to_output
   models.py           — Pydantic schemas: NormalizedIncident, SignInMetadata, etc.
   report.py           — generate_report: narrative fields from LLM or deterministic path
-  server.py           — Flask app: 12 endpoints, serves frontend/index.html
+  server.py           — Flask app: 14 /api/* route handlers, serves frontend/index.html
   adapters/
-    sentinel.py       — Mock Sentinel adapter (response actions only)
     wazuh.py          — Live Wazuh Indexer adapter (OpenSearch _search API)
-    entra_id.py       — Mock Entra ID adapter (disable account, revoke sessions)
   intel/
     _mock.py          — Deterministic mock threat intel (no API keys needed)
     abuseipdb.py      — AbuseIPDB live client
@@ -777,12 +776,12 @@ docs/
 | `ADTE_VT_API_KEY` | — | VirusTotal API key (mock fallback if unset) |
 | `ADTE_OTX_KEY` | — | AlienVault OTX key (anonymous access without key) |
 | `ANTHROPIC_API_KEY` | — | Claude API key (deterministic fallback if unset) |
-| `ADTE_KILL_SWITCH` | `false` | Halts all automated execution immediately |
-| `ADTE_DRY_RUN` | `true` | Logs actions without executing (default on) |
-| `ADTE_EXECUTION_ENABLED` | `false` | Must be `true` for any action to execute |
-| `ADTE_TENANT_ALLOWLIST` | — | Comma-separated tenant IDs permitted for action |
-| `ADTE_USER_ALLOWLIST` | — | Comma-separated users permitted for action |
-| `ADTE_ACTION_ALLOWLIST` | `CLOSE_INCIDENT,POST_COMMENT` | Permitted action types |
+| `ADTE_KILL_SWITCH` | `false` | Reserved (read-only today) — emergency halt for a future execution layer |
+| `ADTE_DRY_RUN` | `true` | Reserved (read-only today) — global no-write mode for a future execution layer |
+| `ADTE_EXECUTION_ENABLED` | `false` | Reserved (read-only today) — explicit opt-in for a future execution layer |
+| `ADTE_TENANT_ALLOWLIST` | — | Reserved (read-only today) — tenant scoping for a future execution layer |
+| `ADTE_USER_ALLOWLIST` | — | Reserved (read-only today) — user scoping for a future execution layer |
+| `ADTE_ACTION_ALLOWLIST` | `CLOSE_INCIDENT,POST_COMMENT` | Reserved (read-only today) — permitted action types for a future execution layer |
 | `ADTE_SLACK_WEBHOOK` | — | Slack incoming webhook URL for alert router (stdout if unset) |
 | `ADTE_LINEAR_API_KEY` | — | Linear personal API key for ticket creation |
 | `ADTE_LINEAR_TEAM_ID` | — | Linear team ID (required with Linear key) |
@@ -1452,7 +1451,7 @@ Test count 260 → **242**.
 `ARCHITECTURE.md` (removed Execute stage + 6-gate block + deleted adapters from the
 module map), `SAFETY.md` (rewritten to the "recommend, never act" model), `EXTENSIONS.md`
 (removed Sentinel/Graph/action-execution sections; kept signal + enrichment guides),
-`README.md` (242/12 tests, 9 views, removed broken demo image, recommend-only framing,
+`README.md` (272/13 tests, 9 views, removed broken demo image, recommend-only framing,
 execution layer moved to roadmap), `server.py` CSP docstring (matched the actual
 locked-down policy).
 

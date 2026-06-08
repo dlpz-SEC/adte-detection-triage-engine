@@ -37,14 +37,14 @@ from adte.store.user_history import get_user_profile
 
 app = typer.Typer(
     name="adte",
-    help="Automated Detection Triage Engine for Microsoft Sentinel.",
+    help="Automated Detection Triage Engine — source-agnostic security alert triage.",
     no_args_is_help=True,
 )
 
 
 @app.callback()
 def _main() -> None:
-    """Automated Detection Triage Engine for Microsoft Sentinel."""
+    """Automated Detection Triage Engine — source-agnostic security alert triage."""
 
 
 class OutputFormat(str, Enum):
@@ -232,7 +232,7 @@ def triage(
         Optional[Path],
         typer.Option(
             "--input", "-i",
-            help="Path to Sentinel incident JSON file. Required when --source mock.",
+            help="Path to incident JSON file (SentinelIncident schema). Required when --source mock.",
         ),
     ] = None,
     source: Annotated[

@@ -463,7 +463,7 @@ def health() -> Any:
 
 @app.route("/api/examples")
 def examples() -> Any:
-    """Return all three example incidents as NormalizedIncident JSON.
+    """Return all four example incidents as NormalizedIncident JSON.
 
     The source files are in ``SentinelIncident`` format (they have
     ``alerts``, ``title``, ``raw_payload`` etc.).  This endpoint
@@ -472,7 +472,7 @@ def examples() -> Any:
     without any client-side transformation.
 
     Returns:
-        JSON object keyed by ``high_risk``, ``low_risk``,
+        JSON object keyed by ``critical``, ``high_risk``, ``low_risk``,
         ``medium_risk`` — each value is a ``NormalizedIncident`` dict.
     """
     result: dict[str, Any] = {}
@@ -1048,8 +1048,9 @@ def config() -> Any:
     vars are coerced to Python bools; allowlist vars are returned as
     lists of strings.
 
-    NIST 800-61 Phase: Detection & Analysis — surfaces active policy
-    constraints for analyst visibility.
+    NIST 800-61 Phase: Detection & Analysis — surfaces the reserved
+    safety-gate env vars (read-only; reserved for a future execution layer,
+    they gate nothing today) for analyst visibility.
 
     Returns:
         JSON object with ``kill_switch``, ``dry_run``,

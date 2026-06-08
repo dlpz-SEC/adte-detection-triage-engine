@@ -15,9 +15,9 @@ Each scenario uses `--source mock` (no live SIEM connection required).
 
 **What this incident represents:** Alice's account shows a login from New York
 followed 30 minutes later by a login from Moscow — physically impossible. The
-account also received 12 consecutive MFA push denials before one was approved,
-a classic T1621 fatigue-spray pattern. A known C2 IP is present in the sign-in
-events.
+account also received 11 MFA push denials (12 of 14 total) before one was
+approved, a classic T1621 fatigue-spray pattern. The Moscow login also comes
+from an unrecognised device, outside Alice's baseline hours.
 
 **Command:**
 
@@ -39,8 +39,8 @@ python -m adte triage \
   Incident:    INC-2025-0042
   User:        alice@contoso.com
   Severity:    High
-  Risk Score:  75/100
-  Confidence:  98%
+  Risk Score:  79/100
+  Confidence:  83%
   Action:      Immediately disable account, revoke sessions, escalate to Tier-2
 
   Recommended actions:
@@ -53,25 +53,25 @@ python -m adte triage \
   Signal                    Score    Max   Conf  Detail
   ------------------------ ------ ------ ------  ----------------------------------------
   impossible_travel          30.0     30  100%  Impossible travel detected — New York -> Moscow: 7510 km in 30 min ...
-  mfa_fatigue                25.0     25  100%  12 MFA denials in 10-min window (12/14 total denied) — followed by ...
-  ip_reputation              20.0     20   95%  1 malicious IP(s): 198.51.100.23 [tags: c2, cobalt-strike]
-  device_novelty              0.0     15   90%  All devices recognised: Alice-Laptop (dev-001)
-  login_hour_anomaly          0.0     10   80%  All 14 events within baseline hours (08:00–18:00 America/New_York)
+  mfa_fatigue                25.0     25  100%  11 MFA denials in 10-min window (12/14 total denied) — followed by ...
+  ip_reputation               0.0     20   80%  No malicious IPs detected
+  device_novelty             15.0     15   65%  1 unknown device(s): DESKTOP-UNKNOWN (dev-MOSCOW-UNKNOWN)
+  login_hour_anomaly          8.6     10   66%  12/14 events outside baseline hours (08:00–18:00 America/New_York)
 
   ** Human review required **
 ```
 
 **Why the engine scored it this way:**
 
-All three high-weight signals fired at full value. `impossible_travel` (30/30)
-triggered because 7 510 km in 30 minutes exceeds any plausible travel speed.
-`mfa_fatigue` (25/25) triggered because 12 of 14 pushes were denied before one
-was approved — the approval is what the engine treats as the capitulation event.
-`ip_reputation` (20/20) matched a known C2/Cobalt Strike indicator with 95%
-confidence. Device and hour signals contributed nothing because the device was
-already enrolled and the logins fell inside Alice's baseline window — those two
-signals correctly produce no false uplift here. Combined score 75/100 with 98%
-confidence → `HIGH_RISK`.
+Four of the five signals fired. `impossible_travel` (30/30) triggered because
+7 510 km in 30 minutes exceeds any plausible travel speed. `mfa_fatigue` (25/25)
+triggered because 11 pushes were denied before one was approved — the approval is
+what the engine treats as the capitulation event. `device_novelty` (15/15) fired
+on the unrecognised `DESKTOP-UNKNOWN` device from Moscow, and `login_hour_anomaly`
+(8.6/10) fired because 12 of 14 events fell outside Alice's baseline hours.
+`ip_reputation` contributed nothing (0/20) — no malicious IP is present in this
+incident, so that signal correctly produces no uplift. Combined score 79/100 with
+83% confidence → `HIGH_RISK`.
 
 ---
 
