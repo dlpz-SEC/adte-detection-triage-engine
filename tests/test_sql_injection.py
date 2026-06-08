@@ -232,3 +232,54 @@ def test_csrf_allows_no_origin_header() -> None:
 
     # No Origin → CSRF check passes; route returns 400/415 for bad body, not 403.
     assert resp.status_code != 403
+
+
+def test_csrf_allows_https_origin_behind_tls_proxy() -> None:
+    """Same-origin HTTPS POST behind a TLS-terminating proxy is NOT CSRF-blocked.
+
+    Render/Railway terminate TLS at the edge and forward plain HTTP, so without
+    ProxyFix request.host_url would be ``http://<host>/`` while the browser sends
+    ``Origin: https://<host>`` — the scheme mismatch wrongly tripped the 403
+    "Cross-origin request rejected" on every same-origin POST (e.g. Quick Load →
+    Run Triage).  ProxyFix reads X-Forwarded-Proto/Host so the origins match.
+    """
+    import adte.server as srv
+
+    srv.app.config["TESTING"] = True
+    host = "adte.up.railway.app"
+    with srv.app.test_client() as client:
+        resp = client.post(
+            "/api/triage",
+            data=b"{}",
+            content_type="application/json",
+            headers={
+                "Origin": f"https://{host}",
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": host,
+            },
+        )
+
+    # CSRF check passes (host_url rewritten to https://<host>/); bad body → 400/415, not 403.
+    assert resp.status_code != 403
+
+
+def test_csrf_rejects_cross_origin_behind_tls_proxy() -> None:
+    """ProxyFix must not open a CSRF hole — a foreign Origin is still rejected behind the proxy."""
+    import adte.server as srv
+
+    srv.app.config["TESTING"] = True
+    host = "adte.up.railway.app"
+    with srv.app.test_client() as client:
+        resp = client.post(
+            "/api/triage",
+            data=b"{}",
+            content_type="application/json",
+            headers={
+                "Origin": "https://evil.example.com",
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": host,
+            },
+        )
+
+    assert resp.status_code == 403
+    assert "cross-origin" in resp.get_json()["error"].lower()

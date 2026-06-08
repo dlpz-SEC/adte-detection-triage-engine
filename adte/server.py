@@ -38,6 +38,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pydantic import ValidationError
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from adte.engine import TriageEngine
 from adte.intel.mitre_mapper import get_nist_phase, get_techniques
@@ -292,6 +293,20 @@ if not _any_keys_configured():
     _log.warning("ADTE running in DEMO MODE — write endpoints are disabled.")
 
 app = Flask(__name__)
+
+# --- Trust the single TLS-terminating reverse proxy (Render / Railway) ---
+# These PaaS terminate HTTPS at their edge and forward plain HTTP to gunicorn,
+# so without this the WSGI environ reports scheme=http and request.host_url is
+# "http://<host>/".  The browser, however, sends Origin: "https://<host>".  The
+# exact-string compare in _csrf_origin_check would then see a scheme mismatch
+# and reject every same-origin POST (e.g. /api/triage from the Quick Load
+# tiles) with 403 "Cross-origin request rejected".  ProxyFix rewrites scheme,
+# host, and client IP from the X-Forwarded-* headers set by that one proxy, so
+# request.host_url becomes "https://<host>/" (== Origin) and the same-origin
+# check passes — no ADTE_CORS_ORIGINS entry required.  It also restores the
+# real client IP for rate limiting and the access log.  Locally (no proxy) the
+# X-Forwarded-* headers are absent, so this is a no-op.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Reject request bodies larger than 1 MB before they are parsed.
 # Flask enforces this at the WSGI stream level, so get_json(force=True)

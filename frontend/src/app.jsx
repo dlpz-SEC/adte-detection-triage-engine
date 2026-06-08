@@ -2644,14 +2644,32 @@ import ReactDOM from 'react-dom/client';
         const url = useLlm ? `${API_BASE}/api/triage?use_llm=true` : `${API_BASE}/api/triage`;
         fetch(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          credentials: 'include',   // send the HttpOnly adte_session cookie set by /api/auth/login
           body: JSON.stringify(parsed),
         })
-          .then(r => r.json().then(d => ({ ok: r.ok, d })))
-          .then(({ ok, d }) => {
-            if (!ok) setError(d.error || 'Triage pipeline returned an error');
-            else { setResult(d); setTriageCount(c => c + 1); setLastTriageTime(Date.now()); }
+          // Parse the body defensively: an auth/RBAC block or a proxy/CSRF
+          // rejection may carry a non-JSON body, and a parse throw must never
+          // be reported as a generic "network error".
+          .then(async r => {
+            let d = null;
+            try { d = await r.json(); } catch { /* non-JSON body */ }
+            return { ok: r.ok, status: r.status, d };
           })
-          .catch(() => setError('Network error — is the server running on port 5000?'))
+          .then(({ ok, status, d }) => {
+            if (ok) { setResult(d); setTriageCount(c => c + 1); setLastTriageTime(Date.now()); return; }
+            // Surface the real reason per HTTP status so a role-based-access
+            // failure is not mislabelled as a CORS or network problem.
+            if (status === 401) {
+              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in with your API key.`);
+            } else if (status === 403) {
+              // Includes the CSRF "Cross-origin request rejected" and the
+              // demo-mode / insufficient-permissions messages verbatim.
+              setError(d?.error || 'Request forbidden by the server.');
+            } else {
+              setError(d?.error || `Triage failed (HTTP ${status}).`);
+            }
+          })
+          .catch(() => setError('Could not reach the triage API — check your connection, or sign in via Settings if this deployment is secured.'))
           .finally(() => setLoading(false));
       }, [llmAvailable]);
 
