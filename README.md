@@ -4,7 +4,7 @@
 
 ![SOC Engineering](https://img.shields.io/badge/SOC%20Engineering-Incident%20Triage-0B1220?style=for-the-badge&logo=microsoftsecurity&logoColor=white)
 ![Detection Logic](https://img.shields.io/badge/Detection%20Logic-Risk--Based%20Decisioning-1D4ED8?style=for-the-badge&logo=opensearch&logoColor=white)
-![Automation](https://img.shields.io/badge/Automation-Safe%20Response%20Orchestration-DC2626?style=for-the-badge&logo=githubactions&logoColor=white)
+![Automation](https://img.shields.io/badge/Automation-Recommend--Only%20Triage-DC2626?style=for-the-badge&logo=githubactions&logoColor=white)
 ![Explainability](https://img.shields.io/badge/Explainability-Transparent%20Verdicts-6D28D9?style=for-the-badge&logo=googledocs&logoColor=white)
 
 </p>
@@ -33,7 +33,7 @@ When a security alert arrives — from Microsoft Sentinel, Wazuh, or any support
 
 Each signal is weighted by its real-world reliability and combined into a 0–100 risk score. The score maps to a verdict:
 
-| Risk Score | Verdict | Automated Response |
+| Risk Score | Verdict | Recommended Response |
 |-----------|---------|-------------------|
 | > 70 | **HIGH RISK** | Disable account, revoke sessions, page Tier-2 |
 | 30–70 | **MEDIUM RISK** | Escalate to analyst for review within SLA |
@@ -50,6 +50,7 @@ ADTE is not a SOC replacement. It is a force multiplier — it handles the mecha
 ## What This Is
 
 - Automated triage for security incidents from multiple sources using 5 weighted signals
+- Source-agnostic OCSF-inspired incident schema — normalized `events[]` with per-event `type` and `source`; severity is engine-derived (rejected on input)
 - Deterministic scoring (0-100 risk score, 0-100 confidence)
 - Human-in-the-loop by default — recommends an action, never executes one
 - Explainable decisions with per-signal rationale
@@ -220,7 +221,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-242 tests across 12 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_wazuh_adapter, test_feedback, test_mitre_mapper, test_sql_injection, test_audit_log, test_ticket_client, test_verdict_export
+272 tests across 13 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_wazuh_adapter, test_feedback, test_mitre_mapper, test_sql_injection, test_audit_log, test_ticket_client, test_verdict_export, test_schema_migration
 
 Example verdicts:
 - `incident_account_takeover_tor_exfil.json` → **CRITICAL** (~99)
