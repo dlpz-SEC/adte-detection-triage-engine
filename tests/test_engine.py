@@ -207,7 +207,8 @@ def _make_sign_in(
     *,
     ip: str,
     device_id: str = "",
-    mfa_result: str = "NotAttempted",
+    auth_status: str | None = None,
+    event_type: str = "authentication",
     location: GeoLocation | None = None,
     ts: str = "2024-06-15T12:00:00+00:00",
 ) -> SignInMetadata:
@@ -215,21 +216,21 @@ def _make_sign_in(
     return SignInMetadata(
         user_principal_name="wazuh-host@test.local",
         ip_address=ip,
+        type=event_type,  # type: ignore[arg-type]
         location=location,
         device_id=device_id,
         device_name="test-device",
-        mfa_result=mfa_result,  # type: ignore[arg-type]
+        auth_status=auth_status,  # type: ignore[arg-type]
         timestamp=datetime.fromisoformat(ts),
     )
 
 
 def _make_incident(sign_ins: list[SignInMetadata]) -> NormalizedIncident:
-    """Helper: wrap sign-in events into a NormalizedIncident."""
+    """Helper: wrap events into a NormalizedIncident."""
     return NormalizedIncident(
         incident_id="TEST-SKIP-001",
         user="wazuh-host@test.local",
-        sign_in_events=sign_ins,
-        severity="High",
+        events=sign_ins,
         created_time=datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
     )
 
@@ -239,7 +240,7 @@ class TestSignalSkipAndRedistribution:
 
     def test_no_geo_skips_travel_signal(self, fp_registry: FPRegistry) -> None:
         """All sign-in events with location=None → impossible_travel skipped."""
-        incident = _make_incident([_make_sign_in(ip="10.0.0.1", mfa_result="Success")])
+        incident = _make_incident([_make_sign_in(ip="10.0.0.1", auth_status="success")])
         profile = get_user_profile(incident.user)
         engine = TriageEngine(incident, profile, fp_registry)
         engine.enrich().score()
@@ -250,10 +251,10 @@ class TestSignalSkipAndRedistribution:
         assert "skipped" in detail.lower()
 
     def test_no_mfa_events_skips_mfa_signal(self, fp_registry: FPRegistry) -> None:
-        """All MFA results NotAttempted → mfa_fatigue skipped."""
+        """No authentication event carries an MFA outcome → mfa_fatigue skipped."""
         incident = _make_incident([_make_sign_in(
             ip="10.0.0.1",
-            mfa_result="NotAttempted",
+            auth_status=None,
             location=GeoLocation(lat=40.0, lon=-74.0, city="New York", country="US"),
         )])
         profile = get_user_profile(incident.user)
@@ -274,7 +275,7 @@ class TestSignalSkipAndRedistribution:
         incident = _make_incident([_make_sign_in(
             ip="198.51.100.23",    # malicious C2 IP → IP rep fires (20 pts)
             device_id="unknown-wazuh-device-xyz",  # unknown → device novelty fires (15 pts)
-            mfa_result="NotAttempted",
+            auth_status=None,
             location=None,
         )])
         profile = get_user_profile(incident.user)  # unknown user, empty known_devices
@@ -290,13 +291,13 @@ class TestSignalSkipAndRedistribution:
         sign_ins = [
             _make_sign_in(
                 ip="72.229.28.185",
-                mfa_result="Success",
+                auth_status="success",
                 location=GeoLocation(lat=40.7128, lon=-74.0060, city="New York", country="US"),
                 ts="2024-06-15T10:00:00+00:00",
             ),
             _make_sign_in(
                 ip="198.51.100.23",
-                mfa_result="Success",
+                auth_status="success",
                 location=None,  # no geo for second event
                 ts="2024-06-15T10:30:00+00:00",
             ),

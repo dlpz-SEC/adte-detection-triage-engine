@@ -1,7 +1,7 @@
 {
   "incident_id": "INC-2025-0099",
   "title": "Confirmed account takeover via Tor exit node — after-hours data exfiltration attempt",
-  "severity": "Critical",
+  "source": "azure_ad",
   "status": "New",
   "created_time": "2025-01-15T23:31:00Z",
   "entities": [
@@ -54,7 +54,7 @@
       "rule_name": "Impossible travel — Tokyo to Amsterdam via Tor exit",
       "description": "CEO account authenticated from Tokyo at 14:00 UTC, then from a known Tor exit relay in Amsterdam at 23:30 UTC — 9,356 km in 9.5 hours exceeds maximum commercial flight speed.",
       "tactics": ["InitialAccess", "DefenseEvasion"],
-      "sign_in_events": [
+      "events": [
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "202.32.115.220",
@@ -67,9 +67,9 @@
           "device_id": "dev-004",
           "device_name": "Eve-MacBook",
           "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft 365",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-15T14:00:00Z"
         },
         {
@@ -84,9 +84,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Microsoft 365",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:30:00Z"
         }
       ]
@@ -96,7 +96,7 @@
       "rule_name": "MFA fatigue from Tor exit — CEO account (after hours)",
       "description": "12 consecutive MFA push denials from 185.220.101.45 within 8 minutes followed by approval. Activity is after-hours relative to CEO baseline (Tokyo 10:00–22:00). Unregistered Linux device consistent with attacker-controlled node.",
       "tactics": ["CredentialAccess", "Persistence", "Exfiltration"],
-      "sign_in_events": [
+      "events": [
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
@@ -104,9 +104,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "SharePoint Online",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:30:30Z"
         },
         {
@@ -116,9 +116,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "SharePoint Online",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:31:00Z"
         },
         {
@@ -128,9 +128,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "OneDrive",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:31:30Z"
         },
         {
@@ -140,9 +140,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "OneDrive",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:32:00Z"
         },
         {
@@ -152,9 +152,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Azure Portal",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:32:30Z"
         },
         {
@@ -164,9 +164,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Azure Portal",
-          "risk_state": "atRisk",
+          "event_risk": "suspicious",
           "timestamp": "2025-01-15T23:33:00Z"
         },
         {
@@ -176,9 +176,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Exchange Online",
-          "risk_state": "confirmedCompromised",
+          "event_risk": "confirmed",
           "timestamp": "2025-01-15T23:33:30Z"
         },
         {
@@ -188,9 +188,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Exchange Online",
-          "risk_state": "confirmedCompromised",
+          "event_risk": "confirmed",
           "timestamp": "2025-01-15T23:34:00Z"
         },
         {
@@ -200,9 +200,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Microsoft Teams",
-          "risk_state": "confirmedCompromised",
+          "event_risk": "confirmed",
           "timestamp": "2025-01-15T23:35:00Z"
         },
         {
@@ -212,9 +212,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "Microsoft Teams",
-          "risk_state": "confirmedCompromised",
+          "event_risk": "confirmed",
           "timestamp": "2025-01-15T23:36:00Z"
         },
         {
@@ -224,9 +224,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Denied",
+          "auth_status": "failure",
           "app_display_name": "SharePoint Online",
-          "risk_state": "confirmedCompromised",
+          "event_risk": "confirmed",
           "timestamp": "2025-01-15T23:37:00Z"
         },
         {
@@ -236,9 +236,9 @@
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "SharePoint Online",
-          "risk_state": "confirmedCompromised",
+          "event_risk": "confirmed",
           "timestamp": "2025-01-15T23:38:00Z"
         }
       ]

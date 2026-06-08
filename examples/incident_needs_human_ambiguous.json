@@ -1,7 +1,7 @@
 {
   "incident_id": "INC-2025-0044",
   "title": "Medium-confidence impossible travel with new device",
-  "severity": "Medium",
+  "source": "azure_ad",
   "status": "New",
   "created_time": "2025-01-17T16:45:00Z",
   "entities": [
@@ -55,7 +55,7 @@
       "rule_name": "Borderline impossible travel activity",
       "description": "User traveled Tokyo to Osaka (~400 km) in 40 minutes — 600 km/h, near Shinkansen speed but borderline",
       "tactics": ["InitialAccess"],
-      "sign_in_events": [
+      "events": [
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "126.54.211.90",
@@ -68,9 +68,9 @@
           "device_id": "dev-004",
           "device_name": "Eve-MacBook",
           "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft 365",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-17T15:50:00Z"
         },
         {
@@ -85,9 +85,9 @@
           "device_id": "dev-004",
           "device_name": "Eve-MacBook",
           "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Jira Cloud",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-17T16:00:00Z"
         }
       ]
@@ -97,7 +97,7 @@
       "rule_name": "Sign-in from new device",
       "description": "First authentication from unregistered iPad device",
       "tactics": ["InitialAccess"],
-      "sign_in_events": [
+      "events": [
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "103.41.124.78",
@@ -110,9 +110,9 @@
           "device_id": "dev-new-ipad-991",
           "device_name": "Eve-iPad-New",
           "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft 365",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-17T16:30:00Z"
         },
         {
@@ -127,9 +127,9 @@
           "device_id": "dev-new-ipad-991",
           "device_name": "Eve-iPad-New",
           "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-          "mfa_result": "Success",
+          "auth_status": "success",
           "app_display_name": "Microsoft Teams",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-17T16:35:00Z"
         },
         {
@@ -144,9 +144,9 @@
           "device_id": "dev-new-ipad-991",
           "device_name": "Eve-iPad-New",
           "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-          "mfa_result": "NotAttempted",
+          "auth_status": null,
           "app_display_name": "Outlook Mobile",
-          "risk_state": "none",
+          "event_risk": "none",
           "timestamp": "2025-01-17T16:40:00Z"
         }
       ]

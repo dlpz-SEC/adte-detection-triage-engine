@@ -13,9 +13,9 @@ import pytest
 
 from adte.adapters.wazuh import (
     WazuhAdapter,
+    _event_risk_from_level,
     _extract_srcip,
     _extract_user,
-    _severity_from_level,
 )
 from adte.engine import TriageEngine
 from adte.intel.sigma_fp_registry import FPRegistry
@@ -84,33 +84,33 @@ def fp_registry() -> FPRegistry:
 
 
 # ---------------------------------------------------------------------------
-# _severity_from_level
+# _event_risk_from_level
 # ---------------------------------------------------------------------------
 
 
-class TestSeverityFromLevel:
-    """Tests for the _severity_from_level helper."""
+class TestEventRiskFromLevel:
+    """Tests for the _event_risk_from_level helper."""
 
     def test_all_bands(self) -> None:
-        """Each Wazuh level band maps to the correct severity string."""
-        assert _severity_from_level(1) == "Low"
-        assert _severity_from_level(3) == "Low"
-        assert _severity_from_level(4) == "Medium"
-        assert _severity_from_level(7) == "Medium"
-        assert _severity_from_level(8) == "High"
-        assert _severity_from_level(11) == "High"
-        assert _severity_from_level(12) == "Critical"
-        assert _severity_from_level(15) == "Critical"
+        """Each Wazuh level band maps to the correct event_risk value."""
+        assert _event_risk_from_level(1) == "none"
+        assert _event_risk_from_level(3) == "none"
+        assert _event_risk_from_level(4) == "suspicious"
+        assert _event_risk_from_level(7) == "suspicious"
+        assert _event_risk_from_level(8) == "high"
+        assert _event_risk_from_level(11) == "high"
+        assert _event_risk_from_level(12) == "confirmed"
+        assert _event_risk_from_level(15) == "confirmed"
 
     def test_clamp_below_one(self) -> None:
-        """Level 0 (or negative) clamps to Low."""
-        assert _severity_from_level(0) == "Low"
-        assert _severity_from_level(-5) == "Low"
+        """Level 0 (or negative) clamps to none."""
+        assert _event_risk_from_level(0) == "none"
+        assert _event_risk_from_level(-5) == "none"
 
     def test_clamp_above_fifteen(self) -> None:
-        """Level 16 and above clamp to Critical."""
-        assert _severity_from_level(16) == "Critical"
-        assert _severity_from_level(100) == "Critical"
+        """Level 16 and above clamp to confirmed."""
+        assert _event_risk_from_level(16) == "confirmed"
+        assert _event_risk_from_level(100) == "confirmed"
 
 
 # ---------------------------------------------------------------------------
@@ -216,34 +216,36 @@ class TestNormalizeAlert:
     """Tests for WazuhAdapter.normalize_alert."""
 
     def test_ssh_brute_force(self, ssh_alert: dict[str, Any]) -> None:
-        """SSH brute force alert maps to correct severity, ip, and user."""
+        """SSH brute force alert maps to correct event_risk, ip, user, source."""
         inc = WazuhAdapter.normalize_alert(ssh_alert)
-        assert inc.severity == "High"        # level 10
-        assert inc.sign_in_events[0].ip_address == "198.51.100.23"
+        assert inc.source == "wazuh"
+        assert inc.events[0].event_risk == "high"   # level 10
+        assert inc.events[0].type == "authentication"
+        assert inc.events[0].ip_address == "198.51.100.23"
         assert inc.user == "admin"
-        assert inc.sign_in_events[0].device_name == "web-server-01"
+        assert inc.events[0].device_name == "web-server-01"
 
     def test_windows_event_user(self, windows_alert: dict[str, Any]) -> None:
         """Windows auth alert extracts targetUserName."""
         inc = WazuhAdapter.normalize_alert(windows_alert)
         assert inc.user == "jsmith"
-        assert inc.severity == "Medium"      # level 7
+        assert inc.events[0].event_risk == "suspicious"   # level 7
 
     def test_location_is_none(self, ssh_alert: dict[str, Any]) -> None:
         """location is None for all Wazuh alerts (no geo data)."""
         inc = WazuhAdapter.normalize_alert(ssh_alert)
-        assert inc.sign_in_events[0].location is None
+        assert inc.events[0].location is None
 
-    def test_mfa_result_not_attempted(self, ssh_alert: dict[str, Any]) -> None:
-        """mfa_result is always NotAttempted for Wazuh alerts."""
+    def test_auth_status_none(self, ssh_alert: dict[str, Any]) -> None:
+        """auth_status is None for Wazuh alerts (no MFA outcome tracked)."""
         inc = WazuhAdapter.normalize_alert(ssh_alert)
-        assert inc.sign_in_events[0].mfa_result == "NotAttempted"
+        assert inc.events[0].auth_status is None
 
     def test_no_geo_fallback_no_srcip(self, windows_alert: dict[str, Any]) -> None:
         """Windows alert with no srcip falls back to agent.ip."""
         inc = WazuhAdapter.normalize_alert(windows_alert)
         # The windows_alert has no data.srcip but agent.ip = 10.0.1.20.
-        assert inc.sign_in_events[0].ip_address == "10.0.1.20"
+        assert inc.events[0].ip_address == "10.0.1.20"
 
     def test_host_entity_always_present(self, ssh_alert: dict[str, Any]) -> None:
         """Host entity is always in the entities list."""
@@ -283,7 +285,7 @@ class TestNormalizeAlert:
         assert isinstance(inc, NormalizedIncident)
         assert inc.incident_id != ""
         assert inc.user != ""
-        assert len(inc.sign_in_events) == 1
+        assert len(inc.events) == 1
 
     def test_triage_pipeline_runs_on_normalized(
         self,

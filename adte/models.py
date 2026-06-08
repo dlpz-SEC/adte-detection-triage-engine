@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ThreatIntelResult(BaseModel):
@@ -109,33 +109,42 @@ class UserProfile(BaseModel):
 
 
 class SignInMetadata(BaseModel):
-    """A single Azure AD / Entra ID sign-in event.
+    """A single normalised security event (OCSF-inspired, source-agnostic).
 
-    Captures the raw observables from a sign-in log entry that the
-    triage engine needs for enrichment and anomaly detection.
+    Captures the raw observables from one event (originally an Azure AD /
+    Entra ID sign-in, but now vendor-neutral) that the triage engine needs
+    for enrichment and anomaly detection.  The ``type`` field tells the
+    engine how to interpret the event.
 
     Attributes:
-        user_principal_name: UPN of the authenticating user.
-        ip_address: Source IP of the sign-in attempt.
+        user_principal_name: UPN / principal of the actor.
+        ip_address: Source IP of the event.
+        type: OCSF-style event class — how the engine should interpret this
+            event (``authentication``, ``network``, ``process``, ``file``).
         location: Resolved geographic location of the source IP.
-        device_id: Entra device-object ID (empty if unmanaged).
+        device_id: Device-object ID (empty if unmanaged).
         device_name: Human-readable device name.
-        user_agent: HTTP User-Agent string from the sign-in request.
-        mfa_result: Outcome of the MFA challenge.
-        app_display_name: Application the user signed in to.
-        risk_state: Entra ID risk assessment at sign-in time.
-        timestamp: UTC timestamp of the sign-in event.
+        user_agent: HTTP User-Agent string from the request.
+        auth_status: Vendor-neutral authentication outcome
+            (``success``/``failure``/``challenge``), or ``None`` when no
+            authentication outcome applies to this event (e.g. a network or
+            file event, or a sign-in where MFA was not attempted).
+        app_display_name: Application the actor interacted with.
+        event_risk: Normalised per-event risk assessment
+            (``none``/``suspicious``/``high``/``confirmed``).
+        timestamp: UTC timestamp of the event.
     """
 
     user_principal_name: str
     ip_address: str
+    type: Literal["authentication", "network", "process", "file"]
     location: GeoLocation | None = None
     device_id: str = ""
     device_name: str = ""
     user_agent: str = ""
-    mfa_result: Literal["Success", "Denied", "NotAttempted"] = "NotAttempted"
+    auth_status: Literal["success", "failure", "challenge"] | None = None
     app_display_name: str = ""
-    risk_state: str = ""
+    event_risk: Literal["none", "suspicious", "high", "confirmed"] = "none"
     timestamp: datetime
 
 
@@ -165,17 +174,25 @@ class SentinelIncident(BaseModel):
     Attributes:
         incident_id: Unique Sentinel incident identifier.
         title: Short description / rule name that fired.
-        severity: Sentinel-assigned severity level.
+        source: Origin platform of the incident (``azure_ad``, ``wazuh``,
+            ``okta``, ``generic``); carried through to the normalised incident.
         status: Current incident status (e.g. 'New', 'Active', 'Closed').
         created_time: UTC timestamp when Sentinel created the incident.
         entities: Observable entities extracted from the underlying alerts.
         alerts: Raw alert payloads associated with this incident.
         raw_payload: Complete original JSON from the Sentinel API.
+
+    Note:
+        ``severity`` is intentionally absent — severity is engine-assigned,
+        not caller-supplied.  Any ``severity`` present in raw source JSON is
+        ignored (pydantic ``extra='ignore'``) rather than propagated.
     """
+
+    model_config = ConfigDict(extra="ignore")
 
     incident_id: str
     title: str
-    severity: Literal["Low", "Medium", "High", "Critical"]
+    source: Literal["azure_ad", "wazuh", "okta", "generic"] = "azure_ad"
     status: str = "New"
     created_time: datetime
     entities: list[AlertEntity] = Field(default_factory=list)
@@ -196,18 +213,50 @@ class NormalizedIncident(BaseModel):
     Attributes:
         incident_id: Unique incident identifier (carried from Sentinel).
         user: Primary user principal name under investigation.
-        sign_in_events: Ordered sign-in log entries relevant to this incident.
+        source: Origin platform of the incident (``azure_ad``, ``wazuh``,
+            ``okta``, ``generic``) — lets the engine apply source-aware
+            normalisation if needed.
+        events: Ordered events relevant to this incident.  Each event
+            carries a ``type`` so the engine knows how to interpret it.
         entities: Observable entities from the underlying alerts.
-        severity: Incident severity level.
         created_time: UTC timestamp of incident creation.
+
+    Note:
+        ``severity`` is intentionally NOT an input field — the triage engine
+        derives severity from its computed verdict.  Supplying a top-level
+        ``severity`` on input is rejected (see ``_reject_severity``).
     """
 
     incident_id: str
     user: str
-    sign_in_events: list[SignInMetadata] = Field(default_factory=list)
+    source: Literal["azure_ad", "wazuh", "okta", "generic"] = "generic"
+    events: list[SignInMetadata] = Field(default_factory=list)
     entities: list[AlertEntity] = Field(default_factory=list)
-    severity: Literal["Low", "Medium", "High", "Critical"] = "Medium"
     created_time: datetime = Field(default_factory=datetime.utcnow)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_severity(cls, data: Any) -> Any:
+        """Reject any input that supplies a top-level ``severity``.
+
+        Severity is engine-assigned (derived from the computed verdict),
+        never accepted from the caller.  Raising here surfaces as an HTTP
+        422 at the ``/api/triage`` validation boundary.
+
+        Args:
+            data: Raw input passed to model validation/construction.
+
+        Returns:
+            The unmodified input when no ``severity`` key is present.
+
+        Raises:
+            ValueError: If a top-level ``severity`` key is supplied.
+        """
+        if isinstance(data, dict) and "severity" in data:
+            raise ValueError(
+                "severity is engine-assigned and must not be provided on input"
+            )
+        return data
 
     @classmethod
     def from_sentinel(cls, incident: SentinelIncident) -> "NormalizedIncident":
@@ -215,10 +264,13 @@ class NormalizedIncident(BaseModel):
 
         Extraction logic:
         1. The primary user is taken from the first ``Account`` entity.
-        2. Sign-in events are rebuilt from the ``alerts`` list — each
-           alert that contains sign-in fields is converted to a
-           ``SignInMetadata``.
+        2. Events are rebuilt from the ``alerts`` list — each alert's
+           ``events`` array (legacy key: ``sign_in_events``) is converted
+           to ``SignInMetadata`` instances, defaulting ``type`` to
+           ``authentication`` for sign-in-style events.
         3. All entities are carried through as-is.
+        4. ``source`` is carried from the Sentinel payload (default
+           ``azure_ad``); ``severity`` is dropped (engine-assigned).
 
         Args:
             incident: The raw Sentinel incident to normalise.
@@ -233,11 +285,14 @@ class NormalizedIncident(BaseModel):
                 user = entity.identifier
                 break
 
-        # --- Extract sign-in events from alerts ---
-        sign_in_events: list[SignInMetadata] = []
+        # --- Extract events from alerts ---
+        # Accepts the new "events" key, with a backward-compatible fallback
+        # to the legacy "sign_in_events" key so pre-migration payloads still
+        # normalise cleanly.
+        events: list[SignInMetadata] = []
         for alert in incident.alerts:
-            sign_ins = alert.get("sign_in_events", [])
-            for si in sign_ins:
+            raw_events = alert.get("events", alert.get("sign_in_events", []))
+            for si in raw_events:
                 loc_data = si.get("location", {})
                 location = GeoLocation(
                     lat=loc_data.get("lat", 0.0),
@@ -245,29 +300,30 @@ class NormalizedIncident(BaseModel):
                     city=loc_data.get("city", ""),
                     country=loc_data.get("country", ""),
                 )
-                sign_in_events.append(
+                events.append(
                     SignInMetadata(
                         user_principal_name=si.get("user_principal_name", user),
                         ip_address=si.get("ip_address", ""),
+                        type=si.get("type", "authentication"),
                         location=location,
                         device_id=si.get("device_id", ""),
                         device_name=si.get("device_name", ""),
                         user_agent=si.get("user_agent", ""),
-                        mfa_result=si.get("mfa_result", "NotAttempted"),
+                        auth_status=si.get("auth_status"),
                         app_display_name=si.get("app_display_name", ""),
-                        risk_state=si.get("risk_state", ""),
+                        event_risk=si.get("event_risk", "none"),
                         timestamp=datetime.fromisoformat(si["timestamp"]),
                     )
                 )
 
         # Sort chronologically.
-        sign_in_events.sort(key=lambda e: e.timestamp)
+        events.sort(key=lambda e: e.timestamp)
 
         return cls(
             incident_id=incident.incident_id,
             user=user,
-            sign_in_events=sign_in_events,
+            source=incident.source,
+            events=events,
             entities=incident.entities,
-            severity=incident.severity,
             created_time=incident.created_time,
         )

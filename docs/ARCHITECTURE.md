@@ -31,7 +31,7 @@ analyst or a downstream SOAR/ticketing workflow.
 
 **Input:** Security incident/alert payload (JSON) — from Sentinel, Wazuh, or other adapters
 
-The CLI reads a JSON file representing a security incident/alert with embedded entities and sign-in metadata. In production, this would be replaced by a source-specific webhook or polling adapter (e.g. Sentinel, Wazuh Indexer).
+The CLI reads a JSON file representing a security incident/alert with embedded entities and normalised events (OCSF-inspired: each event carries a `type`, `auth_status`, and `event_risk`; the incident carries a top-level `source`). In production, this would be replaced by a source-specific webhook or polling adapter (e.g. Sentinel, Wazuh Indexer).
 
 **Module:** `adte/cli.py` (`_load_incident`)
 
@@ -122,10 +122,10 @@ cli.py
 SentinelIncident (raw JSON)
     │
     ▼  NormalizedIncident.from_sentinel()
-NormalizedIncident
-    │  - incident_id, user, severity
-    │  - sign_in_events: list[SignInMetadata]
-    │    - timestamp, ip_address, location, device_id, mfa_result
+NormalizedIncident   (OCSF-inspired, source-agnostic; severity is engine-derived, NOT an input)
+    │  - incident_id, user, source (azure_ad | wazuh | okta | generic)
+    │  - events: list[SignInMetadata]
+    │    - timestamp, ip_address, type, location, device_id, auth_status, event_risk
     │
     ▼  TriageEngine(incident, user_profile, fp_registry)
 TriageEngine
@@ -149,6 +149,7 @@ TriageEngine
         ▼
     Output Dict
     ├── verdict: str
+    ├── source: str   (origin platform, carried from the incident)
     ├── risk_score: int
     ├── confidence: int
     ├── recommended_action: str
@@ -156,8 +157,16 @@ TriageEngine
     ├── rationale: list[{signal, score, detail}]
     ├── evidence: {threat_intel, fp_matches, sign_in_count, ...}
     ├── safety: {human_review_required, automated_actions_permitted, ...}
-    └── report: {nist_phase, incident_id, signal_summary, one_paragraph_summary, ...}
+    └── report: {nist_phase, incident_id, severity (engine-derived), signal_summary, ...}
 ```
+
+> **Three distinct `source` fields** (do not conflate):
+> 1. **`incident.source`** — origin-platform enum on the input (`azure_ad` | `wazuh` | `okta` |
+>    `generic`); carried through to the verdict output and audit log. Defaults to `azure_ad` for
+>    Sentinel-format payloads (`from_sentinel`) and `generic` for a directly-POSTed `NormalizedIncident`.
+> 2. **`/api/queue` response `source`** — data provenance: `"wazuh"` (live adapter) vs `"mock"`
+>    (bundled-example fallback). Means "where the queue got its rows", not the incident's platform.
+> 3. **`evidence.threat_intel[ip].source`** — the threat-intel provider name(s) for an IP lookup.
 
 ## Security Controls
 
