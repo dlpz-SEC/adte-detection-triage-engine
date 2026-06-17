@@ -2,20 +2,10 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+ADTE is a portfolio and research project. There are no versioned releases. Security fixes are applied to the main branch as discovered.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+This repository has GitHub Private Vulnerability Reporting enabled. To report a security issue, use the "Report a vulnerability" button under the Security tab.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+I'll respond within 7 days. There is no bug bounty program.
