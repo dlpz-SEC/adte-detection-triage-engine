@@ -246,7 +246,7 @@ def test_csrf_allows_https_origin_behind_tls_proxy() -> None:
     import adte.server as srv
 
     srv.app.config["TESTING"] = True
-    host = "adte.up.railway.app"
+    host = "adte-detection-triage-engine-production.up.railway.app"
     with srv.app.test_client() as client:
         resp = client.post(
             "/api/triage",
@@ -268,7 +268,7 @@ def test_csrf_rejects_cross_origin_behind_tls_proxy() -> None:
     import adte.server as srv
 
     srv.app.config["TESTING"] = True
-    host = "adte.up.railway.app"
+    host = "adte-detection-triage-engine-production.up.railway.app"
     with srv.app.test_client() as client:
         resp = client.post(
             "/api/triage",
