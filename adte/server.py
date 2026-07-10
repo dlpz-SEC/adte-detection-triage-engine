@@ -502,14 +502,69 @@ def examples() -> Any:
     return jsonify(result)
 
 
+def _coerce_to_incident(payload: dict[str, Any]) -> NormalizedIncident:
+    """Coerce a posted alert into a ``NormalizedIncident``, source-format aware.
+
+    ADTE's canonical triage input is the ``NormalizedIncident`` schema (what
+    ``/api/examples`` emits and Quick Load posts).  Analysts, however, routinely
+    paste raw Wazuh / OpenSearch alert JSON — the most common SIEM alert-export
+    shape.  This helper accepts either, so the triage box is not limited to
+    ADTE's internal schema:
+
+    1. **OpenSearch hit envelope** — a document with a ``_source`` object
+       (typically wrapped with ``_index``/``_id``/``_score``), exactly as a
+       ``wazuh-alerts-4.x-*`` search hit looks.  The ``_source`` body is
+       unwrapped, the ``_id`` is carried in as the incident id, and the Wazuh
+       adapter normalises it.
+    2. **Bare Wazuh ``_source`` document** — a top-level ``rule`` object with no
+       ADTE ``events`` array (the ``_source`` body on its own).  Normalised via
+       the Wazuh adapter.
+    3. **NormalizedIncident** — anything else is validated against the canonical
+       schema unchanged (this also preserves the top-level ``severity``
+       rejection).
+
+    The Wazuh path reuses ``WazuhAdapter.normalize_alert`` — a pure, network-free
+    static transform — so no live Indexer connection is made.
+
+    Args:
+        payload: The parsed JSON request body (already confirmed a ``dict``).
+
+    Returns:
+        A ``NormalizedIncident`` ready for the triage pipeline.
+
+    Raises:
+        pydantic.ValidationError: If the payload matches none of the accepted
+            shapes (surfaces as HTTP 422 at the route).
+        ValueError, KeyError, TypeError: If a Wazuh-shaped payload is malformed
+            (e.g. a non-ISO timestamp) — the route maps these to HTTP 422 too.
+    """
+    # Deferred import — mirrors /api/queue; keeps module import light.
+    from adte.adapters.wazuh import WazuhAdapter
+
+    # (1) OpenSearch hit envelope: {"_source": {...}, "_id": "..."}.
+    source = payload.get("_source")
+    if isinstance(source, dict):
+        doc = dict(source)
+        doc.setdefault("id", payload.get("_id", ""))
+        return WazuhAdapter.normalize_alert(doc)
+
+    # (2) Bare Wazuh _source document: a "rule" object, not ADTE "events".
+    if isinstance(payload.get("rule"), dict) and "events" not in payload:
+        return WazuhAdapter.normalize_alert(payload)
+
+    # (3) Canonical NormalizedIncident schema (what /api/examples emits).
+    return NormalizedIncident.model_validate(payload)
+
+
 @app.route("/api/triage", methods=["POST"])
 @require_role("analyst")
 @limiter.limit("10/minute")
 def triage() -> Any:
-    """Run the ADTE triage pipeline on a posted NormalizedIncident.
+    """Run the ADTE triage pipeline on a posted incident.
 
-    Accepts a JSON body matching the ``NormalizedIncident`` schema.
-    Deserializes directly via ``model_validate`` — no adapter involved.
+    Accepts either ADTE's canonical ``NormalizedIncident`` schema or a raw
+    Wazuh / OpenSearch alert (auto-normalised via ``WazuhAdapter``); the body
+    shape is auto-detected by ``_coerce_to_incident``.
 
     NIST 800-61 Phase: Detection & Analysis — enrichment, scoring,
     and decision are all performed inside ``TriageEngine``.
@@ -534,11 +589,28 @@ def triage() -> Any:
     if payload is None:
         return jsonify({"error": "Request body must be valid JSON"}), 400
 
-    # --- Validate against NormalizedIncident schema ---
+    # --- Validate / normalise the body ---
+    # Accept ADTE's canonical NormalizedIncident schema OR a raw Wazuh /
+    # OpenSearch alert (auto-normalised via the adapter). See _coerce_to_incident.
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 422
     try:
-        incident = NormalizedIncident.model_validate(payload)
+        incident = _coerce_to_incident(payload)
     except ValidationError:
-        return jsonify({"error": "Invalid incident schema — check required fields"}), 422
+        return jsonify({
+            "error": (
+                "Invalid incident schema — check required fields. Accepted formats: "
+                "a NormalizedIncident object, or a raw Wazuh/OpenSearch alert "
+                "(a `rule` object, or an OpenSearch `_source` envelope)."
+            )
+        }), 422
+    except (ValueError, KeyError, TypeError) as exc:
+        return jsonify({
+            "error": (
+                "Alert could not be normalised — malformed Wazuh/OpenSearch "
+                f"payload ({type(exc).__name__})."
+            )
+        }), 422
 
     # --- Run triage pipeline (30 s hard timeout) ---
     _TRIAGE_TIMEOUT_SECS = 30
