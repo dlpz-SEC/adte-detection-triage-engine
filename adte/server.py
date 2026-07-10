@@ -621,6 +621,45 @@ def _coerce_to_incident(payload: Any) -> NormalizedIncident:
     return NormalizedIncident.model_validate(payload)
 
 
+def _finalize_output(output: dict[str, Any], incident: NormalizedIncident) -> dict[str, Any]:
+    """Attach the MITRE technique union, technique details, and NIST phase.
+
+    Shared by the single-alert and batch triage routes so both produce an
+    identical output contract.  Union order is preserved: signal-derived IDs
+    first, then native event ``technique_ids`` (e.g. Wazuh ``rule.mitre.id``),
+    then IDs surfaced by the advisory rule-text enrichment.
+
+    Args:
+        output: The engine's ``to_output()`` dict; mutated in place.
+        incident: The triaged incident (source of native technique IDs).
+
+    Returns:
+        The same ``output`` dict with ``mitre_techniques``, ``mitre_details``,
+        and ``nist_phase`` populated.
+    """
+    fired = [r["signal"] for r in output.get("rationale", []) if r.get("score", 0) > 0]
+    techniques = get_techniques(fired)
+    sources: dict[str, str] = {tid: "signal" for tid in techniques}
+    # Union in native ATT&CK IDs carried on the events (e.g. Wazuh
+    # rule.mitre.id) — signal-derived IDs keep their existing order first.
+    for event in incident.events:
+        for tid in event.technique_ids:
+            if tid and tid not in sources:
+                sources[tid] = "native"
+                techniques.append(tid)
+    # Then any technique the advisory rule-text enrichment surfaced.
+    enrichment = output.get("llm_enrichment")
+    if isinstance(enrichment, dict) and enrichment.get("source") == "deterministic_mapping":
+        for tid in enrichment.get("technique_ids", []):
+            if tid and tid not in sources:
+                sources[tid] = "rule_text"
+                techniques.append(tid)
+    output["mitre_techniques"] = techniques
+    output["mitre_details"] = get_technique_details(techniques, sources)
+    output["nist_phase"] = get_nist_phase(output["verdict"])
+    return output
+
+
 @app.route("/api/triage", methods=["POST"])
 @require_role("analyst")
 @limiter.limit("10/minute")
@@ -668,8 +707,9 @@ def triage() -> Any:
         return jsonify({
             "error": (
                 f"Batch payload detected ({exc.count} alerts) — /api/triage "
-                "triages one alert at a time. POST a single alert object "
-                "(one element of the `alerts` / `hits.hits` array)."
+                "triages one alert at a time. POST the batch to "
+                f"/api/triage/batch (max {_BATCH_MAX_ALERTS} alerts), or a "
+                "single alert object here."
             )
         }), 422
     except ValidationError:
@@ -714,28 +754,177 @@ def triage() -> Any:
         _log.error("Triage pipeline failed for incident %s (%s)", incident.incident_id, type(exc).__name__)
         return jsonify({"error": "Triage pipeline error — check server logs"}), 500
 
-    fired = [r["signal"] for r in output.get("rationale", []) if r.get("score", 0) > 0]
-    techniques = get_techniques(fired)
-    sources: dict[str, str] = {tid: "signal" for tid in techniques}
-    # Union in native ATT&CK IDs carried on the events (e.g. Wazuh
-    # rule.mitre.id) — signal-derived IDs keep their existing order first.
-    for event in incident.events:
-        for tid in event.technique_ids:
-            if tid and tid not in sources:
-                sources[tid] = "native"
-                techniques.append(tid)
-    # Then any technique the advisory rule-text enrichment surfaced.
-    enrichment = output.get("llm_enrichment")
-    if isinstance(enrichment, dict) and enrichment.get("source") == "deterministic_mapping":
-        for tid in enrichment.get("technique_ids", []):
-            if tid and tid not in sources:
-                sources[tid] = "rule_text"
-                techniques.append(tid)
-    output["mitre_techniques"] = techniques
-    output["mitre_details"] = get_technique_details(techniques, sources)
-    output["nist_phase"] = get_nist_phase(output["verdict"])
+    output = _finalize_output(output, incident)
     log_verdict(output, DB_PATH)
     return jsonify(output), 200
+
+
+# ---------------------------------------------------------------------------
+# Batch triage — accept a whole OpenSearch export (array / wrapper of alerts)
+# ---------------------------------------------------------------------------
+
+# Cap chosen against gunicorn's 60 s worker timeout: the TI TTL cache makes
+# repeated/private IPs near-free, but each cold public IP costs live HTTP.
+_BATCH_MAX_ALERTS: int = 25
+_BATCH_DEADLINE_SECS: int = 45
+
+
+def _extract_batch_items(payload: Any) -> list[Any]:
+    """Return the alert elements of a batch payload (one wrapper level).
+
+    Accepts a bare JSON array, ``{"alerts": [...]}`` (unless the dict also
+    carries ``incident_id`` + ``title`` — that is a raw Sentinel incident,
+    returned whole), or a full OpenSearch ``_search`` response
+    (``{"hits": {"hits": [...]}}``).  Anything else is treated as a single
+    alert and returned as a one-element list.  Each element is subsequently
+    normalised by ``_coerce_to_incident``, which handles every single-alert
+    shape — so this helper only peels the outermost wrapper.
+
+    Args:
+        payload: The parsed JSON request body (dict or list).
+
+    Returns:
+        List of alert elements to triage, in input order.
+    """
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        wrapped = payload.get("alerts")
+        if isinstance(wrapped, list) and not (
+            "incident_id" in payload and "title" in payload
+        ):
+            return wrapped
+        hits = payload.get("hits")
+        if isinstance(hits, dict) and isinstance(hits.get("hits"), list):
+            return hits["hits"]
+    return [payload]
+
+
+@app.route("/api/triage/batch", methods=["POST"])
+@require_role("analyst")
+@limiter.limit("5/minute")
+def triage_batch() -> Any:
+    """Triage every alert in a posted batch with per-alert error isolation.
+
+    Accepts the shapes an analyst naturally pastes from an OpenSearch /
+    Wazuh indexer export: a bare JSON array of hits, ``{"alerts": [...]}``,
+    or a full ``_search`` response.  Each element goes through the same
+    shape auto-detection as ``/api/triage`` (``_coerce_to_incident``), is
+    scored by the engine, MITRE-finalised, and audit-logged.
+
+    A malformed element yields an ``{"index", "ok": false, "error"}`` entry
+    while the remaining alerts still triage; the response is HTTP 200 with
+    per-item ``ok`` carrying the truth.  Alerts run sequentially under a
+    ``_BATCH_DEADLINE_SECS`` budget — elements not started before the
+    deadline are skipped with an explanatory error entry rather than
+    risking the gunicorn worker timeout.
+
+    The LLM narrative is deliberately skipped for batches (the ``use_llm``
+    query parameter is ignored): N sequential Claude calls would blow the
+    deadline.  ``llm_enrich()`` still runs — it is the network-free
+    rule-text MITRE mapping, keeping batch entries at full MITRE parity
+    with single-alert triage.
+
+    NIST 800-61 Phase: Detection & Analysis — bulk enrichment, scoring,
+    and decision over an exported alert set.
+
+    Returns:
+        ``{"count", "succeeded", "failed", "results": [...]}`` (200) with
+        ``results`` in input order (``results[k]["index"] == k``; success
+        entries are the full single-triage output dict).  ``{"error"}`` on
+        non-JSON (415), bad JSON (400), empty/oversize batch (422), or a
+        blown overall deadline (504).
+    """
+    # --- Parse request body (mirrors /api/triage) ---
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"error": "Request body must be valid JSON"}), 400
+    if not isinstance(payload, (dict, list)):
+        return jsonify({"error": "Request body must be a JSON object or array"}), 422
+
+    items = _extract_batch_items(payload)
+    if not items:
+        return jsonify({"error": "Batch contains no alerts."}), 422
+    if len(items) > _BATCH_MAX_ALERTS:
+        return jsonify({
+            "error": (
+                f"Batch too large ({len(items)} alerts, max {_BATCH_MAX_ALERTS}) — "
+                "split the export or narrow the OpenSearch query."
+            )
+        }), 422
+
+    def _run_batch() -> list[dict[str, Any]]:
+        """Sequentially triage every element, isolating per-alert failures."""
+        results: list[dict[str, Any]] = []
+        deadline = time.monotonic() + _BATCH_DEADLINE_SECS
+        fp_registry = FPRegistry.load()
+        for i, item in enumerate(items):
+            if time.monotonic() > deadline:
+                results.append({
+                    "index": i, "ok": False,
+                    "error": "Skipped — batch deadline reached",
+                })
+                continue
+            try:
+                incident = _coerce_to_incident(item)
+            except _BatchPayloadError as exc:
+                results.append({
+                    "index": i, "ok": False,
+                    "error": f"Element is itself a batch of {exc.count} alerts",
+                })
+                continue
+            except ValidationError:
+                results.append({
+                    "index": i, "ok": False,
+                    "error": "Invalid incident schema — check required fields.",
+                })
+                continue
+            except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                results.append({
+                    "index": i, "ok": False,
+                    "error": (
+                        "Alert could not be normalised — malformed source "
+                        f"alert payload ({type(exc).__name__})."
+                    ),
+                })
+                continue
+            try:
+                user_profile = get_user_profile(incident.user)
+                engine = TriageEngine(incident, user_profile, fp_registry)
+                output = (
+                    engine.enrich().score().decide().llm_enrich().to_output(use_llm=False)
+                )
+            except Exception as exc:
+                _log.error(
+                    "Batch triage failed for element %d (%s)", i, type(exc).__name__
+                )
+                results.append({
+                    "index": i, "ok": False, "error": "Triage pipeline error",
+                })
+                continue
+            output = _finalize_output(output, incident)
+            log_verdict(output, DB_PATH)
+            results.append({"index": i, "ok": True, **output})
+        return results
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+        _future = _pool.submit(_run_batch)
+        try:
+            results = _future.result(timeout=_BATCH_DEADLINE_SECS + 10)
+        except concurrent.futures.TimeoutError:
+            return jsonify(
+                {"error": f"Batch triage timed out after {_BATCH_DEADLINE_SECS} s"}
+            ), 504
+
+    succeeded = sum(1 for r in results if r.get("ok"))
+    return jsonify({
+        "count": len(items),
+        "succeeded": succeeded,
+        "failed": len(results) - succeeded,
+        "results": results,
+    }), 200
 
 
 @app.route("/api/queue")

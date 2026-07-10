@@ -1071,6 +1071,64 @@ import ReactDOM from 'react-dom/client';
       );
     }
 
+    // Summary table for /api/triage/batch responses. Reuses the QueueView
+    // data-table idiom; clicking a success row focuses that entry as the
+    // single `result` so TriageResult and every downstream view (Signals,
+    // MITRE, Intel, Audit) work on it unchanged.
+    function BatchResultsTable({ results, meta, selectedIndex, onSelect }) {
+      const colTemplate = '32px 1.4fr 1fr 90px 110px';
+      return (
+        <div style={{ marginBottom: 24 }}>
+          <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>
+            BATCH — {meta.count} alerts · <span style={{ color: 'var(--success)' }}>{meta.succeeded} triaged</span>
+            {meta.failed > 0 && <> · <span style={{ color: 'var(--medium)' }}>{meta.failed} failed</span></>}
+          </div>
+          <div className="data-table">
+            <div className="data-table-header" style={{ gridTemplateColumns: colTemplate }}>
+              <span>#</span><span>INCIDENT</span><span>USER</span><span>RISK</span><span>VERDICT</span>
+            </div>
+            {results.map(r => {
+              if (!r.ok) {
+                return (
+                  <div key={r.index} className="data-table-row" style={{ gridTemplateColumns: '32px 1fr', cursor: 'default' }}>
+                    <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{r.index + 1}</span>
+                    <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--medium)' }}>⚠ {r.error}</span>
+                  </div>
+                );
+              }
+              const techs = Array.isArray(r.mitre_techniques) ? r.mitre_techniques : [];
+              const focused = selectedIndex === r.index;
+              return (
+                <div key={r.index}>
+                  <div className="data-table-row" style={{ gridTemplateColumns: colTemplate, background: focused ? 'var(--accent-dim)' : undefined }}
+                    onClick={() => onSelect(r)} title="Show full triage result">
+                    <span className="mono" style={{ fontSize: '0.75rem', color: focused ? 'var(--accent)' : 'var(--text-muted)' }}>{r.index + 1}</span>
+                    <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.incident_id || '—'}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.user || '—'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ width: `${r.risk_score}%`, height: '100%', background: VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)], borderRadius: 2 }} />
+                      </div>
+                      <span className="mono" style={{ fontSize: '0.75rem', color: VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)], fontWeight: 600 }}>{r.risk_score}</span>
+                    </div>
+                    <VerdictBadge verdict={r.verdict} riskScore={r.risk_score} />
+                  </div>
+                  {techs.length > 0 && (
+                    <div style={{ padding: '0 16px 8px' }}>
+                      <MitreBadges techniques={techs} phase={r.nist_phase} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mono" style={{ marginTop: 8, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+            Click a row for the full result · Signals / MITRE views follow the focused alert
+          </div>
+        </div>
+      );
+    }
+
     /* ------------------------------------------------------------------ */
     /* VIEW: SignalsView                                                    */
     /* ------------------------------------------------------------------ */
@@ -2524,6 +2582,8 @@ import ReactDOM from 'react-dom/client';
       const [exampleCursor, setExampleCursor] = useState(0);
       const [loadedKey, setLoadedKey] = useState(null);
       const [result, setResult] = useState(null);
+      const [batchResults, setBatchResults] = useState(null);   // array of per-alert entries from /api/triage/batch
+      const [batchMeta, setBatchMeta] = useState(null);         // { count, succeeded, failed }
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState(null);
       const [triageCount, setTriageCount] = useState(0);
@@ -2628,18 +2688,18 @@ import ReactDOM from 'react-dom/client';
         setInputText(JSON.stringify(examples[key], null, 2));
         setLoadedKey(key);
         setExampleCursor(c => (c + 1) % EXAMPLE_KEYS.length);
-        setResult(null); setError(null);
+        setResult(null); setError(null); setBatchResults(null); setBatchMeta(null);
       }, [examples, exampleCursor]);
 
       const handleLoadSpecific = useCallback((key) => {
         if (!examples) return;
         setInputText(JSON.stringify(examples[key], null, 2));
         setLoadedKey(key);
-        setResult(null); setError(null);
+        setResult(null); setError(null); setBatchResults(null); setBatchMeta(null);
       }, [examples]);
 
       const runTriage = useCallback((parsed) => {
-        setLoading(true); setError(null); setResult(null);
+        setLoading(true); setError(null); setResult(null); setBatchResults(null); setBatchMeta(null);
         const useLlm = llmAvailable;
         const url = useLlm ? `${API_BASE}/api/triage?use_llm=true` : `${API_BASE}/api/triage`;
         fetch(url, {
@@ -2673,12 +2733,53 @@ import ReactDOM from 'react-dom/client';
           .finally(() => setLoading(false));
       }, [llmAvailable]);
 
+      const runBatchTriage = useCallback((parsed) => {
+        setLoading(true); setError(null); setResult(null); setBatchResults(null); setBatchMeta(null);
+        fetch(`${API_BASE}/api/triage/batch`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          credentials: 'include',   // send the HttpOnly adte_session cookie set by /api/auth/login
+          body: JSON.stringify(parsed),
+        })
+          .then(async r => {
+            let d = null;
+            try { d = await r.json(); } catch { /* non-JSON body */ }
+            return { ok: r.ok, status: r.status, d };
+          })
+          .then(({ ok, status, d }) => {
+            if (ok) {
+              setBatchResults(d.results || []);
+              setBatchMeta({ count: d.count, succeeded: d.succeeded, failed: d.failed });
+              setTriageCount(c => c + (d.succeeded || 0));
+              setLastTriageTime(Date.now());
+              return;
+            }
+            if (status === 401) {
+              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in with your API key.`);
+            } else if (status === 403) {
+              setError(d?.error || 'Request forbidden by the server.');
+            } else {
+              setError(d?.error || `Batch triage failed (HTTP ${status}).`);
+            }
+          })
+          .catch(() => setError('Could not reach the triage API — check your connection, or sign in via Settings if this deployment is secured.'))
+          .finally(() => setLoading(false));
+      }, []);
+
       const handleRunTriage = useCallback(() => {
         let parsed;
         try { parsed = JSON.parse(inputText); }
         catch { setError('Invalid JSON — check syntax before submitting'); return; }
-        runTriage(parsed);
-      }, [inputText, runTriage]);
+        // Batch detection mirrors the backend's _extract_batch_items: a bare
+        // array, {"alerts":[...]} (unless it's a raw Sentinel incident, which
+        // legitimately carries an `alerts` list), or a full _search response.
+        // Single-element wrappers stay on /api/triage, which unwraps them.
+        const batchItems = Array.isArray(parsed) ? parsed
+          : (parsed && Array.isArray(parsed.alerts) && !(parsed.incident_id && parsed.title)) ? parsed.alerts
+          : (parsed && parsed.hits && Array.isArray(parsed.hits.hits)) ? parsed.hits.hits
+          : null;
+        if (batchItems && batchItems.length > 1) runBatchTriage(parsed);
+        else runTriage(parsed);
+      }, [inputText, runTriage, runBatchTriage]);
 
       const handleLoadIncident = useCallback((row) => {
         const json = row.incident_json;
@@ -2780,7 +2881,7 @@ import ReactDOM from 'react-dom/client';
                   <div style={{ padding: 24, paddingBottom: 64, overflowY: 'auto' }}>
                     <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 12 }}>TRIAGE RESULTS</div>
                     {loading && <LoadingSkeleton />}
-                    {!loading && !result && (
+                    {!loading && !result && !batchResults && (
                       <div style={{ paddingTop: 80, textAlign: 'center' }}>
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -2792,6 +2893,13 @@ import ReactDOM from 'react-dom/client';
                           Paste alert JSON or load an example
                         </div>
                       </div>
+                    )}
+                    {!loading && batchResults && (
+                      <BatchResultsTable
+                        results={batchResults} meta={batchMeta}
+                        selectedIndex={result ? result.index : null}
+                        onSelect={r => setResult(r)}
+                      />
                     )}
                     {!loading && result && <TriageResult result={result} scoreBarPct={scoreBarPct} />}
                   </div>
