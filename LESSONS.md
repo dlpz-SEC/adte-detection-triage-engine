@@ -55,3 +55,18 @@ is ignored). Same class of bug as the singleton above: a failure that only shows
 invoked by decorators/framework, never by name. On this codebase it produced 14 candidates, all false
 positives. Trust `ruff --select F401,F811,F841` (imports/redefs/unused-locals) for real dead code;
 treat name-reference scans as a hint list to hand-verify, never an auto-delete list.
+
+---
+
+### 2026-07-10 — Module-level state breaks silently under gunicorn --workers N
+
+**Rule:** Any module-level mutable state (a sessions dict, a cache, a counter) is PER-PROCESS.
+With `gunicorn --workers 2`, a login stored in worker A's dict is invisible to worker B, so
+~half of authenticated requests randomly 401 "Session expired" while `/api/auth-check`
+(landing on the right worker) still says logged in. The tell is *intermittent* auth/state
+flakiness in production that never reproduces locally (dev server = 1 process). Fix: move the
+state to a store all workers share (SQLite table beside the audit log here; Redis at scale) —
+and store session tokens hashed, so a DB read can't hijack sessions. Verify with a true
+cross-process test: two separate interpreters sharing the DB file, login in one, authenticate
+in the other. Locks (`threading.Lock`) do NOT help — they only serialize threads inside one
+process.

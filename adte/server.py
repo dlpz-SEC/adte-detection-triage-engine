@@ -22,10 +22,9 @@ import hmac
 import io
 import json
 import logging
-import secrets
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -44,6 +43,7 @@ from adte.engine import TriageEngine
 from adte.intel.mitre_mapper import get_nist_phase, get_technique_details, get_techniques
 from adte.intel.sigma_fp_registry import FPRegistry, add_fp_entry
 from adte.models import NormalizedIncident, SentinelIncident
+from adte.store import session_store
 from adte.store.audit_log import (
     clear_feedback,
     clear_verdicts,
@@ -121,18 +121,21 @@ def _resolve_role(api_key: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Session store — browser clients exchange their API key for a short-lived
 # session token returned as an HttpOnly cookie.  The token never touches JS.
+#
+# Sessions are persisted in SQLite (adte/store/session_store.py) so that all
+# gunicorn worker processes share one store.  The previous in-process dict
+# broke with --workers 2: a login handled by one worker was invisible to the
+# other, so ~half of authenticated requests randomly failed with
+# "Session expired" while /api/auth-check (hitting the right worker) still
+# reported the operator as logged in.
 # ---------------------------------------------------------------------------
 
 _SESSION_TTL_HOURS: int = 8
 _SESSION_COOKIE: str = "adte_session"
 
-# token → (role, expires_at); guarded by _sessions_lock for thread safety.
-_sessions: dict[str, tuple[str, datetime]] = {}
-_sessions_lock: threading.Lock = threading.Lock()
-
 
 def _create_session(role: str) -> str:
-    """Create a cryptographically random session token and store it.
+    """Create a cryptographically random session token in the shared store.
 
     Args:
         role: The RBAC role to associate with this session.
@@ -140,11 +143,7 @@ def _create_session(role: str) -> str:
     Returns:
         A 64-character hex session token.
     """
-    token = secrets.token_hex(32)
-    expires = datetime.now(timezone.utc) + timedelta(hours=_SESSION_TTL_HOURS)
-    with _sessions_lock:
-        _sessions[token] = (role, expires)
-    return token
+    return session_store.create_session(role, DB_PATH, _SESSION_TTL_HOURS)
 
 
 def _resolve_session(token: str) -> str | None:
@@ -158,15 +157,7 @@ def _resolve_session(token: str) -> str | None:
     Returns:
         Role string, or None if the token is invalid or expired.
     """
-    with _sessions_lock:
-        entry = _sessions.get(token)
-        if entry is None:
-            return None
-        role, expires = entry
-        if datetime.now(timezone.utc) > expires:
-            del _sessions[token]
-            return None
-        return role
+    return session_store.resolve_session(token, DB_PATH)
 
 
 # HTTP methods that are safe to serve in unauthenticated demo mode.
@@ -1318,8 +1309,7 @@ def auth_logout() -> Any:
     """
     token = request.cookies.get(_SESSION_COOKIE, "")
     if token:
-        with _sessions_lock:
-            _sessions.pop(token, None)
+        session_store.delete_session(token, DB_PATH)
     resp = jsonify({"status": "logged_out"})
     resp.delete_cookie(_SESSION_COOKIE, path="/")
     return resp, 200
