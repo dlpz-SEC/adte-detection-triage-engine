@@ -502,24 +502,51 @@ def examples() -> Any:
     return jsonify(result)
 
 
-def _coerce_to_incident(payload: dict[str, Any]) -> NormalizedIncident:
+class _BatchPayloadError(ValueError):
+    """Raised when a posted document wraps multiple alerts.
+
+    ``/api/triage`` scores one incident per request — a batch document
+    (``{"alerts": [...]}``, an OpenSearch search response, or a bare JSON
+    array with more than one element) cannot be triaged in a single call.
+    Carries the alert count so the route can say exactly what it saw.
+    """
+
+    def __init__(self, count: int) -> None:
+        super().__init__(f"batch payload with {count} alerts")
+        self.count = count
+
+
+def _coerce_to_incident(payload: Any) -> NormalizedIncident:
     """Coerce a posted alert into a ``NormalizedIncident``, source-format aware.
 
     ADTE's canonical triage input is the ``NormalizedIncident`` schema (what
     ``/api/examples`` emits and Quick Load posts).  Analysts, however, routinely
     paste raw Wazuh / OpenSearch alert JSON — the most common SIEM alert-export
-    shape.  This helper accepts either, so the triage box is not limited to
-    ADTE's internal schema:
+    shape.  This helper accepts any documented ADTE source format, so the
+    triage box is not limited to the internal schema:
 
-    1. **OpenSearch hit envelope** — a document with a ``_source`` object
+    1. **Batch wrappers** — ``{"alerts": [...]}`` test-suite documents, a full
+       OpenSearch ``_search`` response (``{"hits": {"hits": [...]}}``), or a
+       bare JSON array.  A wrapper holding exactly ONE alert is unwrapped and
+       coerced (iteratively, bounded to 4 levels — deeper nesting is rejected);
+       more than one raises ``_BatchPayloadError`` (the route turns it into a
+       422 explaining that triage is one alert per request).
+       A dict with ``alerts`` plus ``incident_id``/``title`` is NOT a batch —
+       that is the raw Sentinel incident shape (see 4).
+    2. **OpenSearch hit envelope** — a document with a ``_source`` object
        (typically wrapped with ``_index``/``_id``/``_score``), exactly as a
        ``wazuh-alerts-4.x-*`` search hit looks.  The ``_source`` body is
        unwrapped, the ``_id`` is carried in as the incident id, and the Wazuh
        adapter normalises it.
-    2. **Bare Wazuh ``_source`` document** — a top-level ``rule`` object with no
+    3. **Bare Wazuh ``_source`` document** — a top-level ``rule`` object with no
        ADTE ``events`` array (the ``_source`` body on its own).  Normalised via
        the Wazuh adapter.
-    3. **NormalizedIncident** — anything else is validated against the canonical
+    4. **Raw Sentinel incident** — the ``SentinelIncident`` shape the bundled
+       ``examples/*.json`` files use (``title`` plus ``alerts``/``raw_payload``,
+       and NO top-level ``user`` — canonical payloads always carry ``user``);
+       converted via ``NormalizedIncident.from_sentinel``.  Any ``severity`` in
+       the raw source JSON is ignored, per the documented Sentinel contract.
+    5. **NormalizedIncident** — anything else is validated against the canonical
        schema unchanged (this also preserves the top-level ``severity``
        rejection).
 
@@ -527,32 +554,79 @@ def _coerce_to_incident(payload: dict[str, Any]) -> NormalizedIncident:
     static transform — so no live Indexer connection is made.
 
     Args:
-        payload: The parsed JSON request body (already confirmed a ``dict``).
+        payload: The parsed JSON request body (a dict or a list).
 
     Returns:
         A ``NormalizedIncident`` ready for the triage pipeline.
 
     Raises:
+        _BatchPayloadError: If the payload wraps more than one alert.
         pydantic.ValidationError: If the payload matches none of the accepted
             shapes (surfaces as HTTP 422 at the route).
-        ValueError, KeyError, TypeError: If a Wazuh-shaped payload is malformed
+        ValueError, KeyError, TypeError: If a source-shaped payload is malformed
             (e.g. a non-ISO timestamp) — the route maps these to HTTP 422 too.
     """
-    # Deferred import — mirrors /api/queue; keeps module import light.
+    # Deferred import — mirrors /api/queue; keeps server startup light.
     from adte.adapters.wazuh import WazuhAdapter
 
-    # (1) OpenSearch hit envelope: {"_source": {...}, "_id": "..."}.
+    def _wrapper_items(p: Any) -> list[Any] | None:
+        """Return the wrapped alert list when ``p`` is a batch wrapper, else None."""
+        if isinstance(p, list):
+            return p
+        if isinstance(p, dict):
+            wrapped = p.get("alerts")
+            if isinstance(wrapped, list) and not (
+                "incident_id" in p and "title" in p
+            ):
+                return wrapped
+            hits = p.get("hits")
+            if isinstance(hits, dict) and isinstance(hits.get("hits"), list):
+                return hits["hits"]
+        return None
+
+    # (1) Batch wrappers: {"alerts": [...]}, a full _search response, or a
+    # bare array. A single wrapped alert is unwrapped; multiple are rejected.
+    # Unwrapping is iterative with a small depth bound — a maliciously deep
+    # {"alerts":[{"alerts":[...]}]} nest must 422, not blow the stack.
+    for _ in range(4):
+        items = _wrapper_items(payload)
+        if items is None:
+            break
+        if len(items) != 1:
+            raise _BatchPayloadError(len(items))
+        if not isinstance(items[0], (dict, list)):
+            raise ValueError("wrapped alert element is not a JSON object")
+        payload = items[0]
+    else:
+        raise ValueError("alert wrapper nesting too deep")
+
+    if not isinstance(payload, dict):
+        raise ValueError("payload is not a JSON object")
+
+    # (2) OpenSearch hit envelope: {"_source": {...}, "_id": "..."}.
     source = payload.get("_source")
     if isinstance(source, dict):
         doc = dict(source)
         doc.setdefault("id", payload.get("_id", ""))
         return WazuhAdapter.normalize_alert(doc)
 
-    # (2) Bare Wazuh _source document: a "rule" object, not ADTE "events".
+    # (3) Bare Wazuh _source document: a "rule" object, not ADTE "events".
     if isinstance(payload.get("rule"), dict) and "events" not in payload:
         return WazuhAdapter.normalize_alert(payload)
 
-    # (3) Canonical NormalizedIncident schema (what /api/examples emits).
+    # (4) Raw Sentinel incident (the examples/*.json shape): convert via
+    # from_sentinel, exactly like /api/examples does. Detection is deliberately
+    # strict — a canonical NormalizedIncident always carries a required `user`
+    # (which SentinelIncident lacks), so anything with `user` stays canonical.
+    if (
+        "title" in payload
+        and "user" not in payload
+        and "events" not in payload
+        and ("alerts" in payload or "raw_payload" in payload)
+    ):
+        return NormalizedIncident.from_sentinel(SentinelIncident.model_validate(payload))
+
+    # (5) Canonical NormalizedIncident schema (what /api/examples emits).
     return NormalizedIncident.model_validate(payload)
 
 
@@ -562,9 +636,11 @@ def _coerce_to_incident(payload: dict[str, Any]) -> NormalizedIncident:
 def triage() -> Any:
     """Run the ADTE triage pipeline on a posted incident.
 
-    Accepts either ADTE's canonical ``NormalizedIncident`` schema or a raw
-    Wazuh / OpenSearch alert (auto-normalised via ``WazuhAdapter``); the body
-    shape is auto-detected by ``_coerce_to_incident``.
+    Accepts ADTE's canonical ``NormalizedIncident`` schema, a raw Wazuh /
+    OpenSearch alert (auto-normalised via ``WazuhAdapter``), or a raw Sentinel
+    incident; the body shape is auto-detected by ``_coerce_to_incident``.
+    Batch wrappers holding exactly one alert are unwrapped; multi-alert
+    batches are rejected with an explanatory 422 (one alert per request).
 
     NIST 800-61 Phase: Detection & Analysis — enrichment, scoring,
     and decision are all performed inside ``TriageEngine``.
@@ -590,24 +666,37 @@ def triage() -> Any:
         return jsonify({"error": "Request body must be valid JSON"}), 400
 
     # --- Validate / normalise the body ---
-    # Accept ADTE's canonical NormalizedIncident schema OR a raw Wazuh /
-    # OpenSearch alert (auto-normalised via the adapter). See _coerce_to_incident.
-    if not isinstance(payload, dict):
+    # Accept ADTE's canonical NormalizedIncident schema, a raw Wazuh /
+    # OpenSearch alert, or a raw Sentinel incident (auto-normalised).
+    # See _coerce_to_incident for the shape-detection rules.
+    if not isinstance(payload, (dict, list)):
         return jsonify({"error": "Request body must be a JSON object"}), 422
     try:
         incident = _coerce_to_incident(payload)
+    except _BatchPayloadError as exc:
+        return jsonify({
+            "error": (
+                f"Batch payload detected ({exc.count} alerts) — /api/triage "
+                "triages one alert at a time. POST a single alert object "
+                "(one element of the `alerts` / `hits.hits` array)."
+            )
+        }), 422
     except ValidationError:
         return jsonify({
             "error": (
                 "Invalid incident schema — check required fields. Accepted formats: "
-                "a NormalizedIncident object, or a raw Wazuh/OpenSearch alert "
-                "(a `rule` object, or an OpenSearch `_source` envelope)."
+                "a NormalizedIncident object, a raw Wazuh/OpenSearch alert "
+                "(a `rule` object, or an OpenSearch `_source` envelope), or a "
+                "raw Sentinel incident."
             )
         }), 422
-    except (ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        # AttributeError included: adapter/from_sentinel field access on
+        # wrong-typed sub-documents (e.g. a string where a dict is expected)
+        # must surface as a clean 422, never a 500.
         return jsonify({
             "error": (
-                "Alert could not be normalised — malformed Wazuh/OpenSearch "
+                "Alert could not be normalised — malformed source alert "
                 f"payload ({type(exc).__name__})."
             )
         }), 422
