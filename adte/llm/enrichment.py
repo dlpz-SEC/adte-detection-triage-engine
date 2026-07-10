@@ -1,12 +1,22 @@
-"""Alert enrichment with MITRE ATT&CK and NIST CSF mappings.
+"""Incident enrichment with MITRE ATT&CK and NIST CSF mappings.
 
-Enriches a normalized alert dict with tactic, technique, and NIST
-category data via a deterministic keyword lookup, falling back to a
-low-confidence mock when no keyword matches.  NOTE: this module is NOT
-wired into the triage pipeline (``llm_enrichment`` is always null in
-triage output); the wired advisory LLM path lives in ``adte.llm.assist``.
+Wired into the triage pipeline via ``TriageEngine.llm_enrich()`` (called by
+the ``/api/triage`` route).  Enrichment is **advisory only** — it never
+influences ``risk_score``, ``verdict``, or ``confidence``.
 
-NIST 800-61 Phase: Detection & Analysis — context enrichment before
+Resolution order:
+  1. **Native log labels** — when the source log carried MITRE technique IDs
+     (e.g. Wazuh ``rule.mitre.id`` → per-event ``technique_ids``), those IDs
+     are authoritative (``source: "native_log"``).
+  2. **Keyword lookup** — otherwise the per-event rule text
+     (``events[].app_display_name``; Wazuh puts ``rule.description`` there)
+     is matched against the curated YAML technique map
+     (``source: "deterministic_mapping"``).
+  3. **None** — no native IDs and no keyword match means no enrichment;
+     ``llm_enrichment`` stays ``null`` rather than emitting a misleading
+     placeholder.
+
+NIST 800-61 Phase: Detection & Analysis — context enrichment alongside
 triage scoring.
 """
 
@@ -35,31 +45,116 @@ def _get_mapper() -> MitreMapper | None:
     return _mapper
 
 
-def enrich_alert(normalized_alert: dict[str, Any]) -> dict[str, Any]:
-    """Enrich an alert with MITRE ATT&CK and NIST CSF mappings.
-
-    Attempts a deterministic keyword lookup against the curated MITRE
-    mapping file first.  If no rule keyword matches, returns a mock
-    response with low confidence to signal that manual review is needed.
+def _collect_native_ids(incident: dict[str, Any]) -> list[str]:
+    """Collect distinct native technique IDs across the incident's events.
 
     Args:
-        normalized_alert: A normalized alert dict containing at least a
-            ``rule_description`` key.
+        incident: ``NormalizedIncident.model_dump(mode="json")`` dict.
 
     Returns:
-        Enrichment dict with keys: source, mitre_tactic,
-        mitre_technique_id, nist_category, confidence,
-        analyst_recommendation.
+        Order-preserving list of distinct non-empty technique IDs.
     """
-    rule_desc = normalized_alert.get("rule_description", "")
-    m = _get_mapper()
-    mitre_mapping = m.lookup_by_rule_text(rule_desc) if m else None
+    ids: list[str] = []
+    for event in incident.get("events") or []:
+        for tid in event.get("technique_ids") or []:
+            if tid and tid not in ids:
+                ids.append(tid)
+    return ids
 
+
+def _collect_rule_text(incident: dict[str, Any]) -> str:
+    """Join the distinct per-event rule text into one lookup string.
+
+    Rule text lives per-event in ``app_display_name`` (the Wazuh adapter maps
+    ``rule.description`` there).  Distinct non-empty values are joined with
+    "; " in event order.  A legacy top-level ``rule_description`` key is
+    honoured for backward compatibility with pre-OCSF callers.
+
+    Args:
+        incident: ``NormalizedIncident.model_dump(mode="json")`` dict.
+
+    Returns:
+        The combined rule text ("" when the incident carries none).
+    """
+    parts: list[str] = []
+    for event in incident.get("events") or []:
+        text = event.get("app_display_name") or ""
+        if text and text not in parts:
+            parts.append(text)
+    legacy = incident.get("rule_description") or ""
+    if legacy and legacy not in parts:
+        parts.append(legacy)
+    return "; ".join(parts)
+
+
+def _entry_for_id(technique_id: str) -> dict[str, Any] | None:
+    """Find the YAML mapping entry for an exact technique ID, if any.
+
+    Args:
+        technique_id: ATT&CK technique ID (e.g. ``"T1110.003"``).
+
+    Returns:
+        The matching mapping entry, or None.
+    """
+    m = _get_mapper()
+    if m is None:
+        return None
+    for entry in m.mappings:
+        if entry.get("mitre_technique_id") == technique_id:
+            return entry
+    return None
+
+
+def enrich_alert(normalized_alert: dict[str, Any]) -> dict[str, Any] | None:
+    """Enrich a normalised incident with MITRE ATT&CK / NIST CSF context.
+
+    Advisory only — the result is surfaced as ``llm_enrichment`` in the
+    triage output and never affects scoring.
+
+    Args:
+        normalized_alert: ``NormalizedIncident.model_dump(mode="json")``
+            dict (a legacy flat dict with ``rule_description`` also works).
+
+    Returns:
+        Enrichment dict with keys ``source``, ``mitre_tactic``,
+        ``mitre_technique_id``, ``technique_ids``, ``nist_category``,
+        ``confidence``, ``analyst_recommendation`` — or ``None`` when the
+        incident carries no native IDs and no rule text matches the map.
+    """
+    # 1. Native log labels win — the source SIEM already did the mapping.
+    native_ids = _collect_native_ids(normalized_alert)
+    if native_ids:
+        primary = native_ids[0]
+        entry = next(
+            (e for tid in native_ids if (e := _entry_for_id(tid)) is not None),
+            None,
+        )
+        if entry is not None:
+            primary = entry["mitre_technique_id"]
+        return {
+            "source": "native_log",
+            "mitre_tactic": entry["mitre_tactic"] if entry else "Unknown",
+            "mitre_technique_id": primary,
+            "technique_ids": native_ids,
+            "nist_category": entry["nist_detect"] if entry else "DE.CM-1",
+            "confidence": 1.0,
+            "analyst_recommendation": (
+                f"Log source labeled this {entry['mitre_technique_name']}"
+                if entry
+                else f"Log source labeled techniques: {', '.join(native_ids)}"
+            ),
+        }
+
+    # 2. Deterministic keyword lookup on the per-event rule text.
+    rule_text = _collect_rule_text(normalized_alert)
+    m = _get_mapper()
+    mitre_mapping = m.lookup_by_rule_text(rule_text) if (m and rule_text) else None
     if mitre_mapping:
         return {
             "source": "deterministic_mapping",
             "mitre_tactic": mitre_mapping["mitre_tactic"],
             "mitre_technique_id": mitre_mapping["mitre_technique_id"],
+            "technique_ids": [mitre_mapping["mitre_technique_id"]],
             "nist_category": mitre_mapping["nist_detect"],
             "confidence": 1.0,
             "analyst_recommendation": (
@@ -67,13 +162,5 @@ def enrich_alert(normalized_alert: dict[str, Any]) -> dict[str, Any]:
             ),
         }
 
-    # No deterministic match — return a low-confidence mock. Not called by the
-    # triage pipeline; see adte.llm.assist for the wired LLM summary path.
-    return {
-        "source": "mock_llm",
-        "mitre_tactic": "Unknown",
-        "mitre_technique_id": "T0000",
-        "nist_category": "DE.CM-1",
-        "confidence": 0.5,
-        "analyst_recommendation": "Manual review required",
-    }
+    # 3. No enrichment found — stay null instead of emitting a placeholder.
+    return None

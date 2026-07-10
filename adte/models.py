@@ -132,6 +132,10 @@ class SignInMetadata(BaseModel):
         app_display_name: Application the actor interacted with.
         event_risk: Normalised per-event risk assessment
             (``none``/``suspicious``/``high``/``confirmed``).
+        technique_ids: Native MITRE ATT&CK technique IDs carried by the
+            source log (e.g. Wazuh ``rule.mitre.id``).  Advisory metadata
+            only — never read by the scoring signals.  Empty when the
+            source provides none.
         timestamp: UTC timestamp of the event.
     """
 
@@ -145,6 +149,7 @@ class SignInMetadata(BaseModel):
     auth_status: Literal["success", "failure", "challenge"] | None = None
     app_display_name: str = ""
     event_risk: Literal["none", "suspicious", "high", "confirmed"] = "none"
+    technique_ids: list[str] = Field(default_factory=list)
     timestamp: datetime
 
 
@@ -313,6 +318,9 @@ class NormalizedIncident(BaseModel):
                         auth_status=si.get("auth_status"),
                         app_display_name=si.get("app_display_name", ""),
                         event_risk=si.get("event_risk", "none"),
+                        technique_ids=[
+                            str(t) for t in (si.get("technique_ids") or []) if t
+                        ],
                         timestamp=datetime.fromisoformat(si["timestamp"]),
                     )
                 )

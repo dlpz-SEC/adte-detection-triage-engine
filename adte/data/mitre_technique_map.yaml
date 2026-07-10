@@ -1,64 +1,284 @@
-# Curated MITRE ATT&CK → Wazuh rule mapping
-# Used for deterministic technique labeling before LLM enrichment
+# Curated MITRE ATT&CK → rule-text / signal mapping
+# Used for deterministic technique labeling (get_techniques, lookup_by_rule_text)
+# and by the llm_enrichment keyword path.
+#
+# MATCHING SEMANTICS (mitre_mapper.lookup_by_rule_text):
+#   - case-insensitive SUBSTRING match, FIRST entry wins.
+#   - Therefore: sub-technique entries MUST come before their generic parent
+#     (e.g. T1110.003 password spray before T1110 brute force), and no keyword
+#     may be a substring of an engine signal name (impossible_travel,
+#     mfa_fatigue, ip_reputation, device_novelty, login_hour_anomaly) except
+#     inside that signal's own entry at the bottom.
+#   - Keywords come in underscore form (signal/synthetic text) and space form
+#     (real Wazuh rule descriptions, e.g. "sshd: brute force trying ...").
 
 mappings:
-- rule_keywords: ["brute_force", "password_spray", "multiple_failed_login"]
+
+# ---------------------------------------------------------------------------
+# Specific sub-techniques (must precede generic parents)
+# ---------------------------------------------------------------------------
+
+- rule_keywords: ["password_spray", "password spray", "spraying"]
+  mitre_tactic: "Credential Access"
+  mitre_technique_id: "T1110.003"
+  mitre_technique_name: "Brute Force: Password Spraying"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["credential_stuffing", "credential stuffing"]
+  mitre_tactic: "Credential Access"
+  mitre_technique_id: "T1110.004"
+  mitre_technique_name: "Brute Force: Credential Stuffing"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["lsass", "mimikatz", "sekurlsa", "credential dump"]
+  mitre_tactic: "Credential Access"
+  mitre_technique_id: "T1003.001"
+  mitre_technique_name: "OS Credential Dumping: LSASS Memory"
+  nist_detect: "DE.CM-4"
+  nist_category: "Malicious Code Detection"
+
+- rule_keywords: ["mfa bombing", "push bombing", "mfa spam", "repeated mfa"]
+  mitre_tactic: "Credential Access"
+  mitre_technique_id: "T1621"
+  mitre_technique_name: "Multi-Factor Authentication Request Generation"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["phishing", "spearphish", "malicious attachment"]
+  mitre_tactic: "Initial Access"
+  mitre_technique_id: "T1566"
+  mitre_technique_name: "Phishing"
+  nist_detect: "DE.CM-4"
+  nist_category: "Malicious Code Detection"
+
+- rule_keywords: ["sql injection", "sqli", "web attack", "xss", "exploit attempt"]
+  mitre_tactic: "Initial Access"
+  mitre_technique_id: "T1190"
+  mitre_technique_name: "Exploit Public-Facing Application"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["external remote service", "unauthorized vpn"]
+  mitre_tactic: "Initial Access"
+  mitre_technique_id: "T1133"
+  mitre_technique_name: "External Remote Services"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["powershell"]
+  mitre_tactic: "Execution"
+  mitre_technique_id: "T1059.001"
+  mitre_technique_name: "Command and Scripting Interpreter: PowerShell"
+  nist_detect: "DE.CM-6"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["reverse shell", "shellshock"]
+  mitre_tactic: "Execution"
+  mitre_technique_id: "T1059.004"
+  mitre_technique_name: "Command and Scripting Interpreter: Unix Shell"
+  nist_detect: "DE.CM-6"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["useradd", "new user account", "account created"]
+  mitre_tactic: "Persistence"
+  mitre_technique_id: "T1136"
+  mitre_technique_name: "Create Account"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["crontab", "cron job"]
+  mitre_tactic: "Persistence"
+  mitre_technique_id: "T1053.003"
+  mitre_technique_name: "Scheduled Task/Job: Cron"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["schtasks", "scheduled task"]
+  mitre_tactic: "Persistence"
+  mitre_technique_id: "T1053.005"
+  mitre_technique_name: "Scheduled Task/Job: Scheduled Task"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["registry run key", "startup folder", "autorun"]
+  mitre_tactic: "Persistence"
+  mitre_technique_id: "T1547.001"
+  mitre_technique_name: "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["log_deletion", "log deleted", "logs cleared", "audit log cleared", "clear logs"]
+  mitre_tactic: "Defense Evasion"
+  mitre_technique_id: "T1070"
+  mitre_technique_name: "Indicator Removal"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["disable_defender", "defender disabled", "antivirus disabled", "security service stopped"]
+  mitre_tactic: "Defense Evasion"
+  mitre_technique_id: "T1562.001"
+  mitre_technique_name: "Impair Defenses: Disable or Modify Tools"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["obfuscated", "encoded powershell", "base64 encoded"]
+  mitre_tactic: "Defense Evasion"
+  mitre_technique_id: "T1027"
+  mitre_technique_name: "Obfuscated Files or Information"
+  nist_detect: "DE.CM-4"
+  nist_category: "Malicious Code Detection"
+
+- rule_keywords: ["rootkit", "hidden process", "trojaned"]
+  mitre_tactic: "Defense Evasion"
+  mitre_technique_id: "T1014"
+  mitre_technique_name: "Rootkit"
+  nist_detect: "DE.CM-4"
+  nist_category: "Malicious Code Detection"
+
+- rule_keywords: ["rdp", "remote desktop", "terminal services"]
+  mitre_tactic: "Lateral Movement"
+  mitre_technique_id: "T1021.001"
+  mitre_technique_name: "Remote Services: Remote Desktop Protocol"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["psexec", "admin share", "smb session"]
+  mitre_tactic: "Lateral Movement"
+  mitre_technique_id: "T1021.002"
+  mitre_technique_name: "Remote Services: SMB/Windows Admin Shares"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["ssh tunnel", "ssh from"]
+  mitre_tactic: "Lateral Movement"
+  mitre_technique_id: "T1021.004"
+  mitre_technique_name: "Remote Services: SSH"
+  nist_detect: "DE.CM-3"
+  nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["tor exit", "tor node", "anonymization"]
+  mitre_tactic: "Command and Control"
+  mitre_technique_id: "T1090.003"
+  mitre_technique_name: "Proxy: Multi-hop Proxy"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["dns tunnel"]
+  mitre_tactic: "Command and Control"
+  mitre_technique_id: "T1071.004"
+  mitre_technique_name: "Application Layer Protocol: DNS"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["ingress tool", "suspicious download", "file downloaded from"]
+  mitre_tactic: "Command and Control"
+  mitre_technique_id: "T1105"
+  mitre_technique_name: "Ingress Tool Transfer"
+  nist_detect: "DE.CM-7"
+  nist_category: "Monitoring Information System Monitoring"
+
+- rule_keywords: ["data_staging", "data staged", "staging directory"]
+  mitre_tactic: "Collection"
+  mitre_technique_id: "T1074"
+  mitre_technique_name: "Data Staged"
+  nist_detect: "DE.CM-2"
+  nist_category: "Secure Configuration Management"
+
+- rule_keywords: ["dns exfil", "icmp tunnel", "exfiltration over"]
+  mitre_tactic: "Exfiltration"
+  mitre_technique_id: "T1048"
+  mitre_technique_name: "Exfiltration Over Alternative Protocol"
+  nist_detect: "DE.CM-2"
+  nist_category: "Secure Configuration Management"
+
+- rule_keywords: ["port scan", "portscan", "nmap", "network scan"]
+  mitre_tactic: "Discovery"
+  mitre_technique_id: "T1046"
+  mitre_technique_name: "Network Service Discovery"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+- rule_keywords: ["ransomware", "ransom note", "files encrypted"]
+  mitre_tactic: "Impact"
+  mitre_technique_id: "T1486"
+  mitre_technique_name: "Data Encrypted for Impact"
+  nist_detect: "DE.CM-4"
+  nist_category: "Malicious Code Detection"
+
+- rule_keywords: ["integrity checksum", "file integrity"]
+  mitre_tactic: "Impact"
+  mitre_technique_id: "T1565.001"
+  mitre_technique_name: "Data Manipulation: Stored Data Manipulation"
+  nist_detect: "DE.CM-1"
+  nist_category: "Anomalies and Events"
+
+# ---------------------------------------------------------------------------
+# Generic parent techniques (legacy entries — specifics above win first)
+# ---------------------------------------------------------------------------
+
+- rule_keywords: ["brute_force", "brute force", "multiple_failed_login", "multiple failed login", "authentication failures"]
   mitre_tactic: "Credential Access"
   mitre_technique_id: "T1110"
   mitre_technique_name: "Brute Force"
   nist_detect: "DE.CM-1"
   nist_category: "Anomalies and Events"
 
-- rule_keywords: ["lateral_movement", "lateral_move", "move_laterally"]
+- rule_keywords: ["lateral_movement", "lateral movement", "lateral_move", "move_laterally"]
   mitre_tactic: "Lateral Movement"
   mitre_technique_id: "T1021"
   mitre_technique_name: "Remote Services"
   nist_detect: "DE.CM-3"
   nist_category: "Monitoring for Malicious Activity"
 
-- rule_keywords: ["privilege_escalation", "privesc", "sudo_abuse"]
+- rule_keywords: ["privilege_escalation", "privilege escalation", "privesc", "sudo_abuse", "sudo abuse"]
   mitre_tactic: "Privilege Escalation"
   mitre_technique_id: "T1548"
   mitre_technique_name: "Abuse Elevation Control Mechanism"
   nist_detect: "DE.CM-1"
   nist_category: "Anomalies and Events"
 
-- rule_keywords: ["persistence", "establish_persistence", "maintain_access"]
+- rule_keywords: ["persistence", "establish_persistence", "maintain_access", "added to group"]
   mitre_tactic: "Persistence"
   mitre_technique_id: "T1098"
   mitre_technique_name: "Account Manipulation"
   nist_detect: "DE.CM-3"
   nist_category: "Monitoring for Malicious Activity"
 
-- rule_keywords: ["data_exfiltration", "exfil", "data_staging"]
+- rule_keywords: ["data_exfiltration", "data exfiltration", "exfil"]
   mitre_tactic: "Exfiltration"
   mitre_technique_id: "T1020"
   mitre_technique_name: "Automated Exfiltration"
   nist_detect: "DE.CM-2"
   nist_category: "Secure Configuration Management"
 
-- rule_keywords: ["defense_evasion", "log_deletion", "disable_defender"]
+- rule_keywords: ["defense_evasion", "defense evasion"]
   mitre_tactic: "Defense Evasion"
   mitre_technique_id: "T1562"
-  mitre_technique_name: "Indicator Removal"
+  mitre_technique_name: "Impair Defenses"
   nist_detect: "DE.CM-7"
   nist_category: "Monitoring Information System Monitoring"
 
-- rule_keywords: ["discovery", "enumerate_users", "query_network"]
+- rule_keywords: ["discovery", "enumerate_users", "user enumeration", "query_network"]
   mitre_tactic: "Discovery"
   mitre_technique_id: "T1087"
   mitre_technique_name: "Account Discovery"
   nist_detect: "DE.CM-1"
   nist_category: "Anomalies and Events"
 
-- rule_keywords: ["command_execution", "execute_command", "remote_code"]
+- rule_keywords: ["command_execution", "execute_command", "remote_code", "remote code execution"]
   mitre_tactic: "Execution"
   mitre_technique_id: "T1059"
   mitre_technique_name: "Command and Scripting Interpreter"
   nist_detect: "DE.CM-6"
   nist_category: "Monitoring for Malicious Activity"
 
-# Engine signal name entries (used by llm_assist deterministic fallback)
+# ---------------------------------------------------------------------------
+# Engine signal name entries (exact engine signal vocabulary — keep last;
+# asserted by tests/test_mitre_mapper.py)
+# ---------------------------------------------------------------------------
+
 - rule_keywords: ["impossible_travel"]
   mitre_tactic: "Initial Access"
   mitre_technique_id: "T1078.004"

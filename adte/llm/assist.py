@@ -16,10 +16,13 @@ NIST 800-61 Phase: Detection & Analysis — analyst-facing context enrichment.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
+import threading
+import time
 from typing import Any
 
 _log = logging.getLogger(__name__)
@@ -35,6 +38,50 @@ from adte.intel.mitre_mapper import MitreMapper
 _REQUIRED_KEYS: frozenset[str] = frozenset(
     {"narrative", "mitre_tactics", "mitre_techniques", "nist_phases", "confidence_note"}
 )
+
+_LLM_MODEL: str = "claude-opus-4-5"
+
+# In-memory response cache for Claude summaries: a repeated triage of the
+# same decision output (same verdict/score/rationale) within the TTL skips
+# the API call entirely. Keyed by SHA-256 of (model + prompt); bounded and
+# process-local — restarts start cold, which is fine for a latency/cost cache.
+_LLM_CACHE_TTL_SECONDS: float = 24 * 3600.0
+_LLM_CACHE_MAX: int = 256
+_llm_cache: dict[str, tuple[dict[str, Any], float]] = {}
+_llm_cache_lock = threading.Lock()
+
+
+def _llm_cache_key(prompt: str) -> str:
+    """Derive the cache key for a prompt under the current model.
+
+    Args:
+        prompt: The user-turn prompt text.
+
+    Returns:
+        Hex SHA-256 digest of the model name and prompt.
+    """
+    return hashlib.sha256(f"{_LLM_MODEL}\n{prompt}".encode()).hexdigest()
+
+
+def _llm_cache_get(key: str) -> dict[str, Any] | None:
+    """Return the cached summary for *key*, or None if absent/expired."""
+    with _llm_cache_lock:
+        item = _llm_cache.get(key)
+        if item is None:
+            return None
+        result, expires_at = item
+        if time.monotonic() >= expires_at:
+            del _llm_cache[key]
+            return None
+        return dict(result)
+
+
+def _llm_cache_put(key: str, value: dict[str, Any]) -> None:
+    """Store *value* under *key*, evicting the oldest entry when full."""
+    with _llm_cache_lock:
+        if key not in _llm_cache and len(_llm_cache) >= _LLM_CACHE_MAX:
+            _llm_cache.pop(next(iter(_llm_cache)))
+        _llm_cache[key] = (dict(value), time.monotonic() + _LLM_CACHE_TTL_SECONDS)
 
 # Lazy-loaded so a missing YAML file doesn't crash the server at import time.
 _mapper: MitreMapper | None = None
@@ -98,6 +145,16 @@ _MOCK_CONFIDENCE_NOTE: str = (
 # ------------------------------------------------------------------ #
 
 
+# Zero-width / BOM characters are deleted before matching: they are not word
+# separators, so an attacker can splice them into a trigger phrase
+# ("ignore<ZWSP> previous instructions") to slip past the regex otherwise.
+_ZERO_WIDTH: re.Pattern[str] = re.compile(r"[​‌‍⁠﻿]")
+
+# Non-whitespace control chars (the whitespace ones — \t\n\r\f\v — are handled
+# by the \s+ collapse first, which preserves word boundaries).  Deleted after
+# the collapse so an intra-word split ("ign<NUL>ore") re-fuses to a real word.
+_CONTROL_CHARS: re.Pattern[str] = re.compile(r"[\x00-\x08\x0e-\x1f\x7f]")
+
 # Common prompt-injection phrases found in adversarial alert payloads.
 # Scanned against the full string before truncation so a payload cannot
 # hide an injection phrase past the max_length boundary.
@@ -105,6 +162,7 @@ _INJECTION_PATTERNS: re.Pattern[str] = re.compile(
     r"(ignore\s+(previous|above|all)\s+instructions"
     r"|system\s*:\s*you\s+are"
     r"|<\s*/?\s*system\s*>"
+    r"|\[\s*/?\s*system\s*\]"  # [SYSTEM] / [/system] bracket role-impersonation
     r"|ASSISTANT\s*:"
     r"|Human\s*:"
     r"|\bdo\s+not\s+follow\b)",
@@ -115,8 +173,20 @@ _INJECTION_PATTERNS: re.Pattern[str] = re.compile(
 def sanitize_alert_field(value: str, max_length: int = 300) -> str:
     """Sanitize an untrusted alert field before embedding in an LLM prompt.
 
-    Strips control characters, collapses whitespace, truncates to
-    max_length, and redacts common prompt-injection patterns.
+    Removes zero-width characters, collapses whitespace, strips remaining
+    control characters, redacts known prompt-injection phrases, then hard-
+    caps the length.  Ordering is deliberate: whitespace is collapsed
+    *before* the non-whitespace control chars are stripped so that a
+    control-char word split ("do<VT>not<VT>follow") re-forms into matchable
+    tokens rather than fusing into one; redaction runs *before* truncation
+    so a payload cannot hide a trigger phrase past ``max_length``.
+
+    This is defense-in-depth. The primary control is the untrusted-data
+    delimiter in ``_build_llm_prompt`` plus the system prompt; the regex
+    catches direct instruction-override / role-impersonation attempts.
+    Semantic paraphrases, homoglyph and base64 obfuscation are *not*
+    regex-addressable and are contained by the delimiter layer instead —
+    see ``docs/INJECTION_GAP_REPORT.md``.
 
     Args:
         value: Raw string from an alert field (rule description, device name, etc.).
@@ -125,10 +195,11 @@ def sanitize_alert_field(value: str, max_length: int = 300) -> str:
     Returns:
         Sanitized string safe for prompt inclusion.
     """
-    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)  # strip non-printable control chars
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()                       # collapse embedded newlines/tabs
-    cleaned = _INJECTION_PATTERNS.sub("[REDACTED]", cleaned)             # scan full string before truncation
-    cleaned = cleaned[:max_length]                                        # hard cap after injection-pattern scan
+    cleaned = _ZERO_WIDTH.sub("", value)                    # drop zero-width splice chars
+    cleaned = re.sub(r"\s+", " ", cleaned)                  # collapse \t\n\r\f\v + spaces (keeps boundaries)
+    cleaned = _CONTROL_CHARS.sub("", cleaned).strip()       # strip remaining non-printable control chars
+    cleaned = _INJECTION_PATTERNS.sub("[REDACTED]", cleaned)  # redact BEFORE truncation
+    cleaned = cleaned[:max_length]                          # hard cap after injection-pattern scan
     return cleaned
 
 
@@ -293,7 +364,7 @@ def _call_claude(prompt: str) -> dict[str, Any] | None:
     try:
         client = anthropic.Anthropic()
         message = client.messages.create(
-            model="claude-opus-4-5",
+            model=_LLM_MODEL,
             max_tokens=1024,
             # System prompt is stable across calls; cache_control: ephemeral
             # tells the API to cache it for up to 5 minutes, reducing cost on
@@ -347,8 +418,14 @@ def generate_summary(decision_output: dict[str, Any]) -> dict[str, Any]:
     """
     if _has_api_key():
         prompt = _build_llm_prompt(decision_output)
+        cache_key = _llm_cache_key(prompt)
+        cached = _llm_cache_get(cache_key)
+        if cached is not None:
+            _log.info("LLM summary served from response cache (no API call)")
+            return cached
         result = _call_claude(prompt)
         if result is not None:
+            _llm_cache_put(cache_key, result)
             return result
 
     return _build_deterministic_summary(decision_output)

@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 
+from adte.intel import threat_intel
+from adte.intel.aggregator import ThreatIntelAggregator
 from adte.intel.sigma_fp_registry import FPRegistry
 from adte.models import NormalizedIncident, SentinelIncident
 from adte.store.user_history import get_user_profile
@@ -30,9 +32,32 @@ _SAFETY_ENV_VARS = [
 
 @pytest.fixture(autouse=True)
 def _clean_safety_env() -> None:
-    """Remove ADTE env vars before each test to ensure isolation."""
+    """Remove ADTE env vars and pin threat intel to mock before each test.
+
+    Popping the env keys alone is not enough: any test that imports
+    ``adte.server`` mid-suite re-runs ``load_dotenv`` (repopulating real keys
+    from a local ``.env``), and the module-level threat-intel singleton keeps
+    whatever mode it was first created in.  Resetting the singleton to a
+    keyless (pure-mock) aggregator makes every test deterministic and
+    network-free regardless of test ordering.
+    """
     for var in _SAFETY_ENV_VARS:
         os.environ.pop(var, None)
+    threat_intel._aggregator = ThreatIntelAggregator()
+    # Clear the LLM response cache: tests reuse identical decision outputs
+    # with different mocked API responses, so a warm cache would leak
+    # summaries across tests.
+    from adte.llm import assist
+
+    assist._llm_cache.clear()
+    # Disable per-route rate limits in tests: the limiter's in-memory counters
+    # span the whole pytest process, so cumulative /api/triage POSTs across
+    # test files would otherwise start returning 429 mid-suite.
+    import sys
+
+    server_module = sys.modules.get("adte.server")
+    if server_module is not None:
+        server_module.limiter.enabled = False
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"

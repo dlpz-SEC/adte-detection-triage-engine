@@ -155,6 +155,30 @@ When both signals are skipped, the effective scale is `100/45`:
 automatically (500 per request). Use `--limit N` to cap the total; a
 warning is printed to stderr when alerts are truncated.
 
+## MITRE ATT&CK Integration
+
+ATT&CK mapping runs end-to-end through the backend, not as a cosmetic label:
+
+- **Native ingestion.** When a Wazuh/OpenSearch alert carries `rule.mitre.id`,
+  those technique IDs are ingested onto the event and unioned into the verdict's
+  `mitre_techniques` — the log source's own labeling is trusted, not
+  reverse-engineered.
+- **Signal + keyword derivation.** Fired scoring signals and per-event rule text
+  are mapped against a curated 40-entry technique map
+  (`adte/data/mitre_technique_map.yaml`) covering technique **and** sub-technique
+  IDs across Credential Access, Lateral Movement, C2, Exfiltration, Defense
+  Evasion, Persistence, and more.
+- **`mitre_details` in every verdict.** Alongside the bare-ID `mitre_techniques`
+  list, each triage response carries
+  `mitre_details: [{id, name, tactic, source}]` where `source` is `signal`,
+  `native`, or `rule_text` — so the provenance of every technique is explicit.
+- **Advisory enrichment.** `llm_enrichment` resolves native IDs first
+  (`source: "native_log"`), then keyword lookup (`deterministic_mapping`), else
+  `null`. It is **advisory only** and never affects the verdict, risk score, or
+  confidence.
+- **Technique frequency stats.** `GET /api/stats/mitre` aggregates technique
+  recurrence across the verdict audit log.
+
 ## Threat Intelligence API Keys
 
 ADTE enriches IP addresses against live threat intelligence sources when API
@@ -221,7 +245,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-272 tests across 13 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_wazuh_adapter, test_feedback, test_mitre_mapper, test_sql_injection, test_audit_log, test_ticket_client, test_verdict_export, test_schema_migration
+391 tests across 21 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration
 
 Example verdicts:
 - `incident_account_takeover_tor_exfil.json` → **CRITICAL** (~99)
@@ -304,6 +328,10 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Verdict audit log — SQLite persistence of every triage verdict via `/api/verdicts` endpoint
 - [x] Analyst feedback loop — FP/TP labels via API + UI; FP IPs auto-promoted to FP registry
 - [x] MITRE ATT&CK + NIST 800-61 badges on all verdict surfaces (triage result, queue, history)
+- [x] Native MITRE ingestion from Wazuh `rule.mitre.id`; 40-entry technique/sub-technique map; `mitre_details` provenance in every verdict; wired advisory `llm_enrichment`
+- [x] Aggregation endpoints — `/api/stats/verdicts`, `/api/stats/mitre`, `/api/stats/feedback` (P13 backend)
+- [x] Threat-intel bounded TTL cache + per-provider daily quotas; LLM narrative response cache
+- [x] Adversarial prompt-injection test suite + gap report (`docs/INJECTION_GAP_REPORT.md`)
 - [x] Verdict History + Feedback History views with filter and clear controls
 - [ ] Real Sentinel REST API integration (live Azure ingestion)
 - [ ] Automated containment/response-execution layer (gated) — currently recommend-only

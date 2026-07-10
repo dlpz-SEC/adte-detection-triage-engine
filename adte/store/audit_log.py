@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import sqlite3
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,9 @@ _CREATE_INDEXES_SQL: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_verdicts_verdict ON verdicts(verdict)",
     "CREATE INDEX IF NOT EXISTS idx_verdicts_incident_id ON verdicts(incident_id)",
     "CREATE INDEX IF NOT EXISTS idx_feedback_incident_id ON feedback(incident_id)",
+    # Serve the `since` range filters (query_verdicts + /api/stats/*).
+    "CREATE INDEX IF NOT EXISTS idx_verdicts_logged_at ON verdicts(logged_at)",
+    "CREATE INDEX IF NOT EXISTS idx_feedback_submitted_at ON feedback(submitted_at)",
 ]
 
 
@@ -319,3 +323,128 @@ def clear_feedback(db_path: str | Path) -> bool:
     except Exception as exc:
         _log.warning("audit_log.clear_feedback failed: %s", type(exc).__name__)
         return False
+
+
+def stats_verdicts(db_path: str | Path, since: str | None = None) -> dict[str, Any]:
+    """Aggregate verdict counts from the audit log.
+
+    Respects the soft-delete pattern (``deleted_at IS NULL``) so cleared
+    rows never skew statistics.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        since: ISO-8601 timestamp; when provided only rows with
+            ``logged_at >= since`` are counted.
+
+    Returns:
+        ``{"counts": {<verdict>: n, ...}, "total": N}``.  Empty counts on
+        any error.  Never raises.
+    """
+    try:
+        with sqlite3.connect(str(db_path), check_same_thread=False) as conn:
+            clauses = ["deleted_at IS NULL"]
+            params: list[Any] = []
+            if since is not None:
+                clauses.append("logged_at >= ?")
+                params.append(since)
+            where = "WHERE " + " AND ".join(clauses)
+            cursor = conn.execute(
+                f"SELECT verdict, COUNT(*) FROM verdicts {where} GROUP BY verdict",
+                params,
+            )
+            counts = {row[0]: row[1] for row in cursor.fetchall()}
+        return {"counts": counts, "total": sum(counts.values())}
+    except Exception as exc:
+        _log.warning("audit_log.stats_verdicts failed: %s", type(exc).__name__)
+        return {"counts": {}, "total": 0}
+
+
+def stats_mitre(db_path: str | Path, since: str | None = None) -> dict[str, Any]:
+    """Aggregate MITRE technique frequency from logged verdicts.
+
+    The ``mitre_techniques`` column stores a JSON-encoded list per row;
+    malformed rows are skipped defensively rather than failing the whole
+    aggregation.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        since: ISO-8601 timestamp; when provided only rows with
+            ``logged_at >= since`` are counted.
+
+    Returns:
+        ``{"techniques": [{"technique_id": ..., "count": n}, ...],
+        "total_rows": N}`` sorted by count descending (technique ID as the
+        tiebreak for determinism).  Never raises.
+    """
+    try:
+        with sqlite3.connect(str(db_path), check_same_thread=False) as conn:
+            clauses = ["deleted_at IS NULL"]
+            params: list[Any] = []
+            if since is not None:
+                clauses.append("logged_at >= ?")
+                params.append(since)
+            where = "WHERE " + " AND ".join(clauses)
+            cursor = conn.execute(
+                f"SELECT mitre_techniques FROM verdicts {where}", params
+            )
+            counter: Counter[str] = Counter()
+            total_rows = 0
+            for (raw,) in cursor.fetchall():
+                total_rows += 1
+                if not raw:
+                    continue
+                try:
+                    techniques = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if isinstance(techniques, list):
+                    counter.update(t for t in techniques if isinstance(t, str) and t)
+        ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        return {
+            "techniques": [
+                {"technique_id": tid, "count": count} for tid, count in ranked
+            ],
+            "total_rows": total_rows,
+        }
+    except Exception as exc:
+        _log.warning("audit_log.stats_mitre failed: %s", type(exc).__name__)
+        return {"techniques": [], "total_rows": 0}
+
+
+def stats_feedback(db_path: str | Path, since: str | None = None) -> dict[str, Any]:
+    """Aggregate the analyst feedback FP/TP split.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        since: ISO-8601 timestamp; when provided only rows with
+            ``submitted_at >= since`` are counted.
+
+    Returns:
+        ``{"fp": n, "tp": n, "total": N, "fp_ratio": r}`` where ``fp_ratio``
+        is 0.0 when no feedback exists (rounded to 4 places).  Never raises.
+    """
+    try:
+        with sqlite3.connect(str(db_path), check_same_thread=False) as conn:
+            clauses = ["deleted_at IS NULL"]
+            params: list[Any] = []
+            if since is not None:
+                clauses.append("submitted_at >= ?")
+                params.append(since)
+            where = "WHERE " + " AND ".join(clauses)
+            cursor = conn.execute(
+                f"SELECT label, COUNT(*) FROM feedback {where} GROUP BY label",
+                params,
+            )
+            counts = {row[0]: row[1] for row in cursor.fetchall()}
+        fp = counts.get("fp", 0)
+        tp = counts.get("tp", 0)
+        total = fp + tp
+        return {
+            "fp": fp,
+            "tp": tp,
+            "total": total,
+            "fp_ratio": round(fp / total, 4) if total else 0.0,
+        }
+    except Exception as exc:
+        _log.warning("audit_log.stats_feedback failed: %s", type(exc).__name__)
+        return {"fp": 0, "tp": 0, "total": 0, "fp_ratio": 0.0}

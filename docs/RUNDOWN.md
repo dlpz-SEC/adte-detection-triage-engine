@@ -474,7 +474,7 @@ The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credent
 
 - **P12 — RBAC Implementation:** `require_role` decorator built and applied to all 12 endpoints. Four-tier role system (`readonly` → `analyst` → `senior_analyst` → `admin`) with numeric level comparison. Open/demo mode auto-detected when no env vars are set so development works without configuration overhead. `TESTING` bypass for the test suite.
 
-- **P13 — SOC Dashboard:** A SOC metrics dashboard with aggregation endpoints (verdict distribution, alert volume, MITRE tactics frequency, signal frequency) was planned for P13. **This has not shipped.** The current UI has 9 sidebar views (Phase 20 consolidation) covering all triage, queue, history, and settings surfaces, but there are no dedicated aggregation API endpoints (e.g., `/api/stats`) in `server.py` at this time. P13 aggregation endpoints are in development.
+- **P13 — SOC Dashboard aggregation endpoints:** **Shipped in Phase 29.** `GET /api/stats/verdicts` (verdict distribution), `GET /api/stats/mitre` (technique frequency), and `GET /api/stats/feedback` (FP/TP ratio) now aggregate the audit-log data — all `analyst`-role, 10/minute, with an optional ISO-8601 `since` window and soft-delete exclusion. A dashboard *view* consuming them is still future UI work; the backend they depend on is now live.
 
 - **P14 — authHeaders() Wiring (Critical Bug Fix):** Before P14, the RBAC decorator on every endpoint was enforcing key validation, but the frontend was not actually sending the `X-ADTE-Key` header on any `fetch()` call. Every API request was returning 401 in secured mode, making RBAC completely non-functional end-to-end. P14 introduced the `authHeaders()` helper (`sessionStorage.getItem('adte_api_key')` → `{ 'X-ADTE-Key': key }`) and wired it into all 12 fetch calls, completing the auth circuit.
 
@@ -500,7 +500,7 @@ ADTE is deployed on **Render** (`render.yaml`, native Python runtime) and **Rail
 
 ### Critical Before Going Public
 
-- **TI result caching:** VirusTotal public keys are rate-limited to 4 req/min. For a public deployment with multiple users, SQLite-backed caching keyed by IP with a TTL (e.g., 1 hour) is required to avoid burning free-tier quota on repeated lookups of the same IPs.
+- **TI result caching + quota — addressed in Phase 29.** The aggregator now fronts all three providers with a bounded 1-hour TTL cache (in-memory, per process) and enforces per-provider daily quotas (`ADTE_TI_QUOTA_<PROVIDER>`; defaults AbuseIPDB 1000 / VT 500 / OTX 10000) that skip a provider once spent and fall back to mock when all are exhausted — so repeated-IP and high-cardinality demo traffic no longer burns free-tier quota. A cross-process/persistent cache (SQLite or Redis) is still the next step only if the app scales past a single process.
 - **Wazuh connectivity:** The Wazuh Indexer lives at a local VM address (`192.168.127.129:9200`). It is not reachable from a public cloud host without a VPN tunnel or exposing the VM's port publicly. The queue endpoint falls back to 3 mock incidents gracefully when Wazuh is unreachable.
 
 ### Recruiter Access Model (post-deployment)

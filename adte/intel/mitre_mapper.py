@@ -44,6 +44,15 @@ class MitreMapper:
             mappings: List of mapping entries as loaded from YAML.
         """
         self.mappings = mappings
+        # Flattened (keyword, entry) pairs in entry order — one pass per
+        # lookup instead of a nested per-entry keyword scan. Entry-order
+        # first-match semantics are preserved because every keyword of
+        # entry N precedes every keyword of entry N+1.
+        self._keyword_index: list[tuple[str, dict[str, Any]]] = [
+            (kw, mapping)
+            for mapping in mappings
+            for kw in mapping.get("rule_keywords", [])
+        ]
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> "MitreMapper":
@@ -77,9 +86,8 @@ class MitreMapper:
             The matching mapping dict, or None if no keyword matches.
         """
         rule_lower = rule_description.lower()
-        for mapping in self.mappings:
-            keywords = mapping.get("rule_keywords", [])
-            if any(kw in rule_lower for kw in keywords):
+        for keyword, mapping in self._keyword_index:
+            if keyword in rule_lower:
                 return mapping
         return None
 
@@ -113,6 +121,43 @@ def get_techniques(signal_names: list[str]) -> list[str]:
                 seen.add(tid)
                 result.append(tid)
     return result
+
+
+def get_technique_details(
+    technique_ids: list[str], sources: dict[str, str] | None = None
+) -> list[dict[str, str]]:
+    """Return display detail objects for a list of ATT&CK technique IDs.
+
+    Resolves each ID against the mapping YAML for its human-readable name
+    and tactic.  IDs absent from the map are still returned (with empty
+    name/tactic) so native log labels are never dropped from display.
+
+    Args:
+        technique_ids: Deduplicated ATT&CK technique IDs, in display order.
+        sources: Optional map of technique ID → provenance label
+            (``"signal"`` / ``"native"`` / ``"rule_text"``).  Missing IDs
+            default to ``"signal"``.
+
+    Returns:
+        One ``{"id", "name", "tactic", "source"}`` dict per input ID.
+    """
+    mapper = _get_mapper()
+    by_id: dict[str, dict[str, Any]] = {}
+    if mapper is not None:
+        for entry in mapper.mappings:
+            by_id.setdefault(entry.get("mitre_technique_id", ""), entry)
+    details: list[dict[str, str]] = []
+    for tid in technique_ids:
+        entry = by_id.get(tid)
+        details.append(
+            {
+                "id": tid,
+                "name": entry.get("mitre_technique_name", "") if entry else "",
+                "tactic": entry.get("mitre_tactic", "") if entry else "",
+                "source": (sources or {}).get(tid, "signal"),
+            }
+        )
+    return details
 
 
 def get_nist_phase(verdict: str) -> str:

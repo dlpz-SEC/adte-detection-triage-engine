@@ -1,6 +1,6 @@
 {
   "incident_id": "INC-2025-0099",
-  "title": "Confirmed account takeover via Tor exit node — after-hours data exfiltration attempt",
+  "title": "Confirmed account takeover via Tor exit node \u2014 after-hours data exfiltration attempt",
   "source": "azure_ad",
   "status": "New",
   "created_time": "2025-01-15T23:31:00Z",
@@ -51,9 +51,12 @@
   "alerts": [
     {
       "alert_id": "ALR-9950",
-      "rule_name": "Impossible travel — Tokyo to Amsterdam via Tor exit",
-      "description": "CEO account authenticated from Tokyo at 14:00 UTC, then from a known Tor exit relay in Amsterdam at 23:30 UTC — 9,356 km in 9.5 hours exceeds maximum commercial flight speed.",
-      "tactics": ["InitialAccess", "DefenseEvasion"],
+      "rule_name": "Impossible travel \u2014 Tokyo to Amsterdam via Tor exit",
+      "description": "CEO account authenticated from Tokyo at 14:00 UTC, then from a known Tor exit relay in Amsterdam at 23:30 UTC \u2014 9,356 km in 9.5 hours exceeds maximum commercial flight speed.",
+      "tactics": [
+        "InitialAccess",
+        "DefenseEvasion"
+      ],
       "events": [
         {
           "user_principal_name": "eve@contoso.com",
@@ -87,32 +90,52 @@
           "auth_status": "failure",
           "app_display_name": "Microsoft 365",
           "event_risk": "suspicious",
-          "timestamp": "2025-01-15T23:30:00Z"
+          "timestamp": "2025-01-15T23:30:00Z",
+          "technique_ids": [
+            "T1090.003"
+          ]
         }
       ]
     },
     {
       "alert_id": "ALR-9951",
-      "rule_name": "MFA fatigue from Tor exit — CEO account (after hours)",
-      "description": "12 consecutive MFA push denials from 185.220.101.45 within 8 minutes followed by approval. Activity is after-hours relative to CEO baseline (Tokyo 10:00–22:00). Unregistered Linux device consistent with attacker-controlled node.",
-      "tactics": ["CredentialAccess", "Persistence", "Exfiltration"],
+      "rule_name": "MFA fatigue from Tor exit \u2014 CEO account (after hours)",
+      "description": "12 consecutive MFA push denials from 185.220.101.45 within 8 minutes followed by approval. Activity is after-hours relative to CEO baseline (Tokyo 10:00\u201322:00). Unregistered Linux device consistent with attacker-controlled node.",
+      "tactics": [
+        "CredentialAccess",
+        "Persistence",
+        "Exfiltration"
+      ],
       "events": [
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
           "auth_status": "failure",
           "app_display_name": "SharePoint Online",
           "event_risk": "suspicious",
-          "timestamp": "2025-01-15T23:30:30Z"
+          "timestamp": "2025-01-15T23:30:30Z",
+          "technique_ids": [
+            "T1020"
+          ]
         },
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -124,19 +147,32 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
           "auth_status": "failure",
           "app_display_name": "OneDrive",
           "event_risk": "suspicious",
-          "timestamp": "2025-01-15T23:31:30Z"
+          "timestamp": "2025-01-15T23:31:30Z",
+          "technique_ids": [
+            "T1020"
+          ]
         },
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -148,7 +184,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -160,7 +201,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -172,7 +218,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -184,7 +235,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -196,7 +252,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -208,7 +269,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -220,7 +286,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -232,7 +303,12 @@
         {
           "user_principal_name": "eve@contoso.com",
           "ip_address": "185.220.101.45",
-          "location": { "lat": 52.3676, "lon": 4.9041, "city": "Amsterdam", "country": "NL" },
+          "location": {
+            "lat": 52.3676,
+            "lon": 4.9041,
+            "city": "Amsterdam",
+            "country": "NL"
+          },
           "device_id": "dev-TOR-UNKNOWN",
           "device_name": "UNKNOWN-NL-NODE",
           "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
@@ -249,7 +325,9 @@
       "incidentNumber": 99,
       "classification": null,
       "classificationReason": null,
-      "owner": { "assignedTo": null }
+      "owner": {
+        "assignedTo": null
+      }
     }
   }
 }

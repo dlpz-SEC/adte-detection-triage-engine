@@ -1405,13 +1405,13 @@ test-client pattern (TESTING=True, DB_PATH monkeypatched to a tmp database seede
 - **`OPENAI_API_KEY`** removed — OpenAI is not implemented anywhere in the engine; the
   declaration was misleading noise.
 
-### Investigated but intentionally not done — wiring `llm_enrich()`
+### Wiring `llm_enrich()` — SHIPPED in Phase 29
 
-`enrich_alert()` keys on a `rule_description` field that `NormalizedIncident` does not have,
-so wiring `.llm_enrich()` into the pipeline as-is returns a constant mock blob
-(`T0000`/`Unknown`/`Manual review required`) on every triage — misleading, and redundant with
-the real `get_techniques(fired)` mapping the route already computes. Left `null` until
-`enrich_alert()` is adapted to map actual `NormalizedIncident` fields. See `Handoff.md` §5.3.
+Previously deferred because `enrich_alert()` keyed on a non-existent `rule_description`
+field and returned a constant `T0000` mock blob. Phase 29 adapted `enrich_alert()` to the
+real OCSF schema (per-event `app_display_name` rule text + native `technique_ids`) and wired
+`.llm_enrich()` into the `/api/triage` pipeline. No-match now returns `None` (no misleading
+blob). See Phase 29 below.
 
 ---
 
@@ -1461,9 +1461,90 @@ locked-down policy).
 
 ---
 
+## Phase 29 — Deep MITRE Integration + Performance Pass (274 → 391 tests)
+
+**Scope:** Tie MITRE ATT&CK deeply into the backend, ingest attack metadata natively from
+the OpenSearch/Wazuh log format, apply function-preserving performance work, ship the
+long-deferred aggregation endpoints, and adversarially validate the injection defense.
+Change-controlled files were edited under an **explicit user waiver** (native-MITRE
+ingestion only, additive schema, scoring parity proven byte-identical on all 4 examples).
+
+### A1 — Native MITRE ingestion (waiver)
+- `models.py`: additive `SignInMetadata.technique_ids: list[str]` (advisory; never scored).
+  `from_sentinel` passes it through; default `[]`.
+- `adapters/wazuh.py`: `normalize_alert()` extracts `rule.mitre.id` defensively (tolerates a
+  bare string, non-dict `mitre`, non-list `id`). Fixed a latent crash on non-dict `rule.mitre`.
+- `server.py` triage route: unions native per-event IDs into `mitre_techniques` after the
+  signal-derived IDs (deduped, stable order).
+- **Parity gate:** verdict/risk_score/confidence byte-identical before vs after on all four
+  examples (native tags are display-only).
+
+### A2 — `enrich_alert()` fixed + `llm_enrich()` wired
+- `enrich_alert()` now reads the OCSF schema: native `technique_ids` win (`source:"native_log"`),
+  else keyword lookup over joined `events[].app_display_name` (`source:"deterministic_mapping"`),
+  else **`None`**. Wired `.llm_enrich()` into `/api/triage` after `decide()` — advisory only,
+  proven not to move the scoring triple.
+
+### A3 — Expanded `mitre_technique_map.yaml`
+- Grew from 12 to 40 entries: password spray vs brute force sub-techniques, credential
+  stuffing, LSASS dumping, phishing, RDP/SMB/SSH lateral movement, Tor multi-hop proxy,
+  DNS/ICMP exfil, ransomware, log clearing, and more — each with technique + sub-technique ID,
+  tactic, name, `nist_detect`, and Wazuh-vocabulary keywords (underscore + space forms).
+  First-match precedence documented; sub-techniques ordered before generic parents. Corrected
+  `T1562` (was labeled "Indicator Removal" — that's `T1070`).
+
+### A4 / A5 — Richer output + demo stories
+- Added `mitre_details: [{id, name, tactic, source: signal|native|rule_text}]` to triage
+  output (additive; `mitre_techniques` bare-ID list unchanged for the existing contract).
+- Retagged the CRITICAL example with native IDs so the demo tells a real chain: Tor login
+  (`T1090.003`) → mass cloud-storage exfil (`T1020`) on top of the signal-derived
+  `T1078.004`/`T1621`/`T1071`.
+
+### B1 — Threat-intel cache + quota hardening (`intel/aggregator.py`)
+- Replaced the unbounded per-IP dict with a hand-rolled **bounded TTL cache** (`_TTLCache`,
+  default 1h TTL / 1024 max, oldest-evicted, `threading.Lock`). No new dependency.
+- Added per-provider **daily quota counters** (`_DailyQuota`, UTC-midnight reset; defaults
+  AbuseIPDB 1000 / VT 500 / OTX 10000, overridable via `ADTE_TI_QUOTA_<PROVIDER>`). Exhausted
+  providers are skipped; all-exhausted falls back to mock with one clear warning log.
+
+### B2 / B3 — LLM response cache + micro-optimizations
+- `assist.py`: cache Claude summaries by SHA-256 of (model, prompt) — TTL 24h, bounded 256 —
+  so an identical re-triage with `use_llm=true` skips the API call.
+- `mitre_mapper`: precomputed flattened keyword index (one pass per lookup vs nested scan).
+- `audit_log.init_db`: added `idx_verdicts_logged_at` + `idx_feedback_submitted_at` for the
+  `since` range filters.
+
+### B4 / B5 — Dead-code sweep + not-applicable notes
+- Removed an unused `GeoLocation` import; `ruff check --select F401,F811,F841` clean over
+  `adte/` + `scripts/`.
+- **Investigated, not applicable** (documented, not implemented): **vectorization/numpy**
+  (no numeric-array workload — 5 signals over ≤500 alerts is dict work); **in-app
+  multiprocessing** (gunicorn already runs 2 worker processes; in-process pools would break
+  the in-memory caches and SQLite connections); **Postgres migration** (SQLite concurrency is
+  the ceiling to watch — deferred until real concurrent traffic, not preemptively).
+
+### C1 — `/api/stats/*` aggregation endpoints (P13 debt)
+- `audit_log`: `stats_verdicts` (GROUP BY verdict), `stats_mitre` (JSON-column parse + Counter,
+  malformed rows skipped), `stats_feedback` (FP/TP + ratio) — all honour `deleted_at IS NULL`
+  and an optional `since`.
+- `server.py`: `GET /api/stats/verdicts|mitre|feedback` — `analyst` role, 10/minute (export
+  precedent). Shared `since` ISO-8601 validation (400 on malformed).
+
+### C2 — Adversarial prompt-injection suite + gap report
+- `tests/test_prompt_injection_adversarial.py`: 30-payload corpus classified REDACTED /
+  CONTAINED, asserted so any regex regression fails loudly.
+- Patched `sanitize_alert_field()` **only** for gaps in the regex's own target class:
+  zero-width-splice stripping, whitespace-collapse-before-control-strip re-ordering (so
+  `do<VT>not<VT>follow` re-forms and matches), and `[system]` bracket role-impersonation.
+  Semantic paraphrases / homoglyphs / base64 left to the delimiter layer (documented).
+- Deliverable: `docs/INJECTION_GAP_REPORT.md`.
+
+**Tests:** 274 → **391** (+117). Full green; `ruff` clean; A1 parity byte-identical.
+
+---
+
 ## Open Items
 
-- **`llm_enrich()` in server pipeline** — implemented and tested but intentionally not wired; `enrich_alert()` must first be adapted to map real `NormalizedIncident` fields (it currently keys on a non-existent `rule_description` and always returns a mock blob). `llm_enrichment` stays `null` until then. Retained as planned future work.
 - **Automated containment / response-execution layer** — removed in Phase 23; ADTE is recommend-only. If revived, `docs/SAFETY.md` documents the reserved env-var gating contract it is expected to honour.
 - **Real Sentinel REST API** — live ingestion from Azure Monitor / SecurityIncidents table is not implemented (ADTE accepts the Sentinel incident JSON *format* only).
 - **Batch processing for mock source** — `--source mock` processes one file at a time; a `--batch` flag for a directory of incidents is not implemented.

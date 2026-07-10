@@ -41,7 +41,7 @@ from pydantic import ValidationError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from adte.engine import TriageEngine
-from adte.intel.mitre_mapper import get_nist_phase, get_techniques
+from adte.intel.mitre_mapper import get_nist_phase, get_technique_details, get_techniques
 from adte.intel.sigma_fp_registry import FPRegistry, add_fp_entry
 from adte.models import NormalizedIncident, SentinelIncident
 from adte.store.audit_log import (
@@ -52,6 +52,9 @@ from adte.store.audit_log import (
     log_verdict,
     query_feedback,
     query_verdicts,
+    stats_feedback,
+    stats_mitre,
+    stats_verdicts,
 )
 from adte.store.user_history import get_user_profile
 
@@ -545,7 +548,9 @@ def triage() -> Any:
         engine = TriageEngine(incident, user_profile, fp_registry)
 
         def _run() -> dict[str, Any]:
-            return engine.enrich().score().decide().to_output(use_llm=use_llm)
+            # llm_enrich() populates the advisory llm_enrichment field only —
+            # it runs after decide(), so it cannot influence the verdict.
+            return engine.enrich().score().decide().llm_enrich().to_output(use_llm=use_llm)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
             _future = _pool.submit(_run)
@@ -558,7 +563,24 @@ def triage() -> Any:
         return jsonify({"error": "Triage pipeline error — check server logs"}), 500
 
     fired = [r["signal"] for r in output.get("rationale", []) if r.get("score", 0) > 0]
-    output["mitre_techniques"] = get_techniques(fired)
+    techniques = get_techniques(fired)
+    sources: dict[str, str] = {tid: "signal" for tid in techniques}
+    # Union in native ATT&CK IDs carried on the events (e.g. Wazuh
+    # rule.mitre.id) — signal-derived IDs keep their existing order first.
+    for event in incident.events:
+        for tid in event.technique_ids:
+            if tid and tid not in sources:
+                sources[tid] = "native"
+                techniques.append(tid)
+    # Then any technique the advisory rule-text enrichment surfaced.
+    enrichment = output.get("llm_enrichment")
+    if isinstance(enrichment, dict) and enrichment.get("source") == "deterministic_mapping":
+        for tid in enrichment.get("technique_ids", []):
+            if tid and tid not in sources:
+                sources[tid] = "rule_text"
+                techniques.append(tid)
+    output["mitre_techniques"] = techniques
+    output["mitre_details"] = get_technique_details(techniques, sources)
     output["nist_phase"] = get_nist_phase(output["verdict"])
     log_verdict(output, DB_PATH)
     return jsonify(output), 200
@@ -798,6 +820,96 @@ def export_verdicts() -> Any:
             "Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.csv"'
         },
     )
+
+
+def _parse_since_param() -> tuple[str | None, Any | None]:
+    """Validate the optional ``since`` query parameter.
+
+    Returns:
+        ``(since, None)`` when absent or valid ISO-8601;
+        ``(None, <error response>)`` when malformed.
+    """
+    since: str | None = request.args.get("since") or None
+    if since is not None:
+        try:
+            datetime.fromisoformat(since)
+        except ValueError:
+            return None, (
+                jsonify({
+                    "error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"
+                }),
+                400,
+            )
+    return since, None
+
+
+@app.route("/api/stats/verdicts")
+@require_role("analyst")
+@limiter.limit("10/minute")
+def stats_verdicts_route() -> Any:
+    """Return the verdict distribution over the audit log (P13 aggregation).
+
+    NIST 800-61 Phase: Post-Incident Activity — trend metrics for SOC review.
+
+    Query Parameters:
+        since: Optional ISO-8601 timestamp lower bound on ``logged_at``.
+
+    Returns:
+        JSON ``{"counts": {<verdict>: n}, "total": N, "since": <str|null>}``.
+    """
+    since, error = _parse_since_param()
+    if error is not None:
+        return error
+    result = stats_verdicts(DB_PATH, since=since)
+    result["since"] = since
+    return jsonify(result), 200
+
+
+@app.route("/api/stats/mitre")
+@require_role("analyst")
+@limiter.limit("10/minute")
+def stats_mitre_route() -> Any:
+    """Return MITRE ATT&CK technique frequency across logged verdicts.
+
+    NIST 800-61 Phase: Post-Incident Activity — technique-level coverage
+    and recurrence metrics for detection-engineering review.
+
+    Query Parameters:
+        since: Optional ISO-8601 timestamp lower bound on ``logged_at``.
+
+    Returns:
+        JSON ``{"techniques": [{"technique_id", "count"}], "total_rows": N,
+        "since": <str|null>}`` sorted by count descending.
+    """
+    since, error = _parse_since_param()
+    if error is not None:
+        return error
+    result = stats_mitre(DB_PATH, since=since)
+    result["since"] = since
+    return jsonify(result), 200
+
+
+@app.route("/api/stats/feedback")
+@require_role("analyst")
+@limiter.limit("10/minute")
+def stats_feedback_route() -> Any:
+    """Return the analyst feedback FP/TP split and ratio.
+
+    NIST 800-61 Phase: Post-Incident Activity — detection quality metrics.
+
+    Query Parameters:
+        since: Optional ISO-8601 timestamp lower bound on ``submitted_at``.
+
+    Returns:
+        JSON ``{"fp": n, "tp": n, "total": N, "fp_ratio": r,
+        "since": <str|null>}``.
+    """
+    since, error = _parse_since_param()
+    if error is not None:
+        return error
+    result = stats_feedback(DB_PATH, since=since)
+    result["since"] = since
+    return jsonify(result), 200
 
 
 @app.route("/api/feedback", methods=["GET"])

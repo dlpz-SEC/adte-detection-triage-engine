@@ -33,7 +33,7 @@ import warnings
 import requests
 import urllib3
 
-from adte.models import AlertEntity, GeoLocation, NormalizedIncident, SignInMetadata
+from adte.models import AlertEntity, NormalizedIncident, SignInMetadata
 
 _DEFAULT_INDEXER_URL = "https://localhost:9200"
 _DEFAULT_INDEXER_PORT = 9200
@@ -498,6 +498,8 @@ class WazuhAdapter:
             MFA; with no auth outcome the engine skips the MFA-fatigue signal)
           - ``rule.description``      → ``app_display_name``
           - ``_event_risk_from_level(rule.level)`` → ``event_risk``
+          - ``rule.mitre.id``         → ``technique_ids`` (native ATT&CK
+            IDs when the Wazuh rule carries them; ``[]`` otherwise)
         - Entities: Host always; IP and Account when extractable.
 
         Args:
@@ -521,6 +523,16 @@ class WazuhAdapter:
         )
         ts = _parse_wazuh_timestamp(raw_ts)
 
+        # Native ATT&CK technique IDs from the Wazuh rule (rule.mitre.id is a
+        # list of IDs like ["T1110"]; tolerate a bare string or missing/odd shapes).
+        raw_mitre = rule.get("mitre")
+        raw_ids = raw_mitre.get("id", []) if isinstance(raw_mitre, dict) else []
+        if isinstance(raw_ids, str):
+            raw_ids = [raw_ids]
+        technique_ids: list[str] = (
+            [str(t) for t in raw_ids if t] if isinstance(raw_ids, list) else []
+        )
+
         sign_in = SignInMetadata(
             user_principal_name=user,
             ip_address=srcip,
@@ -532,6 +544,7 @@ class WazuhAdapter:
             # skips the MFA-fatigue signal and redistributes its weight.
             app_display_name=rule.get("description", ""),
             event_risk=event_risk,
+            technique_ids=technique_ids,
             timestamp=ts,
         )
 
@@ -546,7 +559,9 @@ class WazuhAdapter:
             )
         ]
         if srcip:
-            mitre = rule.get("mitre", {})
+            # Reuse the guarded raw_mitre — a non-dict rule.mitre would crash
+            # the .get() below (pre-existing bug surfaced by malformed alerts).
+            mitre = raw_mitre if isinstance(raw_mitre, dict) else {}
             entities.append(AlertEntity(
                 entity_type="IP",
                 identifier=srcip,

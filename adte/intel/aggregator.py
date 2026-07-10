@@ -22,7 +22,9 @@ import concurrent.futures
 import ipaddress
 import logging
 import os
-from datetime import datetime, timezone
+import threading
+import time
+from datetime import date, datetime, timezone
 
 from adte.intel._mock import _mock_lookup
 from adte.intel.abuseipdb import AbuseIPDBClient
@@ -52,6 +54,118 @@ def _is_private(ip: str) -> bool:
     """
     addr = ipaddress.IPv4Address(ip)
     return any(addr in net for net in _PRIVATE_NETWORKS)
+
+
+class _TTLCache:
+    """Bounded per-IP result cache with time-based expiry.
+
+    Dict-compatible for the operations the aggregator uses (``get``,
+    ``__setitem__``, ``__contains__``, ``__len__``), so a plain ``dict``
+    can still be substituted in tests.  Thread-safe: Flask worker threads
+    hit the shared aggregator concurrently.
+
+    Attributes:
+        _ttl: Seconds an entry stays valid.
+        _max: Maximum number of entries; the oldest inserted entry is
+            evicted when full (insertion order via dict ordering).
+    """
+
+    def __init__(self, ttl_seconds: float = 3600.0, max_size: int = 1024) -> None:
+        """Create the cache.
+
+        Args:
+            ttl_seconds: Entry lifetime in seconds (default 1 hour).
+            max_size: Entry cap before oldest-first eviction (default 1024).
+        """
+        self._ttl = ttl_seconds
+        self._max = max_size
+        self._data: dict[str, tuple[ThreatIntelResult, float]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> ThreatIntelResult | None:
+        """Return the live entry for *key*, or None if absent/expired."""
+        with self._lock:
+            item = self._data.get(key)
+            if item is None:
+                return None
+            result, expires_at = item
+            if time.monotonic() >= expires_at:
+                del self._data[key]
+                return None
+            return result
+
+    def __setitem__(self, key: str, value: ThreatIntelResult) -> None:
+        """Store *value* under *key*, evicting the oldest entry when full."""
+        with self._lock:
+            if key not in self._data and len(self._data) >= self._max:
+                self._data.pop(next(iter(self._data)))
+            self._data[key] = (value, time.monotonic() + self._ttl)
+
+    def __contains__(self, key: str) -> bool:
+        """Return True when a live (non-expired) entry exists for *key*."""
+        return self.get(key) is not None
+
+    def __len__(self) -> int:
+        """Return the number of stored (possibly stale) entries."""
+        with self._lock:
+            return len(self._data)
+
+
+class _DailyQuota:
+    """Per-provider daily API budget with UTC-midnight reset.
+
+    In-memory only — the counter restarts with the process, which is
+    acceptable: it exists to stop a single process from silently burning a
+    provider's free-tier daily quota.
+
+    Attributes:
+        limit: Calls permitted per UTC day.
+    """
+
+    def __init__(self, limit: int) -> None:
+        """Create the counter.
+
+        Args:
+            limit: Calls permitted per UTC day (0 disables the provider).
+        """
+        self.limit = limit
+        self._count = 0
+        self._day: date | None = None
+        self._lock = threading.Lock()
+
+    def try_acquire(self) -> bool:
+        """Consume one call slot if the daily budget allows it.
+
+        Returns:
+            True when the call may proceed; False when today's budget is
+            exhausted.
+        """
+        today = datetime.now(timezone.utc).date()
+        with self._lock:
+            if self._day != today:
+                self._day = today
+                self._count = 0
+            if self._count >= self.limit:
+                return False
+            self._count += 1
+            return True
+
+
+def _quota_limit(provider: str, default: int) -> int:
+    """Read a provider's daily quota from ``ADTE_TI_QUOTA_<PROVIDER>``.
+
+    Args:
+        provider: Uppercase provider name (e.g. ``"VIRUSTOTAL"``).
+        default: Fallback limit when the env var is absent or malformed.
+
+    Returns:
+        The configured daily call limit.
+    """
+    raw = os.environ.get(f"ADTE_TI_QUOTA_{provider}", "")
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        return default
 
 
 class ThreatIntelAggregator:
@@ -96,15 +210,19 @@ class ThreatIntelAggregator:
         """
         self._use_mock = abuseipdb_key is None and vt_key is None and otx_key is None
         self._clients: list[AbuseIPDBClient | VirusTotalClient | OTXClient] = []
-        self._cache: dict[str, ThreatIntelResult] = {}
+        self._cache: _TTLCache = _TTLCache()
+        self._quotas: list[_DailyQuota] = []
 
         if not self._use_mock:
             if abuseipdb_key:
                 self._clients.append(AbuseIPDBClient(abuseipdb_key))
+                self._quotas.append(_DailyQuota(_quota_limit("ABUSEIPDB", 1000)))
             if vt_key:
                 self._clients.append(VirusTotalClient(vt_key))
+                self._quotas.append(_DailyQuota(_quota_limit("VIRUSTOTAL", 500)))
             # OTX works unauthenticated; always include when in live mode.
             self._clients.append(OTXClient(otx_key))
+            self._quotas.append(_DailyQuota(_quota_limit("OTX", 10000)))
 
     @classmethod
     def from_env(cls) -> "ThreatIntelAggregator":
@@ -139,9 +257,10 @@ class ThreatIntelAggregator:
         Returns:
             An aggregated ``ThreatIntelResult``.
         """
-        # 1. Cache hit.
-        if ip in self._cache:
-            return self._cache[ip]
+        # 1. Cache hit (get-once: entries can expire between checks).
+        cached = self._cache.get(ip)
+        if cached is not None:
+            return cached
 
         # 2. Private / loopback short-circuit.
         if _is_private(ip):
@@ -163,8 +282,36 @@ class ThreatIntelAggregator:
             return result
 
         # 4. Live API clients — queried in parallel to minimise latency.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self._clients)) as pool:
-            futures = [pool.submit(client.check, ip) for client in self._clients]
+        # Providers whose daily quota is exhausted are skipped for the day
+        # (tolerate hand-constructed aggregators without _quotas — tests
+        # build instances via __new__).
+        quotas = getattr(self, "_quotas", [])
+        if len(quotas) == len(self._clients):
+            live_clients = []
+            for client, quota in zip(self._clients, quotas):
+                if quota.try_acquire():
+                    live_clients.append(client)
+                else:
+                    _log.info(
+                        "ThreatIntelAggregator: daily quota exhausted for %s; "
+                        "skipping provider until UTC midnight",
+                        type(client).__name__,
+                    )
+        else:
+            live_clients = list(self._clients)
+
+        if not live_clients:
+            _log.warning(
+                "ThreatIntelAggregator: all provider daily quotas exhausted; "
+                "serving mock result for %s until UTC midnight",
+                ip,
+            )
+            result = _mock_lookup(ip)
+            self._cache[ip] = result
+            return result
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(live_clients)) as pool:
+            futures = [pool.submit(client.check, ip) for client in live_clients]
         # ThreadPoolExecutor context manager waits for all futures before
         # exiting, so f.result() here never blocks.
         raw_results = [f.result() for f in futures]
