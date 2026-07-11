@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "esbuild src/app.jsx --bundle --outfile=bundle.js --platform=browser --target=es2020 --minify",
-    "build:dev": "esbuild src/app.jsx --bundle --outfile=bundle.js --platform=browser --target=es2020 --sourcemap"
+    "build": "esbuild src/app.jsx --bundle --outfile=bundle.js --platform=browser --target=es2020 --minify --define:process.env.NODE_ENV=\\\"production\\\"",
+    "build:dev": "esbuild src/app.jsx --bundle --outfile=bundle.js --platform=browser --target=es2020 --sourcemap --define:process.env.NODE_ENV=\\\"development\\\""
   },
   "dependencies": {
     "react": "^18.3.1",

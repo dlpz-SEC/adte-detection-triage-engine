@@ -56,6 +56,13 @@ from adte.store.audit_log import (
     stats_mitre,
     stats_verdicts,
 )
+from adte.store.case_store import (
+    clear_cases,
+    get_case,
+    get_cases_by_ids,
+    ingest_alert,
+    list_cases,
+)
 from adte.store.user_history import get_user_profile
 
 
@@ -67,11 +74,13 @@ from adte.store.user_history import get_user_profile
 #
 #   readonly      (0) — read-only access: GET /api/verdicts, /api/feedback,
 #                        /api/intel, /api/queue, /api/auth-check
-#   analyst       (1) — adds: POST /api/triage, POST /api/feedback (TP/FP
-#                        labels without IP promotion), DELETE not permitted
+#   analyst       (1) — adds: POST /api/triage, GET /api/cases, POST
+#                        /api/feedback (TP/FP labels without IP promotion),
+#                        DELETE not permitted
 #   senior_analyst(2) — adds: FP registry IP promotion, GET /api/config
 #   admin         (3) — adds: DELETE /api/verdicts, DELETE /api/feedback,
-#                        POST /api/auth/login, POST /api/auth/logout
+#                        DELETE /api/cases, POST /api/auth/login,
+#                        POST /api/auth/logout
 #
 # Set ADTE_API_KEY_<ROLE> env vars to enable each tier (see .env.example).
 ROLES: dict[str, int] = {
@@ -756,6 +765,9 @@ def triage() -> Any:
 
     output = _finalize_output(output, incident)
     log_verdict(output, DB_PATH)
+    # Case correlation runs after the audit write and is fail-open: a broken
+    # case store yields "case": null, never a failed triage.
+    output["case"] = ingest_alert(output, incident, DB_PATH)
     return jsonify(output), 200
 
 
@@ -906,6 +918,7 @@ def triage_batch() -> Any:
                 continue
             output = _finalize_output(output, incident)
             log_verdict(output, DB_PATH)
+            output["case"] = ingest_alert(output, incident, DB_PATH)
             results.append({"index": i, "ok": True, **output})
         return results
 
@@ -919,14 +932,29 @@ def triage_batch() -> Any:
             ), 504
 
     succeeded = sum(1 for r in results if r.get("ok"))
+    # Batch-level case summary: per-element "case" blobs show the case as of
+    # that element's ingest; re-reading here reports the FINAL counts once
+    # every element has landed.
+    case_indices: dict[str, list[int]] = {}
+    for r in results:
+        if r.get("ok") and r.get("case"):
+            case_indices.setdefault(r["case"]["case_id"], []).append(r["index"])
+    case_summaries = get_cases_by_ids(list(case_indices), DB_PATH)
+    for summary in case_summaries:
+        summary["member_indices"] = case_indices[summary["case_id"]]
     return jsonify({
         "count": len(items),
         "succeeded": succeeded,
         "failed": len(results) - succeeded,
         "results": results,
+        "cases": case_summaries,
     }), 200
 
 
+# NOTE: /api/queue re-triages the same incidents on every poll (5-min cache),
+# so it is deliberately NOT wired into case correlation — ingesting here would
+# multiply case membership on every queue refresh.  Only /api/triage and
+# /api/triage/batch ingest into the case store.
 @app.route("/api/queue")
 @require_role("analyst")
 @limiter.limit("20/minute")
@@ -1379,6 +1407,86 @@ def delete_feedback() -> Any:
     if ok:
         return jsonify({"status": "ok"}), 200
     return jsonify({"error": "Failed to clear feedback"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Case correlation — grouped alerts with kill-chain escalation
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/cases")
+@require_role("analyst")
+@limiter.limit("60/minute")
+def cases() -> Any:
+    """Return correlation case summaries, newest activity first.
+
+    A case groups triaged alerts that share a source IP or user within the
+    rolling correlation window (see ``adte/case_policy.py``).  Case status is
+    computed on read: ``open`` while the last activity is inside the window,
+    ``closed`` afterwards.
+
+    NIST 800-61 Phase: Detection & Analysis — correlation of related events.
+
+    Query Parameters:
+        status: Optional filter — ``open``, ``closed``, or ``all`` (default).
+        limit:  Maximum rows to return (default 50, capped at 200).
+
+    Returns:
+        JSON object with ``cases`` (list of summary dicts) and ``count``.
+    """
+    status = request.args.get("status", "all")
+    if status not in ("open", "closed", "all"):
+        return jsonify({"error": "status must be one of: open, closed, all"}), 400
+    try:
+        limit = max(1, min(200, int(request.args.get("limit", 50))))
+    except (TypeError, ValueError):
+        limit = 50
+    rows = list_cases(DB_PATH, status=status, limit=limit)
+    return jsonify({"cases": rows, "count": len(rows)}), 200
+
+
+@app.route("/api/cases/<case_id>")
+@require_role("analyst")
+@limiter.limit("60/minute")
+def case_detail(case_id: str) -> Any:
+    """Return one case with its escalation rationale and member alerts.
+
+    NIST 800-61 Phase: Detection & Analysis — drill-down into a correlated
+    alert cluster for investigation.
+
+    Args:
+        case_id: Case identifier (``CASE-YYYYMMDD-xxxxxx``).
+
+    Returns:
+        Case detail JSON (summary + ``escalation_rationale`` + ``members``),
+        or a 404 when the case is unknown or has been cleared.
+    """
+    detail = get_case(case_id, DB_PATH)
+    if detail is None:
+        return jsonify({"error": "Case not found"}), 404
+    return jsonify(detail), 200
+
+
+@app.route("/api/cases", methods=["DELETE"])
+@require_role("admin")
+@limiter.limit("5/minute")
+def delete_cases() -> Any:
+    """Soft-delete all active correlation cases.
+
+    Cases are derived data — the verdict audit trail is untouched.  Rows are
+    stamped ``deleted_at`` and hidden from queries, mirroring
+    ``DELETE /api/verdicts``.
+
+    NIST 800-61 Phase: Post-Incident Activity.
+
+    Returns:
+        ``{"status": "ok"}`` on success (200), or ``{"error": "..."}`` on
+        failure (500).
+    """
+    ok = clear_cases(DB_PATH)
+    if ok:
+        return jsonify({"status": "ok"}), 200
+    return jsonify({"error": "Failed to clear cases"}), 500
 
 
 @app.route("/api/intel")

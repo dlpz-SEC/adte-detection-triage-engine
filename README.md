@@ -179,6 +179,43 @@ ATT&CK mapping runs end-to-end through the backend, not as a cosmetic label:
 - **Technique frequency stats.** `GET /api/stats/mitre` aggregates technique
   recurrence across the verdict audit log.
 
+## Alert Correlation & Case Management
+
+Single-alert scoring is only half the triage problem — real intrusions surface
+as *sequences*: the same source IP hitting three different rules in ten
+minutes, or a technique progression that walks the ATT&CK kill chain. ADTE
+groups related alerts into **cases**:
+
+- **Entity correlation.** Every triaged alert (single or batch) joins an open
+  case when it shares a source IP or user with recent alerts inside a rolling
+  window (default 60 min). Wazuh's `AGENT\system` pseudo-users never correlate
+  by user; private RFC1918 source IPs deliberately do (internal lateral
+  movement is the story worth catching).
+- **Kill-chain detection.** Member techniques resolve to ATT&CK tactics, and a
+  strictly ascending progression across ≥2 alerts and ≥3 tactics (e.g.
+  Credential Access → Lateral Movement → Exfiltration, gaps allowed) flags the
+  case — detected via longest-increasing-subsequence over event-time order, so
+  an out-of-order arrival never hides a real chain.
+- **Case-level escalation, explainable.** The case scores
+  `base (worst member) + volume bonus + tactic-breadth bonus + kill-chain
+  bonus` (capped at 100) with a per-factor rationale mirroring the engine's
+  signal rationale. Three medium-risk alerts from one IP walking the kill
+  chain escalate the *case* to high risk — while **per-alert verdicts remain
+  byte-identical**; correlation is a strictly additive layer (`case` key on
+  triage responses), not a scoring change.
+- **API + UI.** `GET /api/cases` (list, open/closed filter),
+  `GET /api/cases/<id>` (members + rationale), `DELETE /api/cases` (admin,
+  soft-delete). The web UI adds a Cases view (expandable rows, kill-chain
+  chips, member drill-down), a CASE column + per-case summary strip on batch
+  results, and a case banner on every triage result.
+- **Correlation is fail-open** — a broken case store yields `"case": null`,
+  never a failed triage. Cases persist in the same cross-worker SQLite store
+  as the audit log. The window runs on ingestion time, so demo fixtures with
+  historical event timestamps still correlate; re-pasting the *same* incident
+  refreshes its existing case membership (no duplicate members — a replayed
+  alert can't inflate the score or fake a cross-alert kill chain), while
+  distinct related alerts grow the case.
+
 ## Threat Intelligence API Keys
 
 ADTE enriches IP addresses against live threat intelligence sources when API
@@ -245,7 +282,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-391 tests across 21 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration
+523 tests across 28 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api
 
 Example verdicts:
 - `incident_account_takeover_tor_exfil.json` → **CRITICAL** (~99)
@@ -333,6 +370,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Threat-intel bounded TTL cache + per-provider daily quotas; LLM narrative response cache
 - [x] Adversarial prompt-injection test suite + gap report (`docs/INJECTION_GAP_REPORT.md`)
 - [x] Verdict History + Feedback History views with filter and clear controls
+- [x] Alert correlation / case management — rolling-window entity correlation (IP/user), ATT&CK kill-chain detection, explainable case-level escalation, Cases view + `/api/cases` endpoints; per-alert verdicts untouched
 - [ ] Real Sentinel REST API integration (live Azure ingestion)
 - [ ] Automated containment/response-execution layer (gated) — currently recommend-only
 - [ ] Batch processing mode

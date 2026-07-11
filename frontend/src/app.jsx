@@ -58,7 +58,7 @@ import ReactDOM from 'react-dom/client';
     const EXAMPLE_BADGE_CLASS = { high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low' };
 
     const VIEW_LABELS = {
-      triage: 'Alert Input', queue: 'Alert Queue',
+      triage: 'Alert Input', queue: 'Alert Queue', cases: 'Cases',
       signals: 'Signal Breakdown', mitre: 'MITRE / NIST',
       intel: 'Threat Intel',
       safety: 'Safety Gates', weights: 'Signal Weights',
@@ -68,7 +68,7 @@ import ReactDOM from 'react-dom/client';
     };
 
     const VIEW_TO_KEY = {
-      triage: 'alert-input', queue: 'alert-queue',
+      triage: 'alert-input', queue: 'alert-queue', cases: 'cases',
       signals: 'signal-breakdown', mitre: 'mitre-nist',
       intel: 'threat-intel',
       safety: 'safety-gates', weights: 'signal-weights',
@@ -80,6 +80,7 @@ import ReactDOM from 'react-dom/client';
       { section: 'TRIAGE', items: [
         { key: 'alert-input', label: 'Alert Input', action: 'view:triage', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
         { key: 'alert-queue', label: 'Alert Queue', action: 'view:queue', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
+        { key: 'cases', label: 'Cases', action: 'view:cases', icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' },
       ]},
       { section: 'ANALYZE', items: [
         { key: 'signal-breakdown', label: 'Signal Breakdown', action: 'view:signals', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
@@ -778,8 +779,9 @@ import ReactDOM from 'react-dom/client';
     /* TriageResult                                                         */
     /* ------------------------------------------------------------------ */
 
-    function TriageResult({ result, scoreBarPct }) {
+    function TriageResult({ result, scoreBarPct, onOpenCase }) {
       const signalSummary = result.report?.signal_summary || {};
+      const caseInfo = result.case;
       return (
         <div>
           <div style={{ marginBottom: 12 }}>
@@ -787,6 +789,35 @@ import ReactDOM from 'react-dom/client';
           </div>
           <ScoreBar riskScore={result.risk_score} confidence={result.confidence} verdict={result.verdict} pct={scoreBarPct} />
           <MitreBadges techniques={result.mitre_techniques} phase={result.nist_phase} />
+          {caseInfo && (
+            <div className="panel" style={{ marginTop: 12, borderLeft: `3px solid ${caseInfo.escalated ? 'var(--high)' : 'var(--accent)'}` }}>
+              <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span className="mono">{caseInfo.case_id}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {caseInfo.escalated && <span className="badge badge-high" style={{ fontSize: '0.55rem' }}>ESCALATED</span>}
+                  <VerdictBadge verdict={caseInfo.case_verdict} riskScore={caseInfo.case_score} />
+                </div>
+              </div>
+              <div className="panel-body" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
+                  {caseInfo.alert_count} correlated alert{caseInfo.alert_count === 1 ? '' : 's'} in the {caseInfo.window_minutes} min window
+                  · case score <span className="mono" style={{ fontWeight: 600 }}>{caseInfo.case_score}</span>
+                </div>
+                {caseInfo.kill_chain?.detected && <TacticChips tactics={caseInfo.kill_chain.tactics_in_order} />}
+                {caseInfo.related_incident_ids?.length > 0 && (
+                  <div className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                    Related: {caseInfo.related_incident_ids.join(', ')}
+                  </div>
+                )}
+                {onOpenCase && (
+                  <button className="btn" style={{ alignSelf: 'flex-start', fontSize: '0.72rem' }}
+                    onClick={() => onOpenCase(caseInfo.case_id)}>
+                    View case →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {result.report?.one_paragraph_summary && (() => {
             const isMock = (result.report.confidence_note || '').includes('template-based');
             return (
@@ -1075,17 +1106,33 @@ import ReactDOM from 'react-dom/client';
     // data-table idiom; clicking a success row focuses that entry as the
     // single `result` so TriageResult and every downstream view (Signals,
     // MITRE, Intel, Audit) work on it unchanged.
-    function BatchResultsTable({ results, meta, selectedIndex, onSelect }) {
-      const colTemplate = '32px 1.4fr 1fr 90px 110px';
+    function BatchResultsTable({ results, meta, selectedIndex, onSelect, onOpenCase }) {
+      const colTemplate = '32px 1.2fr 1fr 90px 110px 76px';
+      const caseSummaries = meta.cases || [];
       return (
         <div style={{ marginBottom: 24 }}>
           <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>
             BATCH — {meta.count} alerts · <span style={{ color: 'var(--success)' }}>{meta.succeeded} triaged</span>
             {meta.failed > 0 && <> · <span style={{ color: 'var(--medium)' }}>{meta.failed} failed</span></>}
           </div>
+          {caseSummaries.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              {caseSummaries.map(c => (
+                <div key={c.case_id} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: onOpenCase ? 'pointer' : 'default', borderLeft: `3px solid ${c.escalated ? 'var(--high)' : 'var(--accent)'}` }}
+                  onClick={onOpenCase ? () => onOpenCase(c.case_id) : undefined}
+                  title={onOpenCase ? `Open ${c.case_id} in the Cases view` : c.case_id}>
+                  <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{c.case_id}</span>
+                  <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{c.alert_count} alert{c.alert_count === 1 ? '' : 's'}</span>
+                  <VerdictBadge verdict={c.case_verdict} riskScore={c.case_score} />
+                  {c.escalated && <span className="badge badge-high" style={{ fontSize: '0.5rem' }}>ESCALATED</span>}
+                  {c.kill_chain?.detected && <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--high)' }} title={c.kill_chain.tactics_in_order.join(' → ')}>⛓</span>}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="data-table">
             <div className="data-table-header" style={{ gridTemplateColumns: colTemplate }}>
-              <span>#</span><span>INCIDENT</span><span>USER</span><span>RISK</span><span>VERDICT</span>
+              <span>#</span><span>INCIDENT</span><span>USER</span><span>RISK</span><span>VERDICT</span><span>CASE</span>
             </div>
             {results.map(r => {
               if (!r.ok) {
@@ -1112,6 +1159,10 @@ import ReactDOM from 'react-dom/client';
                       <span className="mono" style={{ fontSize: '0.75rem', color: VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)], fontWeight: 600 }}>{r.risk_score}</span>
                     </div>
                     <VerdictBadge verdict={r.verdict} riskScore={r.risk_score} />
+                    <span className="mono" style={{ fontSize: '0.68rem', color: r.case ? (r.case.escalated ? 'var(--high)' : 'var(--accent)') : 'var(--text-muted)' }}
+                      title={r.case ? r.case.case_id : 'Not correlated'}>
+                      {r.case ? r.case.case_id.slice(-6) : '—'}
+                    </span>
                   </div>
                   {techs.length > 0 && (
                     <div style={{ padding: '0 16px 8px' }}>
@@ -1124,6 +1175,195 @@ import ReactDOM from 'react-dom/client';
           </div>
           <div className="mono" style={{ marginTop: 8, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
             Click a row for the full result · Signals / MITRE views follow the focused alert
+          </div>
+        </div>
+      );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* VIEW: CasesView — correlated alert clusters                          */
+    /* ------------------------------------------------------------------ */
+
+    // Ordered kill-chain tactic chips with arrows between stages.
+    function TacticChips({ tactics }) {
+      if (!tactics || tactics.length === 0) return null;
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>KILL CHAIN</span>
+          {tactics.map((t, i) => (
+            <React.Fragment key={`${t}-${i}`}>
+              {i > 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>→</span>}
+              <span className="badge badge-high" style={{ fontSize: '0.55rem' }}>{t}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+
+    const CASE_STATUS_FILTERS = ['all', 'open', 'closed'];
+
+    function CasesView({ focusCaseId, onGoIntel }) {
+      const [rows, setRows] = useState(null);
+      const [statusFilter, setStatusFilter] = useState('all');
+      const [expandedId, setExpandedId] = useState(focusCaseId || null);
+      const [detail, setDetail] = useState(null);
+      const [detailError, setDetailError] = useState(null);
+      const [error, setError] = useState(null);
+
+      // Stale flags: two quick filter clicks (or expand/collapse) put two
+      // requests in flight; without the cleanup guard the LAST response to
+      // resolve would win regardless of the currently selected filter/case.
+      useEffect(() => {
+        let stale = false;
+        setError(null);
+        fetch(`${API_BASE}/api/cases?status=${statusFilter}&limit=100`, { headers: authHeaders() })
+          .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, d })))
+          .then(({ ok, status, d }) => {
+            if (stale) return;
+            if (ok) setRows(d.cases || []);
+            else if (status === 401) setError('Authentication required — open Settings (gear icon) and log in.');
+            else setError(d?.error || 'Failed to load cases');
+          })
+          .catch(() => { if (!stale) setError('Could not reach the cases API'); });
+        return () => { stale = true; };
+      }, [statusFilter]);
+
+      useEffect(() => {
+        if (!expandedId) { setDetail(null); setDetailError(null); return; }
+        let stale = false;
+        setDetail(null);
+        setDetailError(null);
+        fetch(`${API_BASE}/api/cases/${expandedId}`, { headers: authHeaders() })
+          .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, d })))
+          .then(({ ok, status, d }) => {
+            if (stale) return;
+            if (ok) setDetail(d);
+            else setDetailError(d?.error || `Failed to load case (HTTP ${status})`);
+          })
+          .catch(() => { if (!stale) setDetailError('Could not reach the cases API'); });
+        return () => { stale = true; };
+      }, [expandedId]);
+
+      const colTemplate = '1.3fr 60px 1.4fr 90px 110px 56px 120px';
+      return (
+        <div style={{ padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+              CORRELATED CASES — alerts sharing a source IP or user inside the rolling window
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {CASE_STATUS_FILTERS.map(s => (
+                <button key={s} className="btn" onClick={() => setStatusFilter(s)}
+                  style={{ fontSize: '0.65rem', padding: '4px 10px',
+                    borderColor: statusFilter === s ? 'var(--accent)' : undefined,
+                    background: statusFilter === s ? 'var(--accent-dim)' : undefined }}>
+                  {s.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && (
+            <div className="panel" style={{ borderLeft: '3px solid var(--medium)', marginBottom: 12 }}>
+              <div className="panel-body mono" style={{ fontSize: '0.75rem', color: 'var(--medium)' }}>⚠ {error}</div>
+            </div>
+          )}
+          {!error && rows && rows.length === 0 && (
+            <div style={{ paddingTop: 60, textAlign: 'center' }}>
+              <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.7rem', letterSpacing: '0.15em' }}>NO CASES YET</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8, opacity: 0.6 }}>
+                Run triage on related alerts — same source IP or user within the window — and they will group here.
+              </div>
+            </div>
+          )}
+          {!error && rows && rows.length > 0 && (
+            <div className="data-table">
+              <div className="data-table-header" style={{ gridTemplateColumns: colTemplate }}>
+                <span>CASE</span><span>ALERTS</span><span>ENTITIES</span><span>RISK</span><span>VERDICT</span><span>CHAIN</span><span>LAST ACTIVITY</span>
+              </div>
+              {rows.map(c => {
+                const expanded = expandedId === c.case_id;
+                const entities = [...(c.users || []), ...(c.ips || [])];
+                return (
+                  <div key={c.case_id}>
+                    <div className="data-table-row" style={{ gridTemplateColumns: colTemplate, background: expanded ? 'var(--accent-dim)' : undefined }}
+                      onClick={() => setExpandedId(expanded ? null : c.case_id)} title={expanded ? 'Collapse' : 'Expand case detail'}>
+                      <span className="mono" style={{ fontSize: '0.72rem', color: expanded ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.case_id}{c.escalated && <span style={{ color: 'var(--high)', marginLeft: 6 }} title="Escalated by correlation">▲</span>}
+                      </span>
+                      <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{c.alert_count}</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={entities.join(', ')}>
+                        {entities[0] || '—'}{entities.length > 1 && <span style={{ color: 'var(--text-muted)' }}> +{entities.length - 1}</span>}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ width: `${c.case_score}%`, height: '100%', background: VERDICT_COLOR[c.case_verdict], borderRadius: 2 }} />
+                        </div>
+                        <span className="mono" style={{ fontSize: '0.75rem', color: VERDICT_COLOR[c.case_verdict], fontWeight: 600 }}>{c.case_score}</span>
+                      </div>
+                      <VerdictBadge verdict={c.case_verdict} riskScore={c.case_score} />
+                      <span className="mono" style={{ fontSize: '0.75rem', color: c.kill_chain?.detected ? 'var(--high)' : 'var(--text-muted)' }}
+                        title={c.kill_chain?.detected ? c.kill_chain.tactics_in_order.join(' → ') : 'No kill-chain progression'}>
+                        {c.kill_chain?.detected ? '⛓ ✓' : '—'}
+                      </span>
+                      <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        {(c.last_activity || '').slice(0, 19).replace('T', ' ')}
+                        {c.status === 'open' && <span className="badge badge-low" style={{ marginLeft: 6, fontSize: '0.5rem' }}>OPEN</span>}
+                      </span>
+                    </div>
+                    {expanded && !detail && (
+                      <div className="mono" style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', fontSize: '0.7rem', color: detailError ? 'var(--medium)' : 'var(--text-muted)' }}>
+                        {detailError ? `⚠ ${detailError}` : 'Loading case detail…'}
+                      </div>
+                    )}
+                    {expanded && detail && detail.case_id === c.case_id && (
+                      <div style={{ padding: '10px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {detail.kill_chain?.detected && <TacticChips tactics={detail.kill_chain.tactics_in_order} />}
+                        <div>
+                          <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 6 }}>ESCALATION RATIONALE</div>
+                          {(detail.escalation_rationale || []).map((r, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '2px 0' }}>
+                              <span>{r.detail}</span>
+                              <span className="mono" style={{ color: r.points >= 0 ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
+                                {r.points >= 0 ? `+${r.points}` : r.points}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 6 }}>
+                            MEMBER ALERTS ({(detail.members || []).length})
+                          </div>
+                          {(detail.members || []).map((m, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 90px 110px', gap: 8, alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', padding: '3px 0' }}>
+                              <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.incident_id}</span>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.user || '—'}</span>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.rule_name || ''}>
+                                {(m.ips || []).map((ip, k) => (
+                                  <span key={ip} className="mono" style={{ color: 'var(--info, #60a5fa)', cursor: 'pointer', textDecoration: 'underline dotted', marginRight: 6 }}
+                                    onClick={e => { e.stopPropagation(); onGoIntel && onGoIntel(ip); }} title={`Look up ${ip} in Threat Intel`}>
+                                    {ip}
+                                  </span>
+                                ))}
+                                {m.rule_name || ''}
+                              </span>
+                              <span className="mono" style={{ color: VERDICT_COLOR[m.verdict], fontWeight: 600 }}>{Math.round(m.risk_score)}</span>
+                              <VerdictBadge verdict={m.verdict} riskScore={m.risk_score} />
+                            </div>
+                          ))}
+                          <div className="mono" style={{ marginTop: 6, fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                            Members are stored summaries — re-run an incident through Alert Input for the full signal breakdown.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="mono" style={{ marginTop: 10, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+            Cases group triaged alerts by shared source IP / user · Click a row to expand · Click an IP to enrich
           </div>
         </div>
       );
@@ -2606,6 +2846,7 @@ import ReactDOM from 'react-dom/client';
       const [mitreHighlight, setMitreHighlight] = useState(null);
       const [mitreFocusTechs, setMitreFocusTechs] = useState(null);
       const [mitreNistPhases2, setMitreNistPhases2] = useState(null);
+      const [focusCaseId, setFocusCaseId] = useState(null);   // case pre-expanded when opening the Cases view
       const llmProvider = 'anthropic';
 
       useEffect(() => {
@@ -2654,6 +2895,9 @@ import ReactDOM from 'react-dom/client';
       //   { section: 'nist', nistPhase? / nistPhases? } → scroll to NIST section
       const handleNav = useCallback((action, ctx) => {
         setActiveView(action.replace('view:', ''));
+        // Sidebar navigation shows the fresh case list; only openCase()
+        // (which bypasses handleNav) pre-expands a specific case.
+        setFocusCaseId(null);
         if (ctx?.tech) {
           setMitreHighlight(ctx.tech);
           setMitreFocusTechs([ctx.tech]);
@@ -2670,6 +2914,11 @@ import ReactDOM from 'react-dom/client';
           setMitreFocusTechs(null);
           setMitreNistPhases2(null);
         }
+      }, []);
+
+      const openCase = useCallback((caseId) => {
+        setFocusCaseId(caseId);
+        setActiveView('cases');
       }, []);
 
       const navigateToIntel = useCallback((ip) => {
@@ -2748,7 +2997,7 @@ import ReactDOM from 'react-dom/client';
           .then(({ ok, status, d }) => {
             if (ok) {
               setBatchResults(d.results || []);
-              setBatchMeta({ count: d.count, succeeded: d.succeeded, failed: d.failed });
+              setBatchMeta({ count: d.count, succeeded: d.succeeded, failed: d.failed, cases: d.cases || [] });
               setTriageCount(c => c + (d.succeeded || 0));
               setLastTriageTime(Date.now());
               return;
@@ -2821,6 +3070,7 @@ import ReactDOM from 'react-dom/client';
             {/* Content */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 64, minHeight: 0 }}>
               {activeView === 'queue' && <QueueView onLoadIncident={handleLoadIncident} onGoIntel={navigateToIntel} />}
+              {activeView === 'cases' && <CasesView focusCaseId={focusCaseId} onGoIntel={navigateToIntel} />}
               {activeView === 'signals' && <SignalsView result={result} onGoTriage={() => setActiveView('triage')} />}
               {activeView === 'mitre' && <MitreView result={result} onGoTriage={() => setActiveView('triage')} highlight={mitreHighlight} focusTechs={mitreFocusTechs} focusNistPhases={mitreNistPhases2} />}
               {activeView === 'intel' && (
@@ -2899,9 +3149,10 @@ import ReactDOM from 'react-dom/client';
                         results={batchResults} meta={batchMeta}
                         selectedIndex={result ? result.index : null}
                         onSelect={r => setResult(r)}
+                        onOpenCase={openCase}
                       />
                     )}
-                    {!loading && result && <TriageResult result={result} scoreBarPct={scoreBarPct} />}
+                    {!loading && result && <TriageResult result={result} scoreBarPct={scoreBarPct} onOpenCase={openCase} />}
                   </div>
                 </div>
               )}

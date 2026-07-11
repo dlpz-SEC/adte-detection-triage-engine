@@ -96,6 +96,45 @@ The pipeline ends here. The verdict, per-signal rationale, and recommended
 action are returned to the caller (CLI, web UI, or `/api/triage`); any
 containment is performed by a human or downstream system, not by ADTE.
 
+### 7. Correlate (post-verdict, server only)
+
+**Input:** Finalized triage output + incident → **Output:** `case` blob on the response
+
+After the verdict is audit-logged, `/api/triage` and `/api/triage/batch` call
+`case_store.ingest_alert()`, which joins the alert to an open **case** (or
+creates one) when it shares a source IP or user with recent alerts inside a
+rolling window (`CASE_WINDOW_MINUTES`, default 60). The case receives its own
+score and verdict via `adte/case_policy.py`: base = worst member, plus capped
+bonuses for alert volume, distinct-ATT&CK-tactic breadth, and a detected
+kill-chain progression (a strictly ascending longest-increasing-subsequence
+over member tactics in event-time order, ≥3 tactics across ≥2 alerts).
+
+Design contract:
+
+- **Per-alert verdicts are never modified** — the correlation layer only adds
+  the `case` key (and a batch-level `cases` summary). `engine.py` is untouched.
+- **Fail-open** — any case-store error yields `"case": null`; a verdict is
+  never blocked by correlation. Reads fail closed-empty.
+- **Windowing clock is ingestion time** (arrival at ADTE), so replayed demo
+  fixtures with historical event timestamps still correlate; member **event
+  time** is stored separately and drives kill-chain ordering.
+- **Cross-worker safe** — cases live in the shared SQLite file (same DB as the
+  audit log and sessions); join-or-create runs inside a `BEGIN IMMEDIATE`
+  transaction so two gunicorn workers cannot create duplicate cases. No
+  module-level state (the sessions lesson, commit `731600d`).
+- **Cases are derived data** — the `verdicts` table remains the forensic
+  record; idle cases past `CASE_RETENTION_DAYS` are hard-pruned on ingest,
+  while the admin clear (`DELETE /api/cases`) is a soft delete. On an
+  ephemeral disk (Railway without a volume) a redeploy clears open cases,
+  same as sessions.
+- `/api/queue` deliberately does **not** ingest — it re-triages the same
+  incidents on every poll and would multiply case membership.
+
+**Modules:** `adte/store/case_store.py` (persistence, matching),
+`adte/case_policy.py` (constants, scoring, kill-chain detection — freely
+editable, reads no incident fields). Endpoints: `GET /api/cases`,
+`GET /api/cases/<case_id>`, `DELETE /api/cases` (admin).
+
 ## Module Dependency Map
 
 ```
@@ -189,6 +228,8 @@ Authentication is via `X-ADTE-Key` header matched against per-role environment v
 - `POST /api/feedback`: 30 requests/minute per IP
 - `GET /api/verdicts/export`: 10 requests/minute per IP
 - `GET /api/config`: 10 requests/minute per IP
+- `GET /api/cases` and `GET /api/cases/<id>`: 60 requests/minute per IP
+- `DELETE /api/cases`: 5 requests/minute per IP (admin)
 - Returns JSON `{"error": "Rate limit exceeded"}` with HTTP 429
 
 ### CORS
