@@ -90,3 +90,17 @@ two unauthenticated signals still prove the new build is serving: (1) **new-rout
 the newly added path; 404 = old build, 401 = new build (the route now exists and answered with
 its auth gate); (2) **bundle grep** — `curl .../bundle.js | grep <new code marker>` for frontend
 changes. Used together they confirm a Railway deploy end-to-end with zero key handling.
+
+---
+
+### 2026-07-11 — A workflow's own result summary can miscount agents that errored out
+
+**Rule:** When an adversarial-review (or any fan-out) Workflow hits the session token limit or a
+mid-response API drop, individual agents fail — but the script's post-processing may bucket a
+finding whose *verifier* died as "refuted" (verdict absent → not `refuted === false`), silently
+discarding real findings. The tell: the `<failures>` list names `find:*`/`verify:*` agents and
+`agents_error > 0`. Don't trust the confirmed/refuted tally when agents errored. Distinguish
+`unverified` (verdict null) from `refuted` (verdict.refuted === true) in the script, and re-run
+the dead dimensions in a follow-up workflow before believing "0 confirmed." Round 1 of the
+Phase-30 review lost 2 finder dimensions + 6 verifiers this way; round 2 surfaced 7 more real
+findings the truncated round would have implied didn't exist.
