@@ -13,7 +13,6 @@ from adte.intel import threat_intel
 from adte.intel.aggregator import ThreatIntelAggregator
 from adte.intel.sigma_fp_registry import FPRegistry
 from adte.models import NormalizedIncident, SentinelIncident
-from adte.store.user_history import get_user_profile
 
 # Ensure safety-related env vars don't leak between tests.
 _SAFETY_ENV_VARS = [

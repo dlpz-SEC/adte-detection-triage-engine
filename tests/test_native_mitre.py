@@ -9,14 +9,13 @@ Covers the three A1 layers:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from adte.adapters.wazuh import WazuhAdapter
-from adte.models import NormalizedIncident, SentinelIncident
+from adte.models import NormalizedIncident
 from adte.store.audit_log import init_db
 
 # ---------------------------------------------------------------------------

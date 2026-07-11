@@ -131,8 +131,6 @@ def test_verdicts_rejects_invalid_since_timestamp() -> None:
 def test_verdicts_accepts_valid_iso_since_timestamp() -> None:
     """GET /api/verdicts with a well-formed ISO 8601 since value returns HTTP 200."""
     import adte.server as srv
-    from pathlib import Path
-    from adte.store.audit_log import init_db
 
     srv.app.config["TESTING"] = True
     with srv.app.test_client() as client:

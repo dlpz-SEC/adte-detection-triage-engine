@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 
 from adte.engine import TriageEngine
 from adte.intel.sigma_fp_registry import FPRegistry
