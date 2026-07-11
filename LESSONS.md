@@ -70,3 +70,23 @@ and store session tokens hashed, so a DB read can't hijack sessions. Verify with
 cross-process test: two separate interpreters sharing the DB file, login in one, authenticate
 in the other. Locks (`threading.Lock`) do NOT help — they only serialize threads inside one
 process.
+
+---
+
+### 2026-07-10 — `load_dotenv(override=True)` at import beats pre-set test env vars
+
+**Rule:** `adte.server` calls `load_dotenv(..., override=True)` at module import, so any env var
+you set BEFORE `import adte.server` (test keys, quota overrides) gets silently replaced by the
+`.env` value — the tell is "Invalid API key" for a key you just set. In standalone test scripts,
+set env vars AFTER the import (conftest's autouse fixture already runs post-import, which is why
+pytest never hits this).
+
+---
+
+### 2026-07-10 — Verifying an auth-gated deploy without credentials
+
+**Rule:** When a deploy's only behavioral change is behind login (401 fires before body parsing),
+two unauthenticated signals still prove the new build is serving: (1) **new-route probe** — POST
+the newly added path; 404 = old build, 401 = new build (the route now exists and answered with
+its auth gate); (2) **bundle grep** — `curl .../bundle.js | grep <new code marker>` for frontend
+changes. Used together they confirm a Railway deploy end-to-end with zero key handling.
