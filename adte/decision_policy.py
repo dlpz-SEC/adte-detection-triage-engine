@@ -30,16 +30,28 @@ real-world SOC experience and MITRE ATT&CK frequency data:
   reasons exist (travel, on-call) but it adds supporting evidence when
   correlated with stronger indicators.
 
+* **Cluster context (up to +15, additive)** — Membership in an active
+  correlated case (shared source IP or user within the correlation
+  window, possibly an ascending ATT&CK kill chain).  Unlike the five
+  core signals it is *additive*: the core signals produce the 0-100
+  base exactly as before, then correlated-case context adds up to 15
+  points on top, capped at 100.  Doctrine: **context is an aggravator,
+  never a mitigator** — an alert can only score higher for being part
+  of a case, never lower, and a solo alert is completely unaffected.
+
 NIST 800-61 Phase: Detection & Analysis — codifies the scoring rubric
 that converts enriched observables into a structured triage verdict.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 # ---------------------------------------------------------------------------
-# Signal weights (must sum to 100 for intuitive 0-100 risk scale)
+# Signal weights (the five core signals sum to 100 for an intuitive 0-100
+# risk scale; cluster_context is an ADDITIVE context signal that sits on
+# top — up to +15, with the final score capped at 100)
 # ---------------------------------------------------------------------------
 
 WEIGHT_IMPOSSIBLE_TRAVEL: int = 30
@@ -62,13 +74,26 @@ WEIGHT_LOGIN_HOUR_ANOMALY: int = 10
 """Points awarded when sign-in events fall outside the user's historical
 baseline login-hour window."""
 
-# Compile into a lookup for iteration.
+WEIGHT_CLUSTER_CONTEXT: int = 15
+"""Maximum ADDITIVE points from correlated-case (cluster) context.
+
+Unlike the five core weights this is not part of the 100-point
+normalization base: the core signals compute the 0-100 score exactly as
+if this signal did not exist, then cluster context adds up to this many
+points on top (final score capped at 100).  When no correlated context
+exists the signal is not applicable — it never enters the signal set,
+so solo alerts score byte-identically to the five-signal engine."""
+
+# Compile into a lookup for iteration.  The five CORE signals sum to 100;
+# cluster_context (15) is additive on top and deliberately excluded from
+# the core normalization denominator by the engine.
 SIGNAL_WEIGHTS: dict[str, int] = {
     "impossible_travel": WEIGHT_IMPOSSIBLE_TRAVEL,
     "mfa_fatigue": WEIGHT_MFA_FATIGUE,
     "ip_reputation": WEIGHT_IP_REPUTATION,
     "device_novelty": WEIGHT_DEVICE_NOVELTY,
     "login_hour_anomaly": WEIGHT_LOGIN_HOUR_ANOMALY,
+    "cluster_context": WEIGHT_CLUSTER_CONTEXT,
 }
 
 # ---------------------------------------------------------------------------
@@ -130,8 +155,10 @@ def compute_confidence(
     Args:
         signals_present: Number of signal types that were evaluated
             (had sufficient data to produce a result).
-        signals_total: Total number of signal types in the policy
-            (currently 5).
+        signals_total: Total number of signal types that were applicable
+            to this incident (the 5 core signals, plus cluster_context
+            when correlated-case context exists — not-applicable signals
+            are excluded from both counts).
         signal_agreement: Float 0.0–1.0 expressing how consistently
             the evaluated signals agree on direction.
 
@@ -143,3 +170,37 @@ def compute_confidence(
     coverage = signals_present / signals_total
     raw = coverage * signal_agreement * 100
     return max(0, min(100, round(raw)))
+
+
+# ---------------------------------------------------------------------------
+# Cluster (correlated-case) context
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ClusterContext:
+    """Correlated-case context for the ``cluster_context`` engine signal.
+
+    A read-only snapshot of the case this incident *would* join (or has
+    already joined), taken by ``adte.store.case_store.peek_correlation_context``
+    BEFORE scoring.  Sibling facts deliberately exclude the incident being
+    scored, so re-triaging the same incident never counts itself as
+    correlation evidence.
+
+    Attributes:
+        case_id: Identifier of the matched active case.
+        sibling_count: Correlated member alerts, EXCLUDING this incident.
+        distinct_sibling_tactics: Distinct ATT&CK tactics across sibling
+            members only (not this incident's own tactics).
+        kill_chain_detected: Whether the case-level kill-chain detector
+            found an ascending tactic progression.
+        max_sibling_risk_score: Highest sibling risk score — surfaced in
+            the signal rationale for analyst context, never scored.
+        window_minutes: The correlation window, echoed for rationale text.
+    """
+
+    case_id: str
+    sibling_count: int
+    distinct_sibling_tactics: int
+    kill_chain_detected: bool
+    max_sibling_risk_score: float
+    window_minutes: int

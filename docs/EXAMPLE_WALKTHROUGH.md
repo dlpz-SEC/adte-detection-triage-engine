@@ -9,6 +9,15 @@ Each scenario uses `--source mock` (no live SIEM connection required).
 > computed risk score (`<30` Low · `30–70` Medium · `>70` High · `≥90` Critical) and shown in the
 > output for display only.
 
+> **Correlation note (Phase 31):** the scores in this document are **solo** (uncorrelated)
+> numbers. The CLI runs shown here never touch the case store, so they always reproduce.
+> In the **web UI**, however, the CRITICAL and MEDIUM (ambiguous) Quick Load examples share
+> the user `eve@contoso.com` — running those demo tiles within 60 minutes of each other
+> correlates them into a case, and the *second* alert gains additive cluster-context points
+> (up to +15) on top of its documented solo score. To reproduce the solo numbers, clear
+> cases between tiles (`DELETE /api/cases`, admin role) — or run them back-to-back
+> deliberately to demo the boost.
+
 ---
 
 ## Scenario 1 — Impossible Travel + MFA Fatigue (HIGH RISK)

@@ -11,6 +11,9 @@
 #     inside that signal's own entry at the bottom.
 #   - Keywords come in underscore form (signal/synthetic text) and space form
 #     (real Wazuh rule descriptions, e.g. "sshd: brute force trying ...").
+#   - The cluster_context signal (Phase 31) is DELIBERATELY absent: case
+#     correlation is meta-context, not a technique — sibling alerts carry
+#     their own technique IDs, already unioned into the case.
 
 mappings:
 

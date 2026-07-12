@@ -6,7 +6,7 @@ A detailed, chronological account of every major decision, feature, and fix made
 
 ## Project Overview
 
-**ADTE (Autonomous Detection & Triage Engine)** is a deterministic, source-agnostic security incident triage engine. It ingests alerts from multiple SIEM sources, normalises them into a common schema, scores across five weighted signals, and produces a structured verdict with per-signal rationale and a recommended action. ADTE recommends, it does not act: it performs no automated containment, and every medium/high verdict is flagged for human review. (Historical note: earlier phases described a six-layer execution-gate model; that unwired execution layer was removed in Phase 23 — see below.)
+**ADTE (Autonomous Detection & Triage Engine)** is a deterministic, source-agnostic security incident triage engine. It ingests alerts from multiple SIEM sources, normalises them into a common schema, scores across five core weighted signals (plus an additive cluster-context signal when an alert correlates with recent related alerts — Phase 31), and produces a structured verdict with per-signal rationale and a recommended action. ADTE recommends, it does not act: it performs no automated containment, and every medium/high verdict is flagged for human review. (Historical note: earlier phases described a six-layer execution-gate model; that unwired execution layer was removed in Phase 23 — see below.)
 
 The engine is not a black box. Every verdict can be fully explained: which signals fired, why, at what confidence, and what the recommended containment action is. Human review is explicitly required for medium and high risk verdicts.
 
@@ -1540,6 +1540,74 @@ ingestion only, additive schema, scoring parity proven byte-identical on all 4 e
 - Deliverable: `docs/INJECTION_GAP_REPORT.md`.
 
 **Tests:** 274 → **391** (+117). Full green; `ruff` clean; A1 parity byte-identical.
+
+---
+
+## Phase 31 — Cluster Context: Correlated-Case Uplift as a 6th Signal (523 → 577 tests)
+
+**Scope:** Promote the Phase 30 correlation layer's case context into the scoring engine
+as a real additive 6th signal, `cluster_context`. `engine.py` was edited under an
+**explicit recorded waiver**; `models.py`, `adapters/`, and `case_policy.py` are
+untouched. Solo (uncorrelated) alerts are **byte-identical** to the 5-signal engine —
+proven by sha256 diff on all four bundled examples before/after, and pinned by permanent
+golden-pin tests.
+
+### Additive uplift, core math untouched
+- The 5 core signals compute the 0–100 base exactly as before (weights 30/25/20/15/10,
+  sum 100; skip/redistribution math untouched). `cluster_context` then adds up to
+  **+15 on top**; final score capped at 100.
+- Points: 1 sibling → +5, 2 → +8, 3+ → +10; ascending kill-chain in the case → +5 more;
+  cap 15. Signal confidence: 0.6 + 0.1 per extra sibling (cap 0.9), +0.1 if kill-chain
+  (cap 1.0).
+- **Doctrine: context is an aggravator, never a mitigator.** A share-normalization
+  design (15 points inside a 115 denominator) was rejected as non-monotonic — weak
+  context would have *downgraded* a strong alert (verified: the Wazuh both-skipped
+  78/`high_risk` scenario would have become 67/`medium_risk` with one sibling). Shipped
+  behaviour: 78 → 83 (one sibling) → 88 (kill-chain); the ambiguous example goes
+  43 → 48 with one correlated sibling.
+- `adte/decision_policy.py` gains the frozen `ClusterContext` dataclass and
+  `WEIGHT_CLUSTER_CONTEXT = 15`; `SIGNAL_WEIGHTS` now has 6 entries totaling 115 (the
+  core five still sum to 100).
+
+### Not-applicable semantics (distinct from "skipped")
+- No correlated context → the signal is **not applicable**: it never enters the signal
+  set — no rationale entry, no `signal_summary` entry, no effect on confidence coverage.
+  Distinct from "skipped" (travel/MFA with no data: rationale entry present, coverage
+  reduced, weight redistributed).
+- Accepted confidence asymmetry: a correlated alert computes coverage over 6 applicable
+  signals (e.g. 4/6) vs 3/5 for the same alert solo — slightly different confidence with
+  more evidence, intended.
+
+### Data flow: read-only peek before scoring
+- New `peek_correlation_context(incident, db_path)` in `adte/store/case_store.py` —
+  strictly read-only, same join rules as ingest (shared event source IP or user, 60-min
+  ingestion-time window). Runs before scoring in `/api/triage`, each `/api/triage/batch`
+  element, **and** `/api/queue` (the queue peeks but still never ingests).
+- Excludes the incident's own `incident_id` from sibling facts — a re-triage never
+  boosts itself, and a singleton case yields no context. Fail-open: any store error →
+  no context, never a failed triage.
+- Known bounded races (documented in the peek docstring): a sibling worker can commit a
+  member an instant after the peek (context missed; self-heals on the next alert), and
+  batch element N sees elements 1..N-1 (intra-batch correlation — batch order matters).
+
+### Accepted double-counting + escalated-flag drift
+- Case members persist their boosted final scores, and the case layer's own bonuses
+  stack on that base — bounded double-counting, accepted deliberately. Corollary: the
+  case `escalated` flag (`classify(case) != classify(worst member)`) fires slightly
+  less often since the base is now boosted. To avoid compounding the effect, the signal
+  deliberately does not re-score sibling risk or tactic breadth (the case layer already
+  awards those).
+
+### Frontend + MITRE
+- The 6th signal card renders only when context exists; the Weights view keeps the
+  100-point core donut and marks `cluster_context` as **CONTEXT +15**.
+- `mitre_technique_map.yaml` deliberately maps `cluster_context` to no technique — case
+  membership is context, not itself a TTP.
+
+**Tests:** 523 → **577** (+54): engine curve/parity/monotonicity
+(`test_cluster_signal.py`), peek unit tests (`test_peek_correlation.py`), and server
+integration including golden pins and intra-batch correlation
+(`test_cluster_integration.py`).
 
 ---
 

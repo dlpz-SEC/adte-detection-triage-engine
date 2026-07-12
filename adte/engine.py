@@ -18,6 +18,7 @@ from typing import Any
 
 from adte.decision_policy import (
     SIGNAL_WEIGHTS,
+    ClusterContext,
     Verdict,
     classify_verdict,
     compute_confidence,
@@ -104,6 +105,13 @@ class TriageEngine:
 
     Each pipeline stage mutates internal state and returns ``self``
     so calls can be chained fluently.
+
+    Five core signals produce the 0-100 base score.  When the caller
+    supplies correlated-case context (``cluster_context``), a sixth
+    ADDITIVE signal contributes up to +15 on top (capped at 100) —
+    context is an aggravator, never a mitigator.  Without context the
+    signal is not applicable: it never enters the signal set, and the
+    output is byte-identical to the five-signal engine.
     """
 
     def __init__(
@@ -111,6 +119,8 @@ class TriageEngine:
         incident: NormalizedIncident,
         user_profile: UserProfile,
         fp_registry: FPRegistry,
+        *,
+        cluster_context: ClusterContext | None = None,
     ) -> None:
         """Initialise the triage engine.
 
@@ -118,10 +128,15 @@ class TriageEngine:
             incident: The normalised incident to triage.
             user_profile: Behavioural baseline for the primary user.
             fp_registry: Known-benign false-positive registry.
+            cluster_context: Read-only correlated-case snapshot taken
+                before scoring (``peek_correlation_context``), or ``None``
+                when the alert has no correlated siblings — the
+                ``cluster_context`` signal is then not applicable.
         """
         self._incident = incident
         self._profile = user_profile
         self._fp_registry = fp_registry
+        self._cluster_context = cluster_context
 
         # Enrichment artefacts (populated by enrich()).
         self._threat_intel_results: dict[str, ThreatIntelResult] = {}
@@ -220,11 +235,24 @@ class TriageEngine:
         else:
             self._risk_score = max(0, min(100, round(raw_sum)))
 
+        # Cluster context (Phase 31) is ADDITIVE, registered only after the
+        # core normalization above so it never enters the 100-point base:
+        # correlated-case membership adds up to +15 on top (capped at 100).
+        # Doctrine: context is an aggravator, never a mitigator.  Without
+        # context the signal is not applicable — it never enters
+        # ``self._signals``, keeping solo output byte-identical.
+        if self._cluster_context is not None:
+            cluster_result = self._compute_cluster_context()
+            self._signals["cluster_context"] = cluster_result
+            self._risk_score = min(100, self._risk_score + round(cluster_result[0]))
+
         # Confidence: coverage × agreement.
-        # Skipped signals do not contribute to coverage.
+        # Skipped signals do not contribute to coverage; coverage is over
+        # the APPLICABLE signals (len(self._signals)): the 5 core signals,
+        # plus cluster_context only when correlated context exists.
         fired = [s for s in self._signals.values() if s[0] > 0]
         non_fired = [s for s in self._signals.values() if s[0] == 0]
-        signals_present = len(SIGNAL_WEIGHTS) - len(self._skipped_signals)
+        signals_present = len(self._signals) - len(self._skipped_signals)
         if fired:
             avg_confidence = sum(s[2] for s in fired) / len(fired)
         elif non_fired:
@@ -234,7 +262,7 @@ class TriageEngine:
 
         self._confidence = compute_confidence(
             signals_present=signals_present,
-            signals_total=len(SIGNAL_WEIGHTS),
+            signals_total=len(self._signals),
             signal_agreement=avg_confidence,
         )
         return self
@@ -622,6 +650,51 @@ class TriageEngine:
             f"{baseline.timezone})",
             confidence,
         )
+
+    def _compute_cluster_context(self) -> SignalResult:
+        """Evaluate the additive correlated-case (cluster) context signal.
+
+        Only called when ``self._cluster_context`` is present (the peek
+        found at least one correlated sibling).  Points ride on sibling
+        volume and cross-alert kill-chain progression only — sibling risk
+        scores and tactic breadth are deliberately NOT scored here because
+        the case layer already awards them (``base_max_member`` /
+        ``tactic_breadth`` bonuses); scoring them twice would compound the
+        accepted double-counting.
+
+        Curve (integer points, additive, capped at the 15-point weight):
+        1 sibling → 5, 2 → 8, 3+ → 10; ascending kill chain → +5.
+
+        Returns:
+            ``(score, rationale, confidence)`` tuple.
+        """
+        weight = SIGNAL_WEIGHTS["cluster_context"]
+        ctx = self._cluster_context
+        assert ctx is not None  # guarded by the caller in score()
+
+        points = {1: 5, 2: 8}.get(ctx.sibling_count, 10)
+        if ctx.kill_chain_detected:
+            points += 5
+        score = float(min(weight, points))
+
+        confidence = min(0.9, 0.6 + 0.1 * (ctx.sibling_count - 1))
+        if ctx.kill_chain_detected:
+            confidence = min(1.0, confidence + 0.1)
+
+        rationale = (
+            f"Correlated case context — {ctx.case_id}: {ctx.sibling_count} "
+            f"related alert(s) in the last {ctx.window_minutes} min"
+        )
+        if ctx.distinct_sibling_tactics > 1:
+            rationale += (
+                f", {ctx.distinct_sibling_tactics} distinct ATT&CK tactics "
+                f"across siblings"
+            )
+        if ctx.kill_chain_detected:
+            rationale += ", ascending kill-chain progression detected"
+        rationale += f" (max sibling risk {round(ctx.max_sibling_risk_score)})"
+
+        return (score, rationale, confidence)
 
     # ------------------------------------------------------------------
     # Output helpers

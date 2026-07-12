@@ -62,6 +62,7 @@ from adte.store.case_store import (
     get_cases_by_ids,
     ingest_alert,
     list_cases,
+    peek_correlation_context,
 )
 from adte.store.user_history import get_user_profile
 
@@ -746,9 +747,16 @@ def triage() -> Any:
     try:
         user_profile = get_user_profile(incident.user)
         fp_registry = FPRegistry.load()
-        engine = TriageEngine(incident, user_profile, fp_registry)
 
         def _run() -> dict[str, Any]:
+            # Read-only peek at correlated-case context BEFORE scoring (the
+            # engine's additive cluster_context signal, Phase 31).  Fail-open:
+            # a broken case store yields None → signal not applicable.  Runs
+            # inside the executor so the 30 s timeout covers the DB read.
+            cluster_ctx = peek_correlation_context(incident, DB_PATH)
+            engine = TriageEngine(
+                incident, user_profile, fp_registry, cluster_context=cluster_ctx
+            )
             # llm_enrich() populates the advisory llm_enrichment field only —
             # it runs after decide(), so it cannot influence the verdict.
             return engine.enrich().score().decide().llm_enrich().to_output(use_llm=use_llm)
@@ -904,7 +912,13 @@ def triage_batch() -> Any:
                 continue
             try:
                 user_profile = get_user_profile(incident.user)
-                engine = TriageEngine(incident, user_profile, fp_registry)
+                # Peek per element: element N sees elements 1..N-1's ingested
+                # members, so later alerts in one batch are boosted by earlier
+                # ones (intra-batch correlation — batch order matters).
+                cluster_ctx = peek_correlation_context(incident, DB_PATH)
+                engine = TriageEngine(
+                    incident, user_profile, fp_registry, cluster_context=cluster_ctx
+                )
                 output = (
                     engine.enrich().score().decide().llm_enrich().to_output(use_llm=False)
                 )
@@ -952,9 +966,12 @@ def triage_batch() -> Any:
 
 
 # NOTE: /api/queue re-triages the same incidents on every poll (5-min cache),
-# so it is deliberately NOT wired into case correlation — ingesting here would
+# so it deliberately NEVER INGESTS into case correlation — ingesting here would
 # multiply case membership on every queue refresh.  Only /api/triage and
-# /api/triage/batch ingest into the case store.
+# /api/triage/batch ingest into the case store.  It DOES peek (read-only,
+# Phase 31) so a queue row's score matches what the analyst sees on
+# click-through triage; the 5-min cache means context may lag by up to the
+# TTL — same staleness class as the threat-intel cache.
 @app.route("/api/queue")
 @require_role("analyst")
 @limiter.limit("20/minute")
@@ -1021,11 +1038,14 @@ def queue() -> Any:
                 rows.append(cached["row"])
                 continue
 
-        # Cache miss: run the full triage pipeline.
+        # Cache miss: run the full triage pipeline (peek-only — see NOTE above).
         try:
             user_profile = get_user_profile(incident.user)
             fp_registry = FPRegistry.load()
-            engine = TriageEngine(incident, user_profile, fp_registry)
+            cluster_ctx = peek_correlation_context(incident, DB_PATH)
+            engine = TriageEngine(
+                incident, user_profile, fp_registry, cluster_context=cluster_ctx
+            )
             output = engine.enrich().score().decide().to_output()
         except Exception as exc:
             _log.error("Queue triage failed for incident %s (%s)", iid, type(exc).__name__)

@@ -62,6 +62,7 @@ from adte.case_policy import (
     detect_kill_chain,
     score_case,
 )
+from adte.decision_policy import ClusterContext
 from adte.models import NormalizedIncident
 
 _log = logging.getLogger(__name__)
@@ -483,6 +484,116 @@ def ingest_alert(
     except Exception as exc:
         _log.warning(
             "case correlation failed (%s) — triage unaffected", type(exc).__name__
+        )
+        return None
+
+
+def peek_correlation_context(
+    incident: NormalizedIncident,
+    db_path: str | Path,
+) -> ClusterContext | None:
+    """Read-only look-ahead at the case this alert would join.  Never raises.
+
+    Called from the triage routes BEFORE scoring so the engine's additive
+    ``cluster_context`` signal can see correlated siblings.  Strictly
+    read-only — the join-or-create write happens later in ``ingest_alert``,
+    after the verdict is logged.
+
+    Semantics:
+
+    - **Self-exclusion.**  Members with this incident's ``incident_id`` are
+      excluded from every sibling fact, so re-triaging the same alert never
+      counts itself as correlation evidence, and a singleton case containing
+      only this incident yields ``None`` (no context, signal not applicable).
+    - **Matching mirrors ingest** (same candidate window + newest-active
+      ``_find_matching_case``), including the full-case skip: a case at
+      ``CASE_MAX_MEMBERS`` yields no context even though the subsequent
+      ingest will open a fresh case — an accepted bounded edge.
+    - **Advisory under races.**  A sibling worker may commit a member an
+      instant after this snapshot (context missed) or the matched case may
+      fill/prune before this alert's own ingest (context cited, different
+      case joined).  Both are bounded, fail-open, and self-heal on the next
+      correlated alert; the authoritative record is ``output["case"]``.
+    - **Fail-open.**  Any store error returns ``None`` — a broken case store
+      must never block or alter a verdict beyond "no context".
+
+    Args:
+        incident: The normalized incident about to be scored.
+        db_path: Path to the SQLite database file (shared with the audit log).
+
+    Returns:
+        A :class:`~adte.decision_policy.ClusterContext` snapshot when at
+        least one correlated *sibling* member exists inside the window,
+        otherwise ``None``.
+    """
+    try:
+        user_key, ip_keys = extract_correlation_keys(incident)
+        if user_key is None and not ip_keys:
+            return None
+
+        now = datetime.now(timezone.utc)
+        window_cutoff = (now - timedelta(minutes=CASE_WINDOW_MINUTES)).isoformat()
+
+        conn = _connect(db_path)
+        try:
+            # Deferred read transaction: the case row and its members come
+            # from one consistent snapshot (mirrors get_case).
+            conn.execute("BEGIN")
+            candidates = conn.execute(
+                "SELECT * FROM cases WHERE deleted_at IS NULL "
+                "AND last_activity >= ? ORDER BY last_activity DESC",
+                (window_cutoff,),
+            ).fetchall()
+            match = _find_matching_case(candidates, user_key, ip_keys)
+            siblings: list[sqlite3.Row] = []
+            if match is not None:
+                # Ordered chronologically (mirrors _recompute_case) so the
+                # sibling-only kill-chain below sees members in event order.
+                siblings = conn.execute(
+                    "SELECT id, incident_id, risk_score, tactics, event_time, "
+                    "ingested_at FROM case_members "
+                    "WHERE case_id = ? AND incident_id != ? "
+                    "ORDER BY COALESCE(event_time, ingested_at), id",
+                    (match["case_id"], incident.incident_id),
+                ).fetchall()
+            conn.execute("COMMIT")
+        except BaseException:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            raise
+        finally:
+            conn.close()
+
+        if match is None or not siblings:
+            return None
+
+        sibling_member_tactics = [
+            (row["id"], json.loads(row["tactics"])) for row in siblings
+        ]
+        sibling_tactics = {
+            tactic for _key, tactics in sibling_member_tactics for tactic in tactics
+        }
+        # Kill-chain is recomputed over SIBLINGS ONLY (this incident excluded),
+        # mirroring the self-exclusion applied to every other sibling fact.  The
+        # case-level stored kill_chain includes this incident when it is already
+        # a member, so reading it would let a re-triaged alert self-award the +5
+        # kill-chain bonus off its own tactics.  A single sibling can never form
+        # a chain (detect_kill_chain needs >= 2 members) — the correct result.
+        sibling_kill_chain = detect_kill_chain(sibling_member_tactics)
+        return ClusterContext(
+            case_id=match["case_id"],
+            sibling_count=len(siblings),
+            distinct_sibling_tactics=len(sibling_tactics),
+            kill_chain_detected=bool(sibling_kill_chain["detected"]),
+            max_sibling_risk_score=max(row["risk_score"] for row in siblings),
+            window_minutes=CASE_WINDOW_MINUTES,
+        )
+    except Exception as exc:
+        _log.warning(
+            "correlation peek failed (%s) — scoring without cluster context",
+            type(exc).__name__,
         )
         return None
 

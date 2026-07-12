@@ -292,7 +292,7 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 
 ### Detection & Scoring
 
-**5-Signal Weighted Scoring Engine**
+**Weighted Scoring Engine — 5 core signals + additive cluster context**
 
 | Signal | Max Weight | Method |
 |--------|-----------|--------|
@@ -301,13 +301,14 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 | IP Reputation | 20 pts | Live threat intel lookup with FP suppression from YAML registry |
 | Device Novelty | 15 pts | Device ID compared against user's known inventory |
 | Login Hour Anomaly | 10 pts | Sign-in timestamp vs. user's baseline login-hour window |
+| Cluster Context | +15 pts (additive) | Correlated-case context (shared source IP/user, 60-min window): sibling volume (1 → +5, 2 → +8, 3+ → +10) + kill-chain progression (+5), capped at 15 — applied on top of the 0–100 core score, final capped at 100. Only present when the alert actually correlates; solo alerts score byte-identically to the 5-core-signal engine. |
 
 **Verdict thresholds:**
 - `risk_score < 30` → `low_risk` — auto-close
 - `30 ≤ risk_score ≤ 70` → `medium_risk` — escalate for analyst review
 - `risk_score > 70` → `high_risk` — disable account, revoke sessions, P1 escalation
 
-**Wazuh weight redistribution:** Wazuh alerts carry no geolocation or MFA data. The engine detects which signals are unevaluable and proportionally redistributes their combined 55-point weight across the three remaining signals, keeping the full 0–100 scoring range reachable.
+**Wazuh weight redistribution:** Wazuh alerts carry no geolocation or MFA data. The engine detects which signals are unevaluable and proportionally redistributes their combined 55-point weight across the three remaining signals, keeping the full 0–100 scoring range reachable. The redistribution operates over the five core signals only — the additive cluster-context uplift, when present, is applied after that normalisation (e.g. the both-skipped 78 becomes 83 with one correlated case sibling).
 
 **Safety Gate Configuration (reserved — ADTE is triage-only):**
 

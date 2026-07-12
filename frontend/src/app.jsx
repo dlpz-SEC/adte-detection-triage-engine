@@ -22,16 +22,17 @@ import ReactDOM from 'react-dom/client';
       ip_reputation:      'IP Reputation',
       device_novelty:     'Device Novelty',
       login_hour_anomaly: 'Login Hour Anomaly',
+      cluster_context:    'Cluster Context',
     };
 
     const SIGNAL_WEIGHTS = {
       impossible_travel: 30, mfa_fatigue: 25, ip_reputation: 20,
-      device_novelty: 15, login_hour_anomaly: 10,
+      device_novelty: 15, login_hour_anomaly: 10, cluster_context: 15,
     };
 
     const SIGNAL_ORDER = [
       'impossible_travel', 'mfa_fatigue', 'ip_reputation',
-      'device_novelty', 'login_hour_anomaly',
+      'device_novelty', 'login_hour_anomaly', 'cluster_context',
     ];
 
     function getDisplayVerdict(verdict) {
@@ -132,6 +133,12 @@ import ReactDOM from 'react-dom/client';
         nist: "DE.CM-7 — Monitoring for unauthorised access",
         example: "User typically logs in 08:00–18:00; authentication at 03:47 UTC is flagged.",
       },
+      cluster_context: {
+        description: "Correlated-case context — the alert is part of an active case (same source IP or user within the 60-minute correlation window). Points ramp with sibling count (1 → 5, 2 → 8, 3+ → 10), plus +5 when an ascending ATT&CK kill-chain spans the siblings. Additive on top of the 100-point core score — context aggravates, never mitigates; solo alerts are unaffected.",
+        mitre: "— (meta-context; sibling alerts carry their own techniques)",
+        nist: "DE.AE-3 — Event data are correlated",
+        example: "2 related alerts in the last 60 min, kill-chain detected → +13 points.",
+      },
     };
 
     const ALL_TACTICS = [
@@ -146,7 +153,11 @@ import ReactDOM from 'react-dom/client';
       { name: 'ip_reputation', label: 'IP Reputation', weight: 20, color: '#3b82f6', method: 'Multi-source threat intel aggregation', mitre: 'T1071' },
       { name: 'device_novelty', label: 'Device Novelty', weight: 15, color: '#8b5cf6', method: 'Device baseline comparison', mitre: 'T1078' },
       { name: 'login_hour_anomaly', label: 'Login Hour', weight: 10, color: '#22c55e', method: 'Historical hour distribution analysis', mitre: 'T1078' },
+      { name: 'cluster_context', label: 'Cluster Context', weight: 15, color: '#14b8a6', method: 'Case-store sibling correlation (60-min window, additive)', mitre: '—', context: true },
     ];
+
+    // Core scoring signals only (sum to 100) — excludes additive context signals.
+    const CORE_WEIGHTS_DATA = WEIGHTS_DATA.filter(w => !w.context);
 
     const GATES = [
       { id: 1, name: 'Kill Switch', env: 'ADTE_KILL_SWITCH', cfgKey: 'kill_switch',
@@ -1413,7 +1424,7 @@ import ReactDOM from 'react-dom/client';
                 <div style={{ padding: '14px 16px' }}>
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>{meta.description}</p>
 
-                  {result && (
+                  {result && s && (
                     <div style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
                         <span className="mono" style={{ fontSize: '1.8rem', fontWeight: 700, color: isSkipped ? 'var(--text-muted)' : barColor, lineHeight: 1 }}>
@@ -2054,10 +2065,10 @@ import ReactDOM from 'react-dom/client';
         chartRef.current = new Chart(ctx, {
           type: 'doughnut',
           data: {
-            labels: WEIGHTS_DATA.map(w => w.label),
+            labels: CORE_WEIGHTS_DATA.map(w => w.label),
             datasets: [{
-              data: WEIGHTS_DATA.map(w => w.weight),
-              backgroundColor: WEIGHTS_DATA.map(w => w.color),
+              data: CORE_WEIGHTS_DATA.map(w => w.weight),
+              backgroundColor: CORE_WEIGHTS_DATA.map(w => w.color),
               borderColor: isDark ? '#0a0a0a' : '#ffffff',
               borderWidth: 3,
             }],
@@ -2071,22 +2082,22 @@ import ReactDOM from 'react-dom/client';
       }, []);
 
       const WAZUH_SKIPPED = ['impossible_travel', 'mfa_fatigue'];
-      const remaining3 = WEIGHTS_DATA.filter(w => !WAZUH_SKIPPED.includes(w.name));
-      const skipped3 = WEIGHTS_DATA.filter(w => WAZUH_SKIPPED.includes(w.name));
+      const remaining3 = CORE_WEIGHTS_DATA.filter(w => !WAZUH_SKIPPED.includes(w.name));
+      const skipped3 = CORE_WEIGHTS_DATA.filter(w => WAZUH_SKIPPED.includes(w.name));
       const total3 = remaining3.reduce((s, w) => s + w.weight, 0);
 
       return (
         <div style={{ padding: 24, maxWidth: 900 }}>
           <Breadcrumb view="weights" />
           <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>Signal Weight Model</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>Weights sum to 100. Higher weight = stronger contribution to risk score.</p>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>Core signals sum to 100. When correlated case context exists, a sixth additive signal (Cluster Context) adds up to +15 — final score capped at 100. Solo alerts are unaffected.</p>
 
           <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap' }}>
             <div style={{ width: 180, height: 180, flexShrink: 0 }}>
               <canvas ref={donutRef} />
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
-              {WEIGHTS_DATA.map(w => (
+              {CORE_WEIGHTS_DATA.map(w => (
                 <div key={w.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <div style={{ width: 12, height: 12, borderRadius: 2, background: w.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
@@ -2098,6 +2109,26 @@ import ReactDOM from 'react-dom/client';
                   <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: w.color, width: 28, textAlign: 'right' }}>{w.weight}</span>
                 </div>
               ))}
+              {/* Additive context signal — sits outside the 100-pt core donut. */}
+              {(() => {
+                const cc = WEIGHTS_DATA.find(w => w.context);
+                if (!cc) return null;
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+                    <div style={{ width: 12, height: 12, borderRadius: 2, background: cc.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {cc.label}
+                        <span className="badge" style={{ fontSize: '0.5rem', background: 'rgba(20, 184, 166, 0.12)', color: cc.color, border: `1px solid ${cc.color}` }}>ADDITIVE</span>
+                      </div>
+                      <div className="score-bar-track" style={{ height: 4 }}>
+                        <div style={{ width: `${cc.weight}%`, height: '100%', background: cc.color, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                    <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: cc.color, width: 28, textAlign: 'right' }}>+{cc.weight}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -2111,6 +2142,9 @@ import ReactDOM from 'react-dom/client';
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 8, height: 8, borderRadius: 2, background: w.color }} />
                   <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{w.label}</span>
+                  {w.context && (
+                    <span className="badge" style={{ fontSize: '0.55rem', background: 'rgba(20, 184, 166, 0.12)', color: '#14b8a6', border: '1px solid #14b8a6' }}>CONTEXT +15</span>
+                  )}
                 </div>
                 <span className="mono" style={{ fontSize: '0.8rem', color: w.color, fontWeight: 700 }}>{w.weight}</span>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{w.method}</span>
@@ -2126,7 +2160,8 @@ import ReactDOM from 'react-dom/client';
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
                 Wazuh alerts carry no geolocation or MFA data. The two skipped signals' combined
                 weight ({skipped3.reduce((s,w) => s+w.weight, 0)} pts) is redistributed proportionally
-                across the {remaining3.length} evaluable signals ({total3} pts → scaled to 100).
+                across the {remaining3.length} evaluable core signals ({total3} pts → scaled to 100).
+                Additive context (Cluster Context) is excluded — it never enters redistribution.
               </p>
               <div className="data-table" style={{ marginTop: 12 }}>
                 <div className="data-table-header" style={{ gridTemplateColumns: '1fr 80px 100px 80px' }}>

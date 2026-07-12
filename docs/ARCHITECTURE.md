@@ -57,7 +57,7 @@ For every unique IP address in the incident:
 
 **Input:** Enrichment state + User profile → **Output:** Per-signal scores + aggregate risk score
 
-Evaluates five signal classes, each returning a weighted score (0 to weight_max), a human-readable rationale string, and a per-signal confidence:
+Evaluates six signal classes — five core signals plus one additive context signal — each returning a weighted score (0 to weight_max), a human-readable rationale string, and a per-signal confidence:
 
 | Signal | Max Weight | Method |
 |--------|-----------|--------|
@@ -66,10 +66,11 @@ Evaluates five signal classes, each returning a weighted score (0 to weight_max)
 | IP Reputation | 20 | Threat intel lookup with FP suppression |
 | Device Novelty | 15 | Device ID comparison against user's known inventory |
 | Login Hour Anomaly | 10 | Timestamp vs. user's baseline login-hour window |
+| Cluster Context (additive) | +15 | Correlated-case sibling volume + kill-chain flag, from a read-only pre-scoring case-store peek |
 
-The aggregate risk score is `sum(signal_scores)`, clamped to [0, 100].
+The base risk score is `sum(core signal scores)` (with skipped-signal weight redistribution), clamped to [0, 100]. The additive `cluster_context` uplift (up to +15) is applied after that normalisation, with the final score capped at 100. When the incident has no correlated context the signal is **not applicable** — it never enters the signal set, and the output is byte-identical to the 5-signal engine.
 
-**Modules:** `adte/engine.py` (signal methods), `adte/decision_policy.py` (weights), `adte/utils/geo.py`, `adte/store/user_history.py`
+**Modules:** `adte/engine.py` (signal methods), `adte/decision_policy.py` (weights, `ClusterContext`), `adte/utils/geo.py`, `adte/store/user_history.py`, `adte/store/case_store.py` (`peek_correlation_context` — the read-only correlated-context snapshot taken before scoring, server routes only)
 
 ### 5. Decide
 
@@ -96,7 +97,24 @@ The pipeline ends here. The verdict, per-signal rationale, and recommended
 action are returned to the caller (CLI, web UI, or `/api/triage`); any
 containment is performed by a human or downstream system, not by ADTE.
 
-### 7. Correlate (post-verdict, server only)
+### 7. Correlate (server only)
+
+Since Phase 31, correlation touches the pipeline at **two** points:
+
+**(a) Pre-scoring peek (read-only).** Before the engine scores, `/api/triage`, each
+`/api/triage/batch` element, and `/api/queue` call
+`case_store.peek_correlation_context(incident, db_path)` — a strictly read-only
+snapshot using the same join rules as ingest (shared source IP or user, 60-min
+ingestion-time window), excluding the incident's own `incident_id` (a re-triage never
+boosts itself; a singleton case yields no context). When siblings exist, the snapshot
+is passed to the engine as the optional `cluster_context` kwarg and feeds the additive
+6th signal (up to +15 — see stage 4). Fail-open: any store error yields no context,
+never a failed triage. Two bounded races are documented in the peek's docstring: a
+sibling worker can commit a member an instant after the peek (context missed —
+self-heals on the next alert), and batch element N sees elements 1..N-1 (intra-batch
+correlation, so batch order matters).
+
+**(b) Post-verdict ingest.**
 
 **Input:** Finalized triage output + incident → **Output:** `case` blob on the response
 
@@ -111,8 +129,11 @@ over member tactics in event-time order, ≥3 tactics across ≥2 alerts).
 
 Design contract:
 
-- **Per-alert verdicts are never modified** — the correlation layer only adds
-  the `case` key (and a batch-level `cases` summary). `engine.py` is untouched.
+- **The ingest layer never rewrites a computed verdict** — it only attaches the
+  `case` key (and a batch-level `cases` summary). Correlated context influences
+  the per-alert score exclusively through the engine's additive `cluster_context`
+  signal, fed by the pre-scoring peek; solo alerts remain byte-identical to the
+  5-signal engine.
 - **Fail-open** — any case-store error yields `"case": null`; a verdict is
   never blocked by correlation. Reads fail closed-empty.
 - **Windowing clock is ingestion time** (arrival at ADTE), so replayed demo
@@ -128,9 +149,11 @@ Design contract:
   ephemeral disk (Railway without a volume) a redeploy clears open cases,
   same as sessions.
 - `/api/queue` deliberately does **not** ingest — it re-triages the same
-  incidents on every poll and would multiply case membership.
+  incidents on every poll and would multiply case membership. (It does run the
+  read-only peek, so queue rows see correlated context in their scores.)
 
-**Modules:** `adte/store/case_store.py` (persistence, matching),
+**Modules:** `adte/store/case_store.py` (persistence, matching,
+`peek_correlation_context`),
 `adte/case_policy.py` (constants, scoring, kill-chain detection — freely
 editable, reads no incident fields). Endpoints: `GET /api/cases`,
 `GET /api/cases/<case_id>`, `DELETE /api/cases` (admin).
@@ -166,7 +189,9 @@ NormalizedIncident   (OCSF-inspired, source-agnostic; severity is engine-derived
     │  - events: list[SignInMetadata]
     │    - timestamp, ip_address, type, location, device_id, auth_status, event_risk
     │
-    ▼  TriageEngine(incident, user_profile, fp_registry)
+    ▼  TriageEngine(incident, user_profile, fp_registry, cluster_context=…)
+       (cluster_context: optional read-only ClusterContext snapshot from
+        case_store.peek_correlation_context() — server routes only, None solo)
 TriageEngine
     │
     ├── .enrich()

@@ -4,7 +4,7 @@ This document explains the scoring model, signal weights, verdict thresholds, an
 
 ## Signal Weights
 
-All signal weights sum to **100**, mapping directly to a 0-100 risk scale. Each weight reflects real-world SOC experience and MITRE ATT&CK frequency data.
+The five **core** signal weights sum to **100**, mapping directly to a 0-100 risk scale. A sixth signal, **cluster context**, is additive-only: it adds up to **+15** on top of the core score when the alert belongs to a correlated case (final score capped at 100) and is deliberately excluded from the sum-to-100 invariant — `SIGNAL_WEIGHTS` in `decision_policy.py` has 6 entries totaling 115, with the core five still summing to 100. Each weight reflects real-world SOC experience and MITRE ATT&CK frequency data.
 
 | Signal | Weight | MITRE ATT&CK | Rationale |
 |--------|--------|---------------|-----------|
@@ -13,8 +13,9 @@ All signal weights sum to **100**, mapping directly to a 0-100 risk scale. Each 
 | **IP Reputation** | 20 | T1090 (Proxy), T1573 (Encrypted Channel) | A match against threat-intel feeds (C2, Tor exit, scanner) is strong context but never dispositive on its own — shared infrastructure and NAT can cause false positives. |
 | **Device Novelty** | 15 | T1200 (Hardware Additions) | A sign-in from an unrecognised device is a moderate signal. Lower weight because users legitimately acquire new devices, but combined with other signals it shifts confidence meaningfully. |
 | **Login Hour Anomaly** | 10 | T1078 (Valid Accounts) | Activity outside the user's historical working hours is the weakest standalone signal. Many legitimate reasons exist (travel, on-call) but it adds supporting evidence when correlated with stronger indicators. |
+| **Cluster Context** | +15 (additive) | *(deliberately none)* | Correlated-case context: sibling alert volume (1 → +5, 2 → +8, 3+ → +10) plus an ascending kill-chain progression across the case (+5 more), capped at 15. An aggravator only — it never reduces a score, and it is **not applicable** (absent entirely) for uncorrelated alerts. The MITRE map assigns it no technique by design: case membership is context, not itself a TTP. See the "Cluster Context as an Additive 6th Signal" section below. |
 
-### Why These Five Signals?
+### Why These Five Core Signals?
 
 These signals were chosen because they:
 
@@ -23,6 +24,8 @@ These signals were chosen because they:
 3. **Correlate with MITRE ATT&CK techniques** commonly seen in initial access and credential abuse campaigns
 4. **Have clear benign/malicious thresholds** that can be expressed as deterministic rules rather than requiring probabilistic models
 5. **Are independently meaningful** — each signal can fire alone and still provide actionable triage context
+
+A sixth, **additive** signal — `cluster_context` (Phase 31) — sits outside this list: it scores the alert's correlated-case surroundings rather than the incident's own content, and is recorded in its own decision section at the end of this document.
 
 ### Why Not Other Signals?
 
@@ -77,7 +80,7 @@ confidence = round(coverage × agreement × 100)
 ```
 
 Where:
-- **Coverage** = `signals_evaluated / signals_total` (currently 5 total)
+- **Coverage** = `signals_evaluated / signals_total` — 5 for a solo (uncorrelated) alert; 6 when correlated-case context makes the `cluster_context` signal applicable
 - **Agreement** = average per-signal confidence of fired signals (0.0 – 1.0)
 
 ### Per-Signal Confidence
@@ -107,6 +110,12 @@ Each signal method returns a confidence value based on data quality:
 - 3/5 signals evaluated → coverage = 0.6
 - Average confidence ≈ 0.70
 - Confidence = round(0.6 × 0.70 × 100) = **42%**
+
+> The worked examples above assume a **solo (uncorrelated) alert**, where 5 signals are
+> applicable — they remain correct as written. For a correlated alert the denominator
+> becomes 6 (e.g. 4/6 evaluated → coverage ≈ 0.67), so the same alert reports a slightly
+> different confidence when it carries more evidence — an accepted asymmetry (see the
+> Cluster Context decision section below).
 
 ## Impossible Travel Detection
 
@@ -148,3 +157,77 @@ Each signal method returns a confidence value based on data quality:
 | Denial threshold | 3 | Matches Microsoft's own MFA fatigue detection heuristic |
 | Window size | 10 min | Attackers typically push rapidly; legitimate re-auth rarely produces 3+ denials in 10 minutes |
 | Capitulation bonus | +0.2 confidence | A denial burst followed by approval is the hallmark of fatigue attack success |
+
+## Phase 31 — Cluster Context as an Additive 6th Signal
+
+Phase 31 promoted correlated-case (cluster) context from a display-only layer (Phase 30)
+into a real engine signal, `cluster_context`. This section records the design decisions.
+
+### Doctrine: context is an aggravator, never a mitigator
+
+The five core signals compute the 0–100 base score exactly as before — weights
+30/25/20/15/10 summing to 100, skip/redistribution math untouched. `cluster_context`
+then adds up to **+15 on top**, with the final score capped at 100:
+
+| Correlated siblings | Points |
+|---------------------|--------|
+| 1 | +5 |
+| 2 | +8 |
+| 3+ | +10 |
+| Ascending kill-chain in the case | +5 more |
+| **Cap** | **15** |
+
+Signal confidence: `0.6 + 0.1 per extra sibling` (capped at 0.9), `+0.1` when a
+kill-chain is detected (capped at 1.0).
+
+### Rejected alternative: share normalization
+
+The obvious alternative — giving cluster context a 15-point share inside a 115-point
+denominator and normalising the total back to 0–100 — was **rejected because it is
+non-monotonic**: weak context would *downgrade* a strong alert. Verified
+counterexample: the Wazuh both-signals-skipped scenario scores 78/`high_risk` solo;
+under share normalization, one correlated sibling would have dragged it to
+67/`medium_risk` — more evidence producing a *lower* verdict. Under the shipped
+additive design the same alert goes 78 → 83 (one sibling) → 88 (kill-chain).
+
+### Not applicable vs skipped
+
+`cluster_context` introduces a signal state distinct from "skipped":
+
+| | Skipped (e.g. travel/MFA with no data) | Not applicable (no correlated context) |
+|---|---|---|
+| Rationale entry | Present | **Absent** |
+| `signal_summary` entry | Present | **Absent** |
+| Confidence coverage | Reduced (counted in the denominator) | **Unaffected** (never enters the signal set) |
+| Weight | Redistributed to remaining signals | Nothing to redistribute (additive) |
+
+A solo alert therefore produces **byte-identical output** to the 5-signal engine —
+proven by sha256 diff on all four bundled examples before/after the change, and pinned
+permanently by golden-pin tests.
+
+### Accepted: bounded double-counting and escalated-flag drift
+
+Case members persist their boosted final scores, and the case layer's own bonuses
+(volume, tactic breadth, kill-chain) stack on that base. This bounded double-counting
+was accepted deliberately. Corollary: the case `escalated` flag
+(`classify(case) != classify(worst member)`) fires slightly less often, because the
+worst member's base is now itself boosted. `case_policy.py` was left untouched. To
+avoid compounding the effect, the signal deliberately does **not** score sibling risk
+scores or tactic breadth — the case layer already awards those.
+
+### Queue peeks, never ingests
+
+The read-only `peek_correlation_context()` (in `adte/store/case_store.py`) runs before
+scoring in `/api/triage`, each `/api/triage/batch` element, **and** `/api/queue` — but
+the queue still never *ingests* (it re-triages the same incidents on every poll and
+would multiply case membership). The peek uses the same join rules as ingest (shared
+event source IP or user, 60-minute ingestion-time window), excludes the incident's own
+`incident_id` from sibling facts (a re-triage never boosts itself; a singleton case
+yields no context), and is fail-open: any store error means no context, never a failed
+triage.
+
+### Accepted: confidence asymmetry
+
+A correlated alert computes coverage over 6 applicable signals (e.g. 4/6) versus 3/5
+for the same alert solo — slightly different confidence with more evidence. This is
+intended: more applicable evidence legitimately changes how certain the engine is.

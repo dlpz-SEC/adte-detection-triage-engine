@@ -29,7 +29,7 @@ SIGNAL_WEIGHTS: dict[str, int] = {
 }
 ```
 
-**Important:** All weights must sum to 100. Redistribute existing weights to accommodate the new signal.
+**Important:** All **core** weights must sum to 100 — redistribute existing core weights to accommodate a new core signal. Additive *context* signals (see "Additive / context signals" below) are exempt from this invariant: `cluster_context` is a 15-point additive entry, so `SIGNAL_WEIGHTS` totals 115 while the core five still sum to 100.
 
 ### Step 2: Add the signal method to `engine.py`
 
@@ -68,10 +68,42 @@ Add tests in `tests/test_engine.py` to verify the new signal fires correctly for
 
 ### Step 5: Update example incident rationale count
 
-In `test_engine.py`, update the rationale structure assertion:
+A new **core** signal changes the rationale length unconditionally — every triage
+output gains an entry. In `test_engine.py`, update the rationale structure assertion:
 ```python
-assert len(rationale) == 6  # was 5, now 6
+assert len(rationale) == 6  # was 5, now 6 — for a new CORE signal (solo alerts)
 ```
+
+For a **context** signal following the `cluster_context` pattern, the rationale length
+is *conditional* — 5 for solo alerts, 6 only when the context applies — so assert both
+cases rather than a single fixed count.
+
+### Additive / context signals (the `cluster_context` pattern)
+
+Phase 31's `cluster_context` established a second signal shape: a **context signal**
+that scores the alert's surroundings (its correlated case) rather than the alert's own
+content. If you add one, follow its pattern instead of the core-signal steps above:
+
+1. **Additive uplift, not a weight share.** The core signals compute the 0–100 base
+   exactly as before; the context signal adds points on top (capped at its weight),
+   with the final score capped at 100. Do **not** fold its weight into a shared
+   normalising denominator — share normalization is non-monotonic (weak context would
+   *downgrade* a strong alert; that exact design was evaluated and rejected for
+   `cluster_context` — see `docs/DECISIONS.md`).
+2. **Not-applicable semantics.** When the context doesn't exist, the signal must never
+   enter the signal set: no rationale entry, no `signal_summary` entry, no effect on
+   confidence coverage. This is distinct from "skipped" (data expected but missing:
+   rationale entry present, coverage reduced, weight redistributed).
+3. **Registered after core normalization.** In `score()`, compute the core signals and
+   the normalised 0–100 base first, then apply the context uplift — see
+   `_compute_cluster_context()` in `engine.py` for the reference implementation.
+4. **Excluded from the core sum-to-100 invariant.** Add the weight to `SIGNAL_WEIGHTS`
+   (the dict may then total more than 100), but the core five must still sum to 100.
+5. **Byte-parity requirement.** Alerts without the context must produce byte-identical
+   output to the engine without your signal — prove it (hash the triage output for the
+   bundled examples before/after) and pin it with golden tests, as
+   `tests/test_cluster_signal.py` and `tests/test_cluster_integration.py` do for
+   `cluster_context`.
 
 ### Signal Ideas for Future Implementation
 

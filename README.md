@@ -23,7 +23,7 @@ Security Operations Centers (SOCs) are overwhelmed. Analysts spend hours manuall
 
 **ADTE is an automated first-responder for that triage step.**
 
-When a security alert arrives — from Microsoft Sentinel, Wazuh, or any supported source — ADTE evaluates it across five behavioural signals derived from real-world attack patterns:
+When a security alert arrives — from Microsoft Sentinel, Wazuh, or any supported source — ADTE evaluates it across five core behavioural signals derived from real-world attack patterns:
 
 1. **Impossible Travel** — Did the user physically teleport? New York to Moscow in 30 minutes is not a VPN quirk; it's stolen credentials.
 2. **MFA Fatigue** — Are repeated push denials followed by an approval? That's T1621: an attacker wearing down a user until they accidentally approve.
@@ -31,7 +31,7 @@ When a security alert arrives — from Microsoft Sentinel, Wazuh, or any support
 4. **Device Novelty** — Is this the first time this device has been seen for this user? A compromised machine posing as the user won't be in the inventory.
 5. **Login Hour Anomaly** — Is the activity happening at 2 AM when the user is typically offline? Attackers don't respect business hours.
 
-Each signal is weighted by its real-world reliability and combined into a 0–100 risk score. The score maps to a verdict:
+Each signal is weighted by its real-world reliability and combined into a 0–100 risk score. When the alert correlates with recent related alerts (shared source IP or user — see Alert Correlation & Case Management below), an additive sixth signal — **cluster context** — adds up to +15 on top of that base, with the final score capped at 100. The score maps to a verdict:
 
 | Risk Score | Verdict | Recommended Response |
 |-----------|---------|-------------------|
@@ -49,7 +49,7 @@ ADTE is not a SOC replacement. It is a force multiplier — it handles the mecha
 
 ## What This Is
 
-- Automated triage for security incidents from multiple sources using 5 weighted signals
+- Automated triage for security incidents from multiple sources using 5 core weighted signals, plus an additive cluster-context signal (up to +15) when an alert correlates with recent related alerts
 - Source-agnostic OCSF-inspired incident schema — normalized `events[]` with per-event `type` and `source`; severity is engine-derived (rejected on input)
 - Deterministic scoring (0-100 risk score, 0-100 confidence)
 - Human-in-the-loop by default — recommends an action, never executes one
@@ -73,7 +73,8 @@ Security Alert / Incident
        ↓
    [Enrich]  ← Threat Intel, User History, FP Registry
        ↓
-    [Score]  ← 5 weighted signals (travel, MFA, IP rep, device, hours)
+    [Score]  ← 5 core weighted signals (travel, MFA, IP rep, device, hours)
+               + additive cluster context (up to +15) when correlated alerts exist
        ↓
    [Policy]  → Verdict: LOW / MEDIUM / HIGH
        ↓
@@ -151,6 +152,11 @@ When both signals are skipped, the effective scale is `100/45`:
 - IP + device fire → score 78 → `high_risk`
 - IP alone → score 44 → `medium_risk`
 
+The additive cluster-context signal sits outside this redistribution math
+entirely — it is applied after the core score is normalised. In the
+both-skipped scenario above, a correlated Wazuh alert scores 83 with one case
+sibling (78 + 5) and 88 when an ascending kill-chain is also detected (78 + 10).
+
 **Pagination and `--limit`:** ADTE pages through all available Wazuh alerts
 automatically (500 per request). Use `--limit N` to cap the total; a
 warning is printed to stderr when alerts are truncated.
@@ -200,9 +206,17 @@ groups related alerts into **cases**:
   `base (worst member) + volume bonus + tactic-breadth bonus + kill-chain
   bonus` (capped at 100) with a per-factor rationale mirroring the engine's
   signal rationale. Three medium-risk alerts from one IP walking the kill
-  chain escalate the *case* to high risk — while **per-alert verdicts remain
-  byte-identical**; correlation is a strictly additive layer (`case` key on
-  triage responses), not a scoring change.
+  chain escalate the *case* to high risk — while **solo (uncorrelated) alerts
+  score byte-identically** to the 5-signal engine. The case layer itself never
+  rewrites a verdict after the fact; correlated alerts gain risk only through
+  the engine's own additive `cluster_context` signal (below).
+- **Context feeds scoring (cluster context).** Before scoring, `/api/triage`,
+  each `/api/triage/batch` element, and `/api/queue` take a read-only peek at
+  the case store; when correlated siblings exist inside the window, the
+  additive `cluster_context` signal adds up to +15 to the alert's own risk
+  score (see Signal Weights). The peek excludes the alert's own incident ID —
+  re-triaging an alert never boosts itself — and the queue peeks but still
+  never ingests.
 - **API + UI.** `GET /api/cases` (list, open/closed filter),
   `GET /api/cases/<id>` (members + rationale), `DELETE /api/cases` (admin,
   soft-delete). The web UI adds a Cases view (expandable rows, kill-chain
@@ -267,8 +281,9 @@ commercial API key or expect delays.
 | IP Reputation | 20 | C2/Tor/scanner feeds, but NAT can cause FPs |
 | Device Novelty | 15 | New device alone is moderate signal |
 | Login Hour Anomaly | 10 | Weakest standalone, best as corroboration |
+| Cluster Context (additive) | +15 | Correlated-case siblings + kill-chain progression — aggravator only, never reduces a score |
 
-Weights sum to 100. See [docs/DECISIONS.md](docs/DECISIONS.md) for threshold logic and confidence formula.
+The five core weights sum to 100 and map directly to the 0–100 base score. Cluster context is additive on top: up to +15 when the alert belongs to a correlated case (1 sibling → +5, 2 → +8, 3+ → +10; ascending kill-chain → +5 more; capped at 15, final score capped at 100). An uncorrelated alert scores byte-identically to the 5-signal engine. See [docs/DECISIONS.md](docs/DECISIONS.md) for threshold logic and confidence formula.
 
 ## Safety Model
 
@@ -282,7 +297,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-523 tests across 28 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api
+577 tests across 31 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration
 
 Example verdicts:
 - `incident_account_takeover_tor_exfil.json` → **CRITICAL** (~99)
@@ -370,7 +385,8 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Threat-intel bounded TTL cache + per-provider daily quotas; LLM narrative response cache
 - [x] Adversarial prompt-injection test suite + gap report (`docs/INJECTION_GAP_REPORT.md`)
 - [x] Verdict History + Feedback History views with filter and clear controls
-- [x] Alert correlation / case management — rolling-window entity correlation (IP/user), ATT&CK kill-chain detection, explainable case-level escalation, Cases view + `/api/cases` endpoints; per-alert verdicts untouched
+- [x] Alert correlation / case management — rolling-window entity correlation (IP/user), ATT&CK kill-chain detection, explainable case-level escalation, Cases view + `/api/cases` endpoints; per-alert verdicts untouched at the time (Phase 30 — superseded by the cluster-context signal below)
+- [x] Cluster-context 6th signal — correlated-case context (sibling volume + kill-chain) feeds the per-alert score as an additive signal, up to +15 on top of the 100-point core; solo alerts byte-identical, parity golden-pinned (Phase 31)
 - [ ] Real Sentinel REST API integration (live Azure ingestion)
 - [ ] Automated containment/response-execution layer (gated) — currently recommend-only
 - [ ] Batch processing mode
@@ -384,7 +400,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Queue triage cache — 300s server-side TTL cache by `incident_id`; eliminates redundant re-triage on 60s auto-refresh
 - [x] Mutually exclusive stat cards — Critical (≥75) / High (71–74) / Medium (30–70) / Low (<30) buckets; skeleton placeholders on first load
 - [x] Alert queue source banner — full-width WAZUH LIVE (green) vs WAZUH UNAVAILABLE (amber) banner replacing the old inline badge
-- [x] CRITICAL quick load tile — 4th scenario: CEO account takeover via Tor exit, all 5 signals fire (expected score ~99)
+- [x] CRITICAL quick load tile — 4th scenario: CEO account takeover via Tor exit, all 5 core signals fire (expected solo score ~99)
 - [x] Cross-view IP navigation — clicking any IP in Queue, IP Rep, or Threat Intel history navigates to Threat Intel and auto-runs enrichment lookup
 - [x] Verdict History navigation — every cell redirects to the most relevant engine view (Signal Breakdown, MITRE / NIST, or Alert Input)
 
