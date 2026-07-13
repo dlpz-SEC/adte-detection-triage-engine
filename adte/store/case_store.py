@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -51,7 +52,9 @@ from pathlib import Path
 from typing import Any
 
 from adte.case_policy import (
+    CASE_MAX_CASE_HASHES,
     CASE_MAX_CASE_IPS,
+    CASE_MAX_HASHES_PER_MEMBER,
     CASE_MAX_IPS_PER_MEMBER,
     CASE_MAX_MEMBERS,
     CASE_MAX_RELATED_IDS,
@@ -74,6 +77,7 @@ CREATE TABLE IF NOT EXISTS cases (
     last_activity        TEXT NOT NULL,
     users                TEXT NOT NULL DEFAULT '[]',
     ips                  TEXT NOT NULL DEFAULT '[]',
+    hashes               TEXT NOT NULL DEFAULT '[]',
     alert_count          INTEGER NOT NULL DEFAULT 0,
     case_score           INTEGER NOT NULL DEFAULT 0,
     case_verdict         TEXT NOT NULL DEFAULT 'low_risk',
@@ -93,6 +97,7 @@ CREATE TABLE IF NOT EXISTS case_members (
     risk_score    REAL NOT NULL,
     user          TEXT,
     ips           TEXT NOT NULL DEFAULT '[]',
+    hashes        TEXT NOT NULL DEFAULT '[]',
     technique_ids TEXT NOT NULL DEFAULT '[]',
     tactics       TEXT NOT NULL DEFAULT '[]',
     rule_name     TEXT,
@@ -100,6 +105,11 @@ CREATE TABLE IF NOT EXISTS case_members (
     ingested_at   TEXT NOT NULL
 )
 """
+
+# Valid correlation hash: 32 (MD5), 40 (SHA-1), or 64 (SHA-256) lowercase hex.
+_HASH_KEY_RE: re.Pattern[str] = re.compile(
+    r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}"
+)
 
 _CREATE_INDEX_SQL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_case_members_case_id ON case_members(case_id)",
@@ -149,6 +159,15 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.execute(_CREATE_CASES_SQL)
     conn.execute(_CREATE_MEMBERS_SQL)
+    # Lazy migration for databases created before Phase 32: CREATE TABLE IF
+    # NOT EXISTS never alters an existing table, so the hashes column must be
+    # added explicitly.  Cases are derived/prunable data — low-stakes ALTER.
+    for table in ("cases", "case_members"):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "hashes" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN hashes TEXT NOT NULL DEFAULT '[]'"
+            )
     for stmt in _CREATE_INDEX_SQL:
         conn.execute(stmt)
     return conn
@@ -156,19 +175,23 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
 
 def extract_correlation_keys(
     incident: NormalizedIncident,
-) -> tuple[str | None, list[str]]:
+) -> tuple[str | None, list[str], list[str]]:
     """Derive the entity keys an incident can correlate on.
 
     Args:
         incident: The normalized incident being triaged.
 
     Returns:
-        ``(user_key, ip_keys)`` where ``user_key`` is the lower-cased user
-        principal (or ``None`` when it is a non-correlatable service identity
-        such as Wazuh's ``AGENT\\system``) and ``ip_keys`` are the unique,
-        normalised event source IPs eligible for matching — loopback and
-        unspecified addresses excluded, private RFC1918 deliberately
-        *included* (internal lateral movement is the correlation story).
+        ``(user_key, ip_keys, hash_keys)`` where ``user_key`` is the
+        lower-cased user principal (or ``None`` when it is a
+        non-correlatable service identity such as Wazuh's
+        ``AGENT\\system``), ``ip_keys`` are the unique, normalised event
+        source IPs eligible for matching — loopback and unspecified
+        addresses excluded, private RFC1918 deliberately *included*
+        (internal lateral movement is the correlation story) — and
+        ``hash_keys`` are the unique file hashes from event file artifacts
+        (best digest per event, sha256 > sha1 > md5, lowercase hex only) —
+        the same malware seen on two hosts is one campaign (Phase 32).
     """
     import ipaddress
 
@@ -199,7 +222,24 @@ def extract_correlation_keys(
         normalised = str(addr)
         if normalised not in ip_keys and len(ip_keys) < CASE_MAX_IPS_PER_MEMBER:
             ip_keys.append(normalised)
-    return user_key, ip_keys
+
+    hash_keys: list[str] = []
+    for event in incident.events:
+        artifact = event.file
+        if artifact is None:
+            continue
+        # Best available digest per event; artifact fields are already
+        # lowercase-normalised by the model validator, but a full-match
+        # guard keeps garbage strings out of the correlation keyspace.
+        best = artifact.sha256 or artifact.sha1 or artifact.md5
+        if (
+            best
+            and _HASH_KEY_RE.fullmatch(best)
+            and best not in hash_keys
+            and len(hash_keys) < CASE_MAX_HASHES_PER_MEMBER
+        ):
+            hash_keys.append(best)
+    return user_key, ip_keys, hash_keys
 
 
 def _member_display_fields(
@@ -244,14 +284,18 @@ def _member_display_fields(
 
 
 def _find_matching_case(
-    rows: list[sqlite3.Row], user_key: str | None, ip_keys: list[str]
+    rows: list[sqlite3.Row],
+    user_key: str | None,
+    ip_keys: list[str],
+    hash_keys: list[str],
 ) -> sqlite3.Row | None:
-    """Return the newest-active open case sharing an IP or user key.
+    """Return the newest-active open case sharing a hash, IP, or user key.
 
     Args:
         rows: Candidate case rows ordered by ``last_activity`` DESC.
         user_key: Correlatable user key, or ``None``.
         ip_keys: Correlation-eligible source IPs.
+        hash_keys: Correlation-eligible file hashes (Phase 32).
 
     Returns:
         The first (newest-active) matching row, or ``None``.  When an alert
@@ -261,9 +305,12 @@ def _find_matching_case(
         opens a fresh case, bounding the per-ingest recompute.
     """
     ip_set = set(ip_keys)
+    hash_set = set(hash_keys)
     for row in rows:
         if row["alert_count"] >= CASE_MAX_MEMBERS:
             continue
+        if hash_set & set(json.loads(row["hashes"])):
+            return row
         if ip_set & set(json.loads(row["ips"])):
             return row
         if user_key is not None and user_key in json.loads(row["users"]):
@@ -325,8 +372,8 @@ def ingest_alert(
         (fail-open: correlation must never block a verdict).
     """
     try:
-        user_key, ip_keys = extract_correlation_keys(incident)
-        if user_key is None and not ip_keys:
+        user_key, ip_keys, hash_keys = extract_correlation_keys(incident)
+        if user_key is None and not ip_keys and not hash_keys:
             return None
 
         now = datetime.now(timezone.utc)
@@ -362,11 +409,12 @@ def ingest_alert(
                 "AND last_activity >= ? ORDER BY last_activity DESC",
                 (window_cutoff,),
             ).fetchall()
-            match = _find_matching_case(candidates, user_key, ip_keys)
+            match = _find_matching_case(candidates, user_key, ip_keys, hash_keys)
 
             if match is None:
                 case_users = [user_key] if user_key else []
                 case_ips = list(ip_keys)
+                case_hashes = list(hash_keys)
                 # Retry on the (rare) same-day 6-hex ID collision rather than
                 # aborting the transaction and silently losing correlation.
                 for attempt in range(3):
@@ -374,13 +422,15 @@ def ingest_alert(
                     try:
                         conn.execute(
                             "INSERT INTO cases (case_id, created_at, "
-                            "last_activity, users, ips) VALUES (?, ?, ?, ?, ?)",
+                            "last_activity, users, ips, hashes) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
                             (
                                 case_id,
                                 now_iso,
                                 now_iso,
                                 json.dumps(case_users),
                                 json.dumps(case_ips),
+                                json.dumps(case_hashes),
                             ),
                         )
                         break
@@ -391,17 +441,25 @@ def ingest_alert(
                 case_id = match["case_id"]
                 case_users = json.loads(match["users"])
                 case_ips = json.loads(match["ips"])
+                case_hashes = json.loads(match["hashes"])
                 if user_key and user_key not in case_users:
                     case_users.append(user_key)
                 for ip in ip_keys:
                     if ip not in case_ips and len(case_ips) < CASE_MAX_CASE_IPS:
                         case_ips.append(ip)
+                for file_hash in hash_keys:
+                    if (
+                        file_hash not in case_hashes
+                        and len(case_hashes) < CASE_MAX_CASE_HASHES
+                    ):
+                        case_hashes.append(file_hash)
 
             member_fields = (
                 output.get("verdict", ""),
                 float(output.get("risk_score", 0)),
                 incident.user,
                 json.dumps(display_ips),
+                json.dumps(hash_keys),
                 json.dumps(technique_ids),
                 json.dumps(tactics),
                 rule_name,
@@ -419,17 +477,17 @@ def ingest_alert(
             if existing:
                 conn.execute(
                     "UPDATE case_members SET verdict = ?, risk_score = ?, "
-                    "user = ?, ips = ?, technique_ids = ?, tactics = ?, "
-                    "rule_name = ?, event_time = ?, ingested_at = ? "
-                    "WHERE id = ?",
+                    "user = ?, ips = ?, hashes = ?, technique_ids = ?, "
+                    "tactics = ?, rule_name = ?, event_time = ?, "
+                    "ingested_at = ? WHERE id = ?",
                     (*member_fields, existing["id"]),
                 )
             else:
                 conn.execute(
                     "INSERT INTO case_members (case_id, incident_id, verdict, "
-                    "risk_score, user, ips, technique_ids, tactics, rule_name, "
-                    "event_time, ingested_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "risk_score, user, ips, hashes, technique_ids, tactics, "
+                    "rule_name, event_time, ingested_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (case_id, incident.incident_id, *member_fields),
                 )
 
@@ -438,13 +496,14 @@ def ingest_alert(
             )
             conn.execute(
                 "UPDATE cases SET last_activity = ?, users = ?, ips = ?, "
-                "alert_count = ?, case_score = ?, case_verdict = ?, "
+                "hashes = ?, alert_count = ?, case_score = ?, case_verdict = ?, "
                 "escalated = ?, escalation_rationale = ?, kill_chain = ? "
                 "WHERE case_id = ?",
                 (
                     now_iso,
                     json.dumps(case_users),
                     json.dumps(case_ips),
+                    json.dumps(case_hashes),
                     len(members),
                     case_score,
                     case_verdict,
@@ -478,7 +537,11 @@ def ingest_alert(
             "escalation_rationale": rationale,
             "kill_chain": kill_chain,
             "related_incident_ids": related[:CASE_MAX_RELATED_IDS],
-            "correlation_keys": {"user": user_key, "ips": ip_keys},
+            "correlation_keys": {
+                "user": user_key,
+                "ips": ip_keys,
+                "hashes": hash_keys,
+            },
             "window_minutes": CASE_WINDOW_MINUTES,
         }
     except Exception as exc:
@@ -527,8 +590,8 @@ def peek_correlation_context(
         otherwise ``None``.
     """
     try:
-        user_key, ip_keys = extract_correlation_keys(incident)
-        if user_key is None and not ip_keys:
+        user_key, ip_keys, hash_keys = extract_correlation_keys(incident)
+        if user_key is None and not ip_keys and not hash_keys:
             return None
 
         now = datetime.now(timezone.utc)
@@ -544,7 +607,7 @@ def peek_correlation_context(
                 "AND last_activity >= ? ORDER BY last_activity DESC",
                 (window_cutoff,),
             ).fetchall()
-            match = _find_matching_case(candidates, user_key, ip_keys)
+            match = _find_matching_case(candidates, user_key, ip_keys, hash_keys)
             siblings: list[sqlite3.Row] = []
             if match is not None:
                 # Ordered chronologically (mirrors _recompute_case) so the
@@ -619,6 +682,7 @@ def _row_to_summary(row: sqlite3.Row, window_cutoff: str) -> dict[str, Any]:
         "escalated": bool(row["escalated"]),
         "users": json.loads(row["users"]),
         "ips": json.loads(row["ips"]),
+        "hashes": json.loads(row["hashes"]),
         "kill_chain": json.loads(row["kill_chain"]),
         "created_at": row["created_at"],
         "last_activity": row["last_activity"],
@@ -713,6 +777,7 @@ def get_case(case_id: str, db_path: str | Path) -> dict[str, Any] | None:
                 "risk_score": m["risk_score"],
                 "user": m["user"],
                 "ips": json.loads(m["ips"]),
+                "hashes": json.loads(m["hashes"]),
                 "technique_ids": json.loads(m["technique_ids"]),
                 "tactics": json.loads(m["tactics"]),
                 "rule_name": m["rule_name"],

@@ -14,6 +14,10 @@
 #   - The cluster_context signal (Phase 31) is DELIBERATELY absent: case
 #     correlation is meta-context, not a technique — sibling alerts carry
 #     their own technique IDs, already unioned into the case.
+#   - The file_reputation signal (Phase 32) is likewise absent as a SIGNAL
+#     entry: malware technique labels come from the alert's native
+#     rule.mitre.id (e.g. T1204) or from the rule-text keywords below
+#     ("virustotal"/"malware detected"/"eicar"), not from the signal name.
 
 mappings:
 
@@ -83,6 +87,13 @@ mappings:
   mitre_technique_name: "Command and Scripting Interpreter: Unix Shell"
   nist_detect: "DE.CM-6"
   nist_category: "Monitoring for Malicious Activity"
+
+- rule_keywords: ["virustotal", "malware detected", "eicar", "malicious file", "user execution"]
+  mitre_tactic: "Execution"
+  mitre_technique_id: "T1204"
+  mitre_technique_name: "User Execution"
+  nist_detect: "DE.CM-4"
+  nist_category: "Malicious Code Detection"
 
 - rule_keywords: ["useradd", "new user account", "account created"]
   mitre_tactic: "Persistence"

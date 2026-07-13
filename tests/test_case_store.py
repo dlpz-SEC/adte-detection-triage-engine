@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from adte.models import NormalizedIncident, SignInMetadata
+from adte.models import FileArtifact, NormalizedIncident, SignInMetadata
 from adte.store import case_store
 from adte.store.case_store import (
     clear_cases,
@@ -19,6 +19,7 @@ from adte.store.case_store import (
     get_cases_by_ids,
     ingest_alert,
     list_cases,
+    peek_correlation_context,
 )
 
 _CASE_ID_RE = re.compile(r"^CASE-\d{8}-[0-9a-f]{6}$")
@@ -84,24 +85,25 @@ def _backdate_case(db_path: Path, case_id: str, delta: timedelta) -> None:
 
 class TestExtractCorrelationKeys:
     def test_regular_user_and_ip(self) -> None:
-        user, ips = extract_correlation_keys(make_incident())
+        user, ips, hashes = extract_correlation_keys(make_incident())
         assert user == "alice@contoso.com"
         assert ips == ["10.0.0.5"]
+        assert hashes == []
 
     def test_system_pseudo_user_not_correlatable(self) -> None:
         incident = make_incident(user="WEBSRV01\\system")
-        user, ips = extract_correlation_keys(incident)
+        user, ips, _ = extract_correlation_keys(incident)
         assert user is None
         assert ips == ["10.0.0.5"]  # IP still correlates
 
     def test_loopback_excluded_rfc1918_included(self) -> None:
         incident = make_incident(ips=("127.0.0.1", "192.168.1.10"))
-        _, ips = extract_correlation_keys(incident)
+        _, ips, _ = extract_correlation_keys(incident)
         assert ips == ["192.168.1.10"]
 
     def test_unparseable_ip_skipped(self) -> None:
         incident = make_incident(ips=("not-an-ip", "203.0.113.7"))
-        _, ips = extract_correlation_keys(incident)
+        _, ips, _ = extract_correlation_keys(incident)
         assert ips == ["203.0.113.7"]
 
 
@@ -145,6 +147,7 @@ class TestIngest:
         assert blob["correlation_keys"] == {
             "user": "alice@contoso.com",
             "ips": ["10.0.0.5"],
+            "hashes": [],
         }
 
     def test_same_ip_joins_case(self, db_path: Path) -> None:
@@ -541,3 +544,171 @@ def test_member_event_time_none_when_no_events(db_path: Path) -> None:
     assert blob is not None
     detail = get_case(blob["case_id"], db_path)
     assert detail["members"][0]["event_time"] is None
+
+
+# ---------------------------------------------------------------------------
+# Hash-based correlation (Phase 32)
+# ---------------------------------------------------------------------------
+
+_EICAR_SHA256 = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+_EICAR_SHA1 = "3395856ce81f2b7382dee72602f798b642f14140"
+
+
+def make_file_incident(
+    incident_id: str = "INC-F1",
+    *,
+    sha256: str = _EICAR_SHA256,
+    sha1: str = "",
+    md5: str = "",
+    ip: str = "192.168.1.77",
+    user: str = "host-a\\system",  # non-correlatable → isolates hash matching
+) -> NormalizedIncident:
+    """Build a wazuh file incident carrying a FileArtifact."""
+    event = SignInMetadata(
+        user_principal_name=user,
+        ip_address=ip,
+        type="file",
+        event_risk="confirmed",
+        file=FileArtifact(path="/tmp/malware/x", sha256=sha256, sha1=sha1, md5=md5),
+        timestamp=_T0,
+    )
+    return NormalizedIncident(
+        incident_id=incident_id, user=user, source="wazuh", events=[event]
+    )
+
+
+class TestHashCorrelationKeys:
+    def test_hash_extracted(self) -> None:
+        _, _, hashes = extract_correlation_keys(make_file_incident())
+        assert hashes == [_EICAR_SHA256]
+
+    def test_sha256_preferred_over_sha1_md5(self) -> None:
+        incident = make_file_incident(
+            sha256=_EICAR_SHA256, sha1=_EICAR_SHA1, md5="44d88612fea8a8f36de82e1278abb02f"
+        )
+        _, _, hashes = extract_correlation_keys(incident)
+        assert hashes == [_EICAR_SHA256]
+
+    def test_sha1_used_when_no_sha256(self) -> None:
+        incident = make_file_incident(sha256="", sha1=_EICAR_SHA1)
+        _, _, hashes = extract_correlation_keys(incident)
+        assert hashes == [_EICAR_SHA1]
+
+    def test_invalid_hash_dropped(self) -> None:
+        incident = make_file_incident(sha256="not-a-real-hash")
+        _, _, hashes = extract_correlation_keys(incident)
+        assert hashes == []
+
+    def test_per_member_hash_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(case_store, "CASE_MAX_HASHES_PER_MEMBER", 2)
+        events = [
+            SignInMetadata(
+                user_principal_name="h\\system",
+                ip_address="192.168.1.77",
+                type="file",
+                file=FileArtifact(sha256=f"{i:064x}"),
+                timestamp=_T0,
+            )
+            for i in range(4)
+        ]
+        incident = NormalizedIncident(
+            incident_id="INC-MANY", user="h\\system", source="wazuh", events=events
+        )
+        _, _, hashes = extract_correlation_keys(incident)
+        assert len(hashes) == 2
+
+
+class TestHashCaseCorrelation:
+    def test_same_hash_different_ip_joins_case(self, db_path: Path) -> None:
+        """Two hosts, different IPs + non-correlatable users, same hash → 1 case."""
+        first = ingest_alert(
+            make_output(), make_file_incident("INC-A", ip="192.168.1.77"), db_path
+        )
+        second = ingest_alert(
+            make_output(),
+            make_file_incident("INC-B", ip="10.0.0.55", user="host-b\\system"),
+            db_path,
+        )
+        assert second["case_id"] == first["case_id"]
+        assert second["alert_count"] == 2
+
+    def test_hash_in_correlation_keys(self, db_path: Path) -> None:
+        blob = ingest_alert(make_output(), make_file_incident(), db_path)
+        assert blob["correlation_keys"]["hashes"] == [_EICAR_SHA256]
+
+    def test_case_summary_carries_hashes(self, db_path: Path) -> None:
+        blob = ingest_alert(make_output(), make_file_incident(), db_path)
+        detail = get_case(blob["case_id"], db_path)
+        assert detail["hashes"] == [_EICAR_SHA256]
+        assert detail["members"][0]["hashes"] == [_EICAR_SHA256]
+
+    def test_different_hash_no_correlation(self, db_path: Path) -> None:
+        """Distinct hashes on distinct IPs/users open separate cases."""
+        first = ingest_alert(
+            make_output(), make_file_incident("INC-A", sha256="a" * 64), db_path
+        )
+        second = ingest_alert(
+            make_output(),
+            make_file_incident(
+                "INC-B", sha256="b" * 64, ip="10.0.0.55", user="host-b\\system"
+            ),
+            db_path,
+        )
+        assert second["case_id"] != first["case_id"]
+
+
+class TestPeekHashSymmetry:
+    def test_peek_matches_on_hash(self, db_path: Path) -> None:
+        """peek mirrors ingest: a second same-hash alert sees a sibling."""
+        ingest_alert(make_output(), make_file_incident("INC-A"), db_path)
+        ctx = peek_correlation_context(
+            make_file_incident("INC-B", ip="10.0.0.55", user="host-b\\system"),
+            db_path,
+        )
+        assert ctx is not None
+        assert ctx.sibling_count == 1
+
+    def test_peek_self_excludes_on_hash(self, db_path: Path) -> None:
+        """Re-peeking the same incident never counts itself via its hash."""
+        ingest_alert(make_output(), make_file_incident("INC-A"), db_path)
+        ctx = peek_correlation_context(make_file_incident("INC-A"), db_path)
+        assert ctx is None
+
+
+class TestLazyHashMigration:
+    def test_pre_phase32_db_gains_hashes_column(self, db_path: Path) -> None:
+        """A DB created without hashes columns is migrated on connect."""
+        # Simulate a pre-Phase-32 schema (no hashes column on either table).
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "CREATE TABLE cases (case_id TEXT PRIMARY KEY, created_at TEXT "
+                "NOT NULL, last_activity TEXT NOT NULL, users TEXT NOT NULL "
+                "DEFAULT '[]', ips TEXT NOT NULL DEFAULT '[]', alert_count "
+                "INTEGER NOT NULL DEFAULT 0, case_score INTEGER NOT NULL "
+                "DEFAULT 0, case_verdict TEXT NOT NULL DEFAULT 'low_risk', "
+                "escalated INTEGER NOT NULL DEFAULT 0, escalation_rationale "
+                "TEXT NOT NULL DEFAULT '[]', kill_chain TEXT NOT NULL DEFAULT "
+                "'{}', deleted_at TEXT)"
+            )
+            conn.execute(
+                "CREATE TABLE case_members (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "case_id TEXT NOT NULL, incident_id TEXT NOT NULL, verdict TEXT "
+                "NOT NULL, risk_score REAL NOT NULL, user TEXT, ips TEXT NOT NULL "
+                "DEFAULT '[]', technique_ids TEXT NOT NULL DEFAULT '[]', tactics "
+                "TEXT NOT NULL DEFAULT '[]', rule_name TEXT, event_time TEXT, "
+                "ingested_at TEXT NOT NULL)"
+            )
+            conn.commit()
+
+        # A normal ingest must succeed (fail-open would swallow a migration
+        # failure and return None), proving the ALTER ran.
+        blob = ingest_alert(make_output(), make_file_incident(), db_path)
+        assert blob is not None
+        assert blob["correlation_keys"]["hashes"] == [_EICAR_SHA256]
+        with sqlite3.connect(str(db_path)) as conn:
+            case_cols = {r[1] for r in conn.execute("PRAGMA table_info(cases)")}
+            member_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(case_members)")
+            }
+        assert "hashes" in case_cols
+        assert "hashes" in member_cols

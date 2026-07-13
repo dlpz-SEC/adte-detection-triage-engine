@@ -68,6 +68,7 @@ class TestTriageIngestHook:
         assert case["correlation_keys"] == {
             "user": "alice@contoso.com",
             "ips": ["203.0.113.77"],
+            "hashes": [],
         }
 
     def test_second_same_ip_alert_joins_case(self, cases_client) -> None:

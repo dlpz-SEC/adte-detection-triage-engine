@@ -64,6 +64,17 @@ CASE_MAX_CASE_IPS: int = 500
 new IP keys (existing keys still match), bounding the JSON blob rewritten
 inside the write transaction and the correlation gravity of a single case."""
 
+CASE_MAX_HASHES_PER_MEMBER: int = 10
+"""Maximum correlation file hashes kept per member alert (Phase 32).  Same
+hostile-input-bounding rationale as :data:`CASE_MAX_IPS_PER_MEMBER`: event
+lists are source-controlled, so a many-hash alert is truncated rather than
+allowed to inflate per-ingest matching work."""
+
+CASE_MAX_CASE_HASHES: int = 200
+"""Ceiling on a case's unioned file-hash set (Phase 32).  Mirrors
+:data:`CASE_MAX_CASE_IPS` — beyond this the case stops absorbing new hash
+keys (existing keys still match)."""
+
 # ---------------------------------------------------------------------------
 # Correlation keys
 # ---------------------------------------------------------------------------
