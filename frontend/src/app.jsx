@@ -23,16 +23,18 @@ import ReactDOM from 'react-dom/client';
       device_novelty:     'Device Novelty',
       login_hour_anomaly: 'Login Hour Anomaly',
       cluster_context:    'Cluster Context',
+      file_reputation:    'File Reputation',
     };
 
     const SIGNAL_WEIGHTS = {
       impossible_travel: 30, mfa_fatigue: 25, ip_reputation: 20,
       device_novelty: 15, login_hour_anomaly: 10, cluster_context: 15,
+      file_reputation: 40,
     };
 
     const SIGNAL_ORDER = [
       'impossible_travel', 'mfa_fatigue', 'ip_reputation',
-      'device_novelty', 'login_hour_anomaly', 'cluster_context',
+      'device_novelty', 'login_hour_anomaly', 'file_reputation', 'cluster_context',
     ];
 
     function getDisplayVerdict(verdict) {
@@ -139,6 +141,12 @@ import ReactDOM from 'react-dom/client';
         nist: "DE.AE-3 — Event data are correlated",
         example: "2 related alerts in the last 60 min, kill-chain detected → +13 points.",
       },
+      file_reputation: {
+        description: "Multi-engine file-hash malware verdict. Prefers the verdict embedded in the source alert (Wazuh's VirusTotal integration) over an ADTE VirusTotal /files lookup. Confirmed malware adds the full weight; a partial detection ratio adds 20; a clean scan registers 0 (negative evidence). Additive on top of the 100-point core score — malware aggravates, never mitigates; non-file alerts are unaffected.",
+        mitre: "T1204 — User Execution / T1105 — Ingress Tool Transfer",
+        nist: "DE.CM-4 — Malicious code is detected",
+        example: "VirusTotal 58/72 engines flag /tmp/malware/eicar.com → +40 points → high risk.",
+      },
     };
 
     const ALL_TACTICS = [
@@ -153,6 +161,7 @@ import ReactDOM from 'react-dom/client';
       { name: 'ip_reputation', label: 'IP Reputation', weight: 20, color: '#3b82f6', method: 'Multi-source threat intel aggregation', mitre: 'T1071' },
       { name: 'device_novelty', label: 'Device Novelty', weight: 15, color: '#8b5cf6', method: 'Device baseline comparison', mitre: 'T1078' },
       { name: 'login_hour_anomaly', label: 'Login Hour', weight: 10, color: '#22c55e', method: 'Historical hour distribution analysis', mitre: 'T1078' },
+      { name: 'file_reputation', label: 'File Reputation', weight: 40, color: '#eab308', method: 'VirusTotal multi-engine hash verdict (embedded or /files lookup, additive)', mitre: 'T1204', context: true },
       { name: 'cluster_context', label: 'Cluster Context', weight: 15, color: '#14b8a6', method: 'Case-store sibling correlation (60-min window, additive)', mitre: '—', context: true },
     ];
 
@@ -790,6 +799,69 @@ import ReactDOM from 'react-dom/client';
     /* TriageResult                                                         */
     /* ------------------------------------------------------------------ */
 
+    function MalwarePanel({ result }) {
+      const files = result.evidence?.files;
+      if (!files || files.length === 0) return null;
+      const lookups = result.evidence?.file_reputation || {};
+      return (
+        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid #eab308' }}>
+          <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>Malware Evidence</span>
+            <span className="badge" style={{ fontSize: '0.55rem', background: '#eab3081f', color: '#eab308', border: '1px solid #eab308' }}>FILE REPUTATION</span>
+          </div>
+          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {files.map((f, i) => {
+              const hash = f.sha256 || f.sha1 || f.md5 || '';
+              const lookup = hash ? lookups[hash.toLowerCase()] : null;
+              const hasEmbedded = f.vt_positives != null && f.vt_total;
+              const ratio = hasEmbedded ? f.vt_positives / f.vt_total : null;
+              const malicious = ratio != null ? ratio >= 0.5 : (lookup ? lookup.is_malicious : false);
+              const ratioColor = malicious ? 'var(--high)' : 'var(--text-secondary)';
+              return (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {f.path && (
+                    <div className="mono" style={{ fontSize: '0.78rem', fontWeight: 600, wordBreak: 'break-all' }}>{f.path}</div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {hasEmbedded && (
+                      <span className="badge" style={{ fontSize: '0.6rem', background: `${ratioColor}1f`, color: ratioColor, border: `1px solid ${ratioColor}` }}>
+                        VirusTotal {f.vt_positives}/{f.vt_total} engines
+                      </span>
+                    )}
+                    {!hasEmbedded && lookup && (
+                      <span className="badge" style={{ fontSize: '0.6rem', background: `${ratioColor}1f`, color: ratioColor, border: `1px solid ${ratioColor}` }}>
+                        {lookup.is_malicious ? 'MALICIOUS' : 'CLEAN'} · {lookup.source}
+                        {lookup.positives != null && lookup.total != null ? ` ${lookup.positives}/${lookup.total}` : ''}
+                      </span>
+                    )}
+                    {f.fim_action && (
+                      <span className="badge badge-accent" style={{ fontSize: '0.6rem' }}>
+                        FIM: {f.fim_action}{f.fim_action === 'deleted' ? ' (Wazuh active response)' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {hash && (
+                    <div className="mono" style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }} title={hash}>
+                      {hash.slice(0, 16)}… ({hash.length === 64 ? 'sha256' : hash.length === 40 ? 'sha1' : 'md5'})
+                    </div>
+                  )}
+                  {f.vt_permalink && (
+                    <a href={f.vt_permalink} target="_blank" rel="noopener noreferrer"
+                       style={{ fontSize: '0.68rem', color: 'var(--accent)' }}>
+                      VirusTotal report →
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              ADTE recommends containment — Wazuh's active response is the executor. ADTE never deletes.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function TriageResult({ result, scoreBarPct, onOpenCase }) {
       const signalSummary = result.report?.signal_summary || {};
       const caseInfo = result.case;
@@ -829,6 +901,7 @@ import ReactDOM from 'react-dom/client';
               </div>
             </div>
           )}
+          <MalwarePanel result={result} />
           {result.report?.one_paragraph_summary && (() => {
             const isMock = (result.report.confidence_note || '').includes('template-based');
             return (
@@ -2109,26 +2182,23 @@ import ReactDOM from 'react-dom/client';
                   <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: w.color, width: 28, textAlign: 'right' }}>{w.weight}</span>
                 </div>
               ))}
-              {/* Additive context signal — sits outside the 100-pt core donut. */}
-              {(() => {
-                const cc = WEIGHTS_DATA.find(w => w.context);
-                if (!cc) return null;
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
-                    <div style={{ width: 12, height: 12, borderRadius: 2, background: cc.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {cc.label}
-                        <span className="badge" style={{ fontSize: '0.5rem', background: 'rgba(20, 184, 166, 0.12)', color: cc.color, border: `1px solid ${cc.color}` }}>ADDITIVE</span>
-                      </div>
-                      <div className="score-bar-track" style={{ height: 4 }}>
-                        <div style={{ width: `${cc.weight}%`, height: '100%', background: cc.color, borderRadius: 2 }} />
-                      </div>
+              {/* Additive signals — sit outside the 100-pt core donut. */}
+              {WEIGHTS_DATA.filter(w => w.context).map((cc, i) => (
+                <div key={cc.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingTop: 10, borderTop: i === 0 ? '1px dashed var(--border)' : 'none' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 2, background: cc.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {cc.label}
+                      <span className="badge" style={{ fontSize: '0.5rem', background: `${cc.color}1f`, color: cc.color, border: `1px solid ${cc.color}` }}>ADDITIVE</span>
                     </div>
-                    <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: cc.color, width: 28, textAlign: 'right' }}>+{cc.weight}</span>
+                    <div className="score-bar-track" style={{ height: 4 }}>
+                      {/* Additive weights can exceed 100% of the 100-pt core scale; clamp the bar. */}
+                      <div style={{ width: `${Math.min(100, cc.weight)}%`, height: '100%', background: cc.color, borderRadius: 2 }} />
+                    </div>
                   </div>
-                );
-              })()}
+                  <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: cc.color, width: 28, textAlign: 'right' }}>+{cc.weight}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -2143,7 +2213,7 @@ import ReactDOM from 'react-dom/client';
                   <div style={{ width: 8, height: 8, borderRadius: 2, background: w.color }} />
                   <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{w.label}</span>
                   {w.context && (
-                    <span className="badge" style={{ fontSize: '0.55rem', background: 'rgba(20, 184, 166, 0.12)', color: '#14b8a6', border: '1px solid #14b8a6' }}>CONTEXT +15</span>
+                    <span className="badge" style={{ fontSize: '0.55rem', background: `${w.color}1f`, color: w.color, border: `1px solid ${w.color}` }}>ADDITIVE +{w.weight}</span>
                   )}
                 </div>
                 <span className="mono" style={{ fontSize: '0.8rem', color: w.color, fontWeight: 700 }}>{w.weight}</span>
@@ -2161,7 +2231,7 @@ import ReactDOM from 'react-dom/client';
                 Wazuh alerts carry no geolocation or MFA data. The two skipped signals' combined
                 weight ({skipped3.reduce((s,w) => s+w.weight, 0)} pts) is redistributed proportionally
                 across the {remaining3.length} evaluable core signals ({total3} pts → scaled to 100).
-                Additive context (Cluster Context) is excluded — it never enters redistribution.
+                Additive signals (File Reputation, Cluster Context) are excluded — they never enter redistribution.
               </p>
               <div className="data-table" style={{ marginTop: 12 }}>
                 <div className="data-table-header" style={{ gridTemplateColumns: '1fr 80px 100px 80px' }}>
