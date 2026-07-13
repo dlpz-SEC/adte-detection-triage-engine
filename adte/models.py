@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ThreatIntelResult(BaseModel):
@@ -29,6 +29,38 @@ class ThreatIntelResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     source: str
     tags: list[str] = Field(default_factory=list)
+    queried_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class FileReputationResult(BaseModel):
+    """Result from a file-hash reputation lookup (Phase 32).
+
+    Parallel to ``ThreatIntelResult`` but for file hashes — kept as a
+    separate model so IP-keyed evidence output is never polluted with
+    hash subjects.
+
+    Attributes:
+        file_hash: The queried hash, normalised to lowercase hex.
+        hash_type: Which digest algorithm the hash length implies.
+        is_malicious: Whether the file is considered malicious.
+        confidence: Confidence score from 0.0 (no confidence) to 1.0 (certain).
+        positives: Number of engines flagging the file malicious, if known.
+        total: Total number of engines consulted, if known.
+        source: The intel feed or provider that produced this result.
+        tags: Descriptive labels (e.g. 'eicar-test', 'trojan').
+        permalink: Provider URL for the full report, if any.
+        queried_at: Timestamp of when the lookup was performed.
+    """
+
+    file_hash: str
+    hash_type: Literal["md5", "sha1", "sha256"]
+    is_malicious: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    positives: int | None = None
+    total: int | None = None
+    source: str
+    tags: list[str] = Field(default_factory=list)
+    permalink: str = ""
     queried_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -108,6 +140,58 @@ class UserProfile(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class FileArtifact(BaseModel):
+    """File observable attached to a single event (Phase 32).
+
+    Carries file-integrity-monitoring evidence (path, checksums, FIM
+    action) and any scanner verdict embedded in the source alert (e.g.
+    Wazuh's VirusTotal integration fields).  Read only by the additive
+    ``file_reputation`` engine signal — absent on all non-file events.
+
+    Hash fields are permissive by design: values are lowercase-normalised
+    but never format-rejected at the model layer, so a hostile or
+    malformed alert degrades gracefully instead of failing validation.
+    Strict hex/length validation lives at the intel boundary
+    (``check_file_hash``) and in the engine's hash guard.
+
+    Attributes:
+        path: Filesystem path of the observed file.
+        sha256: SHA-256 checksum (lowercase hex), empty if unknown.
+        sha1: SHA-1 checksum (lowercase hex), empty if unknown.
+        md5: MD5 checksum (lowercase hex), empty if unknown.
+        fim_action: File-integrity event kind, when the source is a FIM
+            alert (``added``/``modified``/``deleted``).
+        vt_positives: Engines flagging the file malicious, when the source
+            alert embeds a VirusTotal verdict.
+        vt_total: Total engines consulted, when embedded.
+        vt_malicious: Provider's own malicious flag, when embedded.
+        vt_permalink: Provider report URL, when embedded.
+    """
+
+    path: str = ""
+    sha256: str = ""
+    sha1: str = ""
+    md5: str = ""
+    fim_action: Literal["added", "modified", "deleted"] | None = None
+    vt_positives: int | None = None
+    vt_total: int | None = None
+    vt_malicious: bool | None = None
+    vt_permalink: str = ""
+
+    @field_validator("sha256", "sha1", "md5")
+    @classmethod
+    def _normalise_hash(cls, value: str) -> str:
+        """Lowercase-normalise hash strings without rejecting format.
+
+        Args:
+            value: Raw hash string from the source alert.
+
+        Returns:
+            The stripped, lowercased hash string.
+        """
+        return value.strip().lower()
+
+
 class SignInMetadata(BaseModel):
     """A single normalised security event (OCSF-inspired, source-agnostic).
 
@@ -136,6 +220,9 @@ class SignInMetadata(BaseModel):
             source log (e.g. Wazuh ``rule.mitre.id``).  Advisory metadata
             only — never read by the scoring signals.  Empty when the
             source provides none.
+        file: File observable for ``file``-type events (path, checksums,
+            FIM action, embedded scanner verdict).  ``None`` on all other
+            events; read only by the additive ``file_reputation`` signal.
         timestamp: UTC timestamp of the event.
     """
 
@@ -150,6 +237,7 @@ class SignInMetadata(BaseModel):
     app_display_name: str = ""
     event_risk: Literal["none", "suspicious", "high", "confirmed"] = "none"
     technique_ids: list[str] = Field(default_factory=list)
+    file: FileArtifact | None = None
     timestamp: datetime
 
 
@@ -321,6 +409,11 @@ class NormalizedIncident(BaseModel):
                         technique_ids=[
                             str(t) for t in (si.get("technique_ids") or []) if t
                         ],
+                        file=(
+                            FileArtifact.model_validate(si["file"])
+                            if si.get("file")
+                            else None
+                        ),
                         timestamp=datetime.fromisoformat(si["timestamp"]),
                     )
                 )

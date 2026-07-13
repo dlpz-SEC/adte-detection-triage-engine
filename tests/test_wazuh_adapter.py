@@ -13,6 +13,7 @@ import pytest
 from adte.adapters.wazuh import (
     WazuhAdapter,
     _event_risk_from_level,
+    _extract_file_artifact,
     _extract_srcip,
     _extract_user,
 )
@@ -672,3 +673,268 @@ class TestVerifySSLEnforcement:
 
         adapter = WazuhAdapter.from_env()
         assert adapter._verify_ssl is True
+
+
+# ---------------------------------------------------------------------------
+# File / VirusTotal evidence extraction (Phase 32a)
+# ---------------------------------------------------------------------------
+
+_EICAR_SHA256 = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+_EICAR_SHA1 = "3395856ce81f2b7382dee72602f798b642f14140"
+_EICAR_MD5 = "44d88612fea8a8f36de82e1278abb02f"
+
+
+def _fim_added_alert() -> dict[str, Any]:
+    """Realistic Wazuh rule-554 FIM alert (file added to /tmp/malware)."""
+    return {
+        "id": "1720000000.554001",
+        "@timestamp": "2026-07-12T14:03:11.000Z",
+        "rule": {
+            "id": "554",
+            "level": 7,
+            "description": "File added to the system.",
+            "groups": ["ossec", "syscheck", "syscheck_entry_added"],
+            "mitre": {"id": ["T1565.001"], "tactic": ["Impact"]},
+        },
+        "agent": {"id": "003", "name": "ubuntu-agent", "ip": "192.168.1.77"},
+        "syscheck": {
+            "path": "/tmp/malware/eicar.com",
+            "event": "added",
+            # Uppercase on purpose — extraction must lowercase-normalise.
+            "sha256_after": _EICAR_SHA256.upper(),
+            "sha1_after": _EICAR_SHA1,
+            "md5_after": _EICAR_MD5,
+        },
+        "location": "syscheck",
+    }
+
+
+def _vt_conviction_alert() -> dict[str, Any]:
+    """Realistic Wazuh rule-87105 VirusTotal conviction alert."""
+    return {
+        "id": "1720000002.87105",
+        "@timestamp": "2026-07-12T14:03:12.000Z",
+        "rule": {
+            "id": "87105",
+            "level": 12,
+            "description": (
+                "VirusTotal: Alert - /tmp/malware/eicar.com - "
+                "58 engines detected this file"
+            ),
+            "groups": ["virustotal"],
+        },
+        "agent": {"id": "003", "name": "ubuntu-agent", "ip": "192.168.1.77"},
+        "data": {
+            "virustotal": {
+                "found": "1",
+                "malicious": "1",
+                # Strings on purpose — Wazuh emits these as strings.
+                "positives": "58",
+                "total": "72",
+                "source": {
+                    "alert_id": "1720000000.554001",
+                    "file": "/tmp/malware/eicar.com",
+                    "md5": _EICAR_MD5,
+                    "sha1": _EICAR_SHA1,
+                },
+                "permalink": (
+                    "https://www.virustotal.com/gui/file/" + _EICAR_SHA256
+                ),
+            }
+        },
+        "location": "virustotal",
+    }
+
+
+def _fim_deleted_alert() -> dict[str, Any]:
+    """Realistic Wazuh rule-553 FIM alert (active response deleted the file)."""
+    return {
+        "id": "1720000003.553001",
+        "@timestamp": "2026-07-12T14:03:13.000Z",
+        "rule": {
+            "id": "553",
+            "level": 7,
+            "description": "File deleted.",
+            "groups": ["ossec", "syscheck", "syscheck_entry_deleted"],
+        },
+        "agent": {"id": "003", "name": "ubuntu-agent", "ip": "192.168.1.77"},
+        "syscheck": {
+            "path": "/tmp/malware/eicar.com",
+            "event": "deleted",
+            # Deletions carry only the pre-delete checksums.
+            "sha256_before": _EICAR_SHA256,
+            "md5_before": _EICAR_MD5,
+        },
+    }
+
+
+class TestFileArtifactExtraction:
+    """_extract_file_artifact + normalize_alert file/VT wiring (Phase 32a)."""
+
+    def test_rule_554_is_file_event_with_added_action(self) -> None:
+        """A syscheck 'added' alert normalises to a file event."""
+        incident = WazuhAdapter.normalize_alert(_fim_added_alert())
+        event = incident.events[0]
+        assert event.type == "file"
+        assert event.file is not None
+        assert event.file.fim_action == "added"
+
+    def test_rule_554_hashes_extracted_and_lowercased(self) -> None:
+        """syscheck *_after checksums land on the artifact, lowercased."""
+        incident = WazuhAdapter.normalize_alert(_fim_added_alert())
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.sha256 == _EICAR_SHA256  # input was uppercase
+        assert artifact.sha1 == _EICAR_SHA1
+        assert artifact.md5 == _EICAR_MD5
+        assert artifact.path == "/tmp/malware/eicar.com"
+
+    def test_rule_87105_is_file_event(self) -> None:
+        """The 'virustotal' rule group now classifies as a file event."""
+        incident = WazuhAdapter.normalize_alert(_vt_conviction_alert())
+        assert incident.events[0].type == "file"
+
+    def test_rule_87105_event_risk_confirmed(self) -> None:
+        """Level 12 maps to event_risk='confirmed'."""
+        incident = WazuhAdapter.normalize_alert(_vt_conviction_alert())
+        assert incident.events[0].event_risk == "confirmed"
+
+    def test_rule_87105_embedded_verdict_fields(self) -> None:
+        """String positives/total coerce to ints; malicious to bool."""
+        incident = WazuhAdapter.normalize_alert(_vt_conviction_alert())
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.vt_positives == 58
+        assert artifact.vt_total == 72
+        assert artifact.vt_malicious is True
+        assert artifact.vt_permalink.endswith(_EICAR_SHA256)
+
+    def test_rule_87105_hashes_from_vt_source(self) -> None:
+        """Without a syscheck block, hashes come from data.virustotal.source."""
+        incident = WazuhAdapter.normalize_alert(_vt_conviction_alert())
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.md5 == _EICAR_MD5
+        assert artifact.sha1 == _EICAR_SHA1
+        assert artifact.sha256 == ""  # 87105 carries no sha256
+        assert artifact.path == "/tmp/malware/eicar.com"
+
+    def test_rule_553_uses_before_hashes(self) -> None:
+        """Deletion alerts fall back to *_before checksums."""
+        incident = WazuhAdapter.normalize_alert(_fim_deleted_alert())
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.fim_action == "deleted"
+        assert artifact.sha256 == _EICAR_SHA256
+        assert artifact.md5 == _EICAR_MD5
+
+    def test_file_entity_emitted(self) -> None:
+        """FIM/VT alerts add a File entity keyed by path."""
+        incident = WazuhAdapter.normalize_alert(_fim_added_alert())
+        file_entities = [e for e in incident.entities if e.entity_type == "File"]
+        assert len(file_entities) == 1
+        assert file_entities[0].identifier == "/tmp/malware/eicar.com"
+        assert file_entities[0].metadata["sha256"] == _EICAR_SHA256
+        assert file_entities[0].metadata["fim_action"] == "added"
+
+    def test_non_file_alert_has_no_artifact(self, ssh_alert: dict[str, Any]) -> None:
+        """Regression: auth alerts carry file=None and no File entity."""
+        incident = WazuhAdapter.normalize_alert(ssh_alert)
+        assert all(e.file is None for e in incident.events)
+        assert all(e.entity_type != "File" for e in incident.entities)
+
+    def test_malformed_positives_tolerated(self) -> None:
+        """A non-numeric positives value degrades to None, never raises."""
+        alert = _vt_conviction_alert()
+        alert["data"]["virustotal"]["positives"] = "N/A"
+        incident = WazuhAdapter.normalize_alert(alert)
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.vt_positives is None
+        assert artifact.vt_total == 72  # sibling field still coerces
+
+    def test_unknown_syscheck_event_maps_to_none_action(self) -> None:
+        """An unrecognised syscheck.event never breaks validation."""
+        alert = _fim_added_alert()
+        alert["syscheck"]["event"] = "readdir"
+        incident = WazuhAdapter.normalize_alert(alert)
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.fim_action is None
+
+    def test_extract_returns_none_without_evidence(
+        self, ssh_alert: dict[str, Any]
+    ) -> None:
+        """The helper itself returns None when neither field family exists."""
+        assert _extract_file_artifact(ssh_alert) is None
+
+    def test_normalized_incident_still_validates(self) -> None:
+        """Round-trip: the enriched incident revalidates as NormalizedIncident."""
+        incident = WazuhAdapter.normalize_alert(_vt_conviction_alert())
+        revalidated = NormalizedIncident.model_validate(incident.model_dump())
+        artifact = revalidated.events[0].file
+        assert artifact is not None
+        assert artifact.vt_positives == 58
+
+
+class TestFileArtifactSentinelPassthrough:
+    """from_sentinel carries events[].file through (Phase 32a models change)."""
+
+    def test_canonical_file_event_survives_from_sentinel(self) -> None:
+        """A Sentinel-format alert with a file block keeps it end-to-end."""
+        from adte.models import SentinelIncident
+
+        raw = {
+            "incident_id": "INC-FILE-1",
+            "title": "Malware on host",
+            "source": "generic",
+            "created_time": "2026-07-12T14:00:00+00:00",
+            "entities": [],
+            "alerts": [
+                {
+                    "events": [
+                        {
+                            "user_principal_name": "svc@contoso.com",
+                            "ip_address": "",
+                            "type": "file",
+                            "timestamp": "2026-07-12T14:00:00+00:00",
+                            "file": {
+                                "path": "/tmp/malware/eicar.com",
+                                "sha256": _EICAR_SHA256.upper(),
+                                "vt_positives": 58,
+                                "vt_total": 72,
+                            },
+                        }
+                    ]
+                }
+            ],
+        }
+        incident = NormalizedIncident.from_sentinel(SentinelIncident(**raw))
+        artifact = incident.events[0].file
+        assert artifact is not None
+        assert artifact.sha256 == _EICAR_SHA256  # lowercased by the validator
+        assert artifact.vt_positives == 58
+
+    def test_eventless_payload_defaults_file_none(self) -> None:
+        """Events without a file key default to file=None."""
+        from adte.models import SentinelIncident
+
+        raw = {
+            "incident_id": "INC-NOFILE-1",
+            "title": "Plain auth alert",
+            "created_time": "2026-07-12T14:00:00+00:00",
+            "alerts": [
+                {
+                    "events": [
+                        {
+                            "user_principal_name": "a@contoso.com",
+                            "ip_address": "203.0.113.5",
+                            "type": "authentication",
+                            "timestamp": "2026-07-12T14:00:00+00:00",
+                        }
+                    ]
+                }
+            ],
+        }
+        incident = NormalizedIncident.from_sentinel(SentinelIncident(**raw))
+        assert incident.events[0].file is None

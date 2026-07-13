@@ -33,7 +33,7 @@ import warnings
 import requests
 import urllib3
 
-from adte.models import AlertEntity, NormalizedIncident, SignInMetadata
+from adte.models import AlertEntity, FileArtifact, NormalizedIncident, SignInMetadata
 
 _DEFAULT_INDEXER_URL = "https://localhost:9200"
 _DEFAULT_INDEXER_PORT = 9200
@@ -155,8 +155,11 @@ def _event_risk_from_level(level: int) -> Literal["none", "suspicious", "high", 
 
 
 # Keyword hints used to classify a Wazuh alert into an OCSF event ``type``.
+# "virustotal" is deliberately a file hint: Wazuh's VirusTotal integration
+# fires on FIM alerts (rule 87105 family), so its alerts are file events
+# even though their rule.groups carry only ["virustotal"].
 _FILE_TYPE_HINTS: frozenset[str] = frozenset({
-    "syscheck", "fim", "file_integrity", "ossec_file",
+    "syscheck", "fim", "file_integrity", "ossec_file", "virustotal",
 })
 _AUTH_TYPE_HINTS: frozenset[str] = frozenset({
     "authentication", "auth", "login", "logon", "sshd", "pam",
@@ -257,6 +260,88 @@ def _extract_srcip(alert: dict[str, Any]) -> str:
         if val:
             return val
     return alert.get("agent", {}).get("ip", "")
+
+
+def _coerce_int(value: Any) -> int | None:
+    """Defensively coerce a value to ``int``.
+
+    Wazuh's VirusTotal integration emits ``positives``/``total`` as strings
+    in some versions; malformed values must degrade, never raise.
+
+    Args:
+        value: Raw value from the alert JSON.
+
+    Returns:
+        The integer value, or ``None`` when coercion fails.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_file_artifact(alert: dict[str, Any]) -> FileArtifact | None:
+    """Extract file/scanner evidence from a Wazuh FIM or VirusTotal alert.
+
+    Reads two field families, tolerating either or both:
+
+    1. ``syscheck.*`` (FIM alerts, e.g. rules 554/553): ``path``,
+       ``sha256_after``/``sha1_after``/``md5_after`` with ``*_before``
+       fallbacks (deletion alerts carry only the pre-delete checksums),
+       and ``event`` (``added``/``modified``/``deleted``).
+    2. ``data.virustotal.*`` (VT integration alerts, e.g. rule 87105):
+       ``source.file``/``source.md5``/``source.sha1`` plus the verdict
+       fields ``positives``/``total``/``malicious``/``permalink``
+       (``positives``/``total`` defensively coerced from strings).
+
+    Args:
+        alert: Raw Wazuh alert dict.
+
+    Returns:
+        A ``FileArtifact`` when either field family is present, else
+        ``None`` — so non-file alerts carry no artifact (parity).
+    """
+    raw_syscheck = alert.get("syscheck")
+    syscheck: dict[str, Any] = raw_syscheck if isinstance(raw_syscheck, dict) else {}
+    raw_data = alert.get("data")
+    raw_vt = raw_data.get("virustotal") if isinstance(raw_data, dict) else None
+    vt: dict[str, Any] = raw_vt if isinstance(raw_vt, dict) else {}
+    if not syscheck and not vt:
+        return None
+
+    raw_source = vt.get("source")
+    vt_source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else {}
+
+    def _hash(name: str) -> str:
+        """Pick a checksum: syscheck after → before → VT source."""
+        return str(
+            syscheck.get(f"{name}_after")
+            or syscheck.get(f"{name}_before")
+            or vt_source.get(name)
+            or vt.get(name)
+            or ""
+        )
+
+    raw_action = syscheck.get("event")
+    fim_action = raw_action if raw_action in ("added", "modified", "deleted") else None
+
+    raw_malicious = vt.get("malicious")
+    vt_malicious: bool | None = None
+    if raw_malicious is not None:
+        coerced = _coerce_int(raw_malicious)
+        vt_malicious = bool(coerced) if coerced is not None else None
+
+    return FileArtifact(
+        path=str(syscheck.get("path") or vt_source.get("file") or ""),
+        sha256=_hash("sha256"),
+        sha1=_hash("sha1"),
+        md5=_hash("md5"),
+        fim_action=fim_action,
+        vt_positives=_coerce_int(vt.get("positives")) if "positives" in vt else None,
+        vt_total=_coerce_int(vt.get("total")) if "total" in vt else None,
+        vt_malicious=vt_malicious,
+        vt_permalink=str(vt.get("permalink") or ""),
+    )
 
 
 def _parse_wazuh_timestamp(ts: str) -> datetime:
@@ -500,7 +585,10 @@ class WazuhAdapter:
           - ``_event_risk_from_level(rule.level)`` → ``event_risk``
           - ``rule.mitre.id``         → ``technique_ids`` (native ATT&CK
             IDs when the Wazuh rule carries them; ``[]`` otherwise)
-        - Entities: Host always; IP and Account when extractable.
+          - ``_extract_file_artifact`` → ``file`` (``syscheck.*`` +
+            ``data.virustotal.*`` evidence for FIM/VT alerts; ``None``
+            on all other alerts)
+        - Entities: Host always; IP, Account, and File when extractable.
 
         Args:
             alert: Raw Wazuh alert dict (``_source`` from OpenSearch with
@@ -533,6 +621,8 @@ class WazuhAdapter:
             [str(t) for t in raw_ids if t] if isinstance(raw_ids, list) else []
         )
 
+        file_artifact = _extract_file_artifact(alert)
+
         sign_in = SignInMetadata(
             user_principal_name=user,
             ip_address=srcip,
@@ -545,6 +635,7 @@ class WazuhAdapter:
             app_display_name=rule.get("description", ""),
             event_risk=event_risk,
             technique_ids=technique_ids,
+            file=file_artifact,
             timestamp=ts,
         )
 
@@ -577,6 +668,19 @@ class WazuhAdapter:
                 entity_type="Account",
                 identifier=user,
                 metadata={},
+            ))
+        if file_artifact is not None:
+            entities.append(AlertEntity(
+                entity_type="File",
+                identifier=file_artifact.path or file_artifact.sha256 or "unknown",
+                metadata={
+                    "sha256": file_artifact.sha256,
+                    "md5": file_artifact.md5,
+                    "fim_action": file_artifact.fim_action or "",
+                    "vt_positives": file_artifact.vt_positives,
+                    "vt_total": file_artifact.vt_total,
+                    "vt_permalink": file_artifact.vt_permalink,
+                },
             ))
 
         return NormalizedIncident(
