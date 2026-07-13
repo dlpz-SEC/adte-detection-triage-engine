@@ -50,8 +50,8 @@ from typing import Literal
 
 # ---------------------------------------------------------------------------
 # Signal weights (the five core signals sum to 100 for an intuitive 0-100
-# risk scale; cluster_context is an ADDITIVE context signal that sits on
-# top — up to +15, with the final score capped at 100)
+# risk scale; cluster_context and file_reputation are ADDITIVE signals that
+# sit on top — up to +15 and +40 respectively, the final score capped at 100)
 # ---------------------------------------------------------------------------
 
 WEIGHT_IMPOSSIBLE_TRAVEL: int = 30
@@ -84,9 +84,22 @@ points on top (final score capped at 100).  When no correlated context
 exists the signal is not applicable — it never enters the signal set,
 so solo alerts score byte-identically to the five-signal engine."""
 
+WEIGHT_FILE_REPUTATION: int = 40
+"""Maximum ADDITIVE points from file-hash / malware reputation (Phase 32).
+
+Like ``WEIGHT_CLUSTER_CONTEXT`` this is additive-on-top, NOT part of the
+100-point core normalization base: a confirmed-malware file event adds up
+to this many points on top of the core score (final score capped at 100),
+enough on its own to carry an otherwise-quiet FIM alert into ``high_risk``.
+When the incident carries no file evidence the signal is not applicable —
+it never enters the signal set, so non-file alerts score byte-identically
+to the five-signal engine.  Malware reputation is an aggravator, never a
+mitigator: a clean scan registers 0 points (negative evidence) but never
+lowers the core score."""
+
 # Compile into a lookup for iteration.  The five CORE signals sum to 100;
-# cluster_context (15) is additive on top and deliberately excluded from
-# the core normalization denominator by the engine.
+# cluster_context (15) and file_reputation (40) are additive on top and
+# deliberately excluded from the core normalization denominator by the engine.
 SIGNAL_WEIGHTS: dict[str, int] = {
     "impossible_travel": WEIGHT_IMPOSSIBLE_TRAVEL,
     "mfa_fatigue": WEIGHT_MFA_FATIGUE,
@@ -94,6 +107,7 @@ SIGNAL_WEIGHTS: dict[str, int] = {
     "device_novelty": WEIGHT_DEVICE_NOVELTY,
     "login_hour_anomaly": WEIGHT_LOGIN_HOUR_ANOMALY,
     "cluster_context": WEIGHT_CLUSTER_CONTEXT,
+    "file_reputation": WEIGHT_FILE_REPUTATION,
 }
 
 # ---------------------------------------------------------------------------

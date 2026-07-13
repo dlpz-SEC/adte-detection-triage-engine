@@ -7,6 +7,7 @@ from adte.decision_policy import (
     THRESHOLD_HIGH,
     THRESHOLD_LOW,
     WEIGHT_CLUSTER_CONTEXT,
+    WEIGHT_FILE_REPUTATION,
     classify_verdict,
     compute_confidence,
 )
@@ -82,16 +83,20 @@ class TestComputeConfidence:
     def test_core_signal_weights_sum_to_100(self) -> None:
         """The five CORE signal weights sum to 100 for intuitive scaling.
 
-        ``cluster_context`` (Phase 31) is ADDITIVE — it sits on top of the
-        100-point core base and is deliberately excluded from the core
-        normalization, so it is excluded from this invariant too.
+        The ADDITIVE signals (``cluster_context`` Phase 31, ``file_reputation``
+        Phase 32) sit on top of the 100-point core base and are deliberately
+        excluded from the core normalization, so they are excluded from this
+        invariant too.
         """
-        core = {k: v for k, v in SIGNAL_WEIGHTS.items() if k != "cluster_context"}
+        additive = {"cluster_context", "file_reputation"}
+        core = {k: v for k, v in SIGNAL_WEIGHTS.items() if k not in additive}
         assert sum(core.values()) == 100
         assert len(core) == 5
 
-    def test_cluster_context_weight_is_additive_15(self) -> None:
-        """cluster_context carries 15 additive points (total table = 115)."""
+    def test_additive_signal_weights(self) -> None:
+        """The additive signals carry 15 + 40 points (total table = 155)."""
         assert WEIGHT_CLUSTER_CONTEXT == 15
         assert SIGNAL_WEIGHTS["cluster_context"] == 15
-        assert sum(SIGNAL_WEIGHTS.values()) == 115
+        assert WEIGHT_FILE_REPUTATION == 40
+        assert SIGNAL_WEIGHTS["file_reputation"] == 40
+        assert sum(SIGNAL_WEIGHTS.values()) == 155

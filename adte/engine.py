@@ -13,6 +13,7 @@ Orchestrates the full NIST 800-61 Detection & Analysis workflow:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,8 +25,9 @@ from adte.decision_policy import (
     compute_confidence,
 )
 from adte.intel.sigma_fp_registry import FPRegistry
-from adte.intel.threat_intel import check_threat_intel
+from adte.intel.threat_intel import check_file_hash, check_threat_intel
 from adte.models import (
+    FileReputationResult,
     NormalizedIncident,
     ThreatIntelResult,
     UserProfile,
@@ -64,6 +66,13 @@ def _ensure_aware(dt: datetime) -> datetime:
 # MFA fatigue detection parameters.
 _MFA_DENIAL_THRESHOLD: int = 3
 _MFA_WINDOW_MINUTES: float = 10.0
+
+# File-reputation (Phase 32) hash-lookup guards.
+#   _MAX_HASH_LOOKUPS caps live VirusTotal /files calls per incident so a
+#   hostile many-file alert cannot blow the route deadline; _HASH_RE keeps
+#   malformed hashes out of check_file_hash (which would raise ValueError).
+_MAX_HASH_LOOKUPS: int = 5
+_HASH_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
 
 # Recommended actions keyed by verdict.
 _RECOMMENDED_ACTIONS: dict[Verdict, str] = {
@@ -106,12 +115,18 @@ class TriageEngine:
     Each pipeline stage mutates internal state and returns ``self``
     so calls can be chained fluently.
 
-    Five core signals produce the 0-100 base score.  When the caller
-    supplies correlated-case context (``cluster_context``), a sixth
-    ADDITIVE signal contributes up to +15 on top (capped at 100) —
-    context is an aggravator, never a mitigator.  Without context the
-    signal is not applicable: it never enters the signal set, and the
-    output is byte-identical to the five-signal engine.
+    Five core signals produce the 0-100 base score.  Two ADDITIVE signals
+    then sit on top (each capped, the total capped at 100), both
+    aggravators that never lower the core score:
+
+    - ``cluster_context`` (+15 max) when the caller supplies correlated-case
+      context (Phase 31);
+    - ``file_reputation`` (+40 max) when the incident carries file/malware
+      evidence, resolved during ``enrich()`` (Phase 32).
+
+    Each additive signal is registered only when applicable — absent its
+    input it never enters the signal set, so the output is byte-identical
+    to the five-signal engine (parity proven on the bundled examples).
     """
 
     def __init__(
@@ -141,6 +156,10 @@ class TriageEngine:
         # Enrichment artefacts (populated by enrich()).
         self._threat_intel_results: dict[str, ThreatIntelResult] = {}
         self._fp_matches: dict[str, str | None] = {}
+        # File-hash reputation results, keyed by hash (Phase 32).  Populated
+        # only for file events whose embedded verdict is absent — an empty
+        # dict on every non-file incident keeps solo output unchanged.
+        self._file_reputation_results: dict[str, FileReputationResult] = {}
 
         # Signal results (populated by score()).
         self._signals: dict[str, SignalResult] = {}
@@ -166,6 +185,8 @@ class TriageEngine:
         Populates:
         - ``_threat_intel_results``: IP → ThreatIntelResult
         - ``_fp_matches``: IP → matching pattern_type or None
+        - ``_file_reputation_results``: hash → FileReputationResult (Phase 32,
+          only for file events whose alert embeds no VirusTotal verdict)
 
         Returns:
             ``self`` for fluent chaining.
@@ -181,6 +202,35 @@ class TriageEngine:
             self._threat_intel_results[ip] = check_threat_intel(ip)
             _, ptype = self._fp_registry.is_known_benign_any(ip)
             self._fp_matches[ip] = ptype
+
+        # File-hash reputation (Phase 32).  The embedded Wazuh/VirusTotal
+        # verdict (event.file.vt_positives/vt_total) always wins and costs
+        # zero API calls — a live lookup runs only as a fallback when no
+        # embedded verdict is present, bounded by _MAX_HASH_LOOKUPS.
+        seen_hashes: set[str] = set()
+        for event in self._incident.events:
+            artifact = event.file
+            if artifact is None:
+                continue
+            file_hash = (artifact.sha256 or artifact.sha1 or artifact.md5).lower()
+            if not file_hash or file_hash in seen_hashes:
+                continue
+            if len(seen_hashes) >= _MAX_HASH_LOOKUPS:
+                break
+            seen_hashes.add(file_hash)
+            # Embedded verdict present → no lookup needed (the signal reads
+            # it straight off the artifact).
+            if artifact.vt_positives is not None and artifact.vt_total:
+                continue
+            if _HASH_RE.fullmatch(file_hash):
+                try:
+                    self._file_reputation_results[file_hash] = check_file_hash(
+                        file_hash
+                    )
+                except ValueError:
+                    # Malformed hash slipped past the regex guard — never
+                    # let enrichment raise; the signal simply has no lookup.
+                    pass
         return self
 
     def llm_enrich(self) -> "TriageEngine":
@@ -246,6 +296,16 @@ class TriageEngine:
             self._signals["cluster_context"] = cluster_result
             self._risk_score = min(100, self._risk_score + round(cluster_result[0]))
 
+        # File reputation (Phase 32) is likewise ADDITIVE, registered only
+        # when the incident carries file/malware evidence — so it never
+        # enters the core 100-point base and non-file alerts stay
+        # byte-identical.  Malware is an aggravator: up to +40 on top
+        # (capped at 100), 0 on a clean scan, never a reduction.
+        file_result = self._compute_file_reputation()
+        if file_result is not None:
+            self._signals["file_reputation"] = file_result
+            self._risk_score = min(100, self._risk_score + round(file_result[0]))
+
         # Confidence: coverage × agreement.
         # Skipped signals do not contribute to coverage; coverage is over
         # the APPLICABLE signals (len(self._signals)): the 5 core signals,
@@ -295,6 +355,21 @@ class TriageEngine:
                 "auto_close_incident",
                 "update_baseline",
             ]
+
+        # File-reputation recommendations (Phase 32).  Appended only when the
+        # malware signal actually contributed points, so the base verdict
+        # action lists stay byte-identical for every non-malware alert.  These
+        # are RECOMMENDATIONS ONLY — ADTE is triage-only; Wazuh's active
+        # response is the executor that quarantines/deletes.
+        file_result = self._signals.get("file_reputation")
+        if file_result is not None and file_result[0] > 0:
+            self._actions += [
+                "quarantine_file",
+                "preserve_forensic_copy",
+                "hash_sweep_fleet",
+            ]
+            if self._verdict == "high_risk":
+                self._actions.append("isolate_host")
         return self
 
     def to_output(self, *, use_llm: bool = False) -> dict[str, Any]:
@@ -696,6 +771,100 @@ class TriageEngine:
 
         return (score, rationale, confidence)
 
+    def _compute_file_reputation(self) -> SignalResult | None:
+        """Evaluate the additive file-hash / malware reputation signal (Phase 32).
+
+        Scores the best malware evidence across the incident's file events,
+        preferring the verdict embedded in the source alert (Wazuh's
+        VirusTotal integration) over ADTE's own hash lookup (populated in
+        ``enrich()``) — the embedded verdict costs zero API calls.
+
+        Evidence tiers, best-across-events, capped at the 40-point weight
+        (an aggravator — a clean scan registers 0, never a reduction):
+
+        - embedded VT ratio ≥ 0.5 (or ``vt_malicious``) → full 40
+        - embedded VT 0 < ratio < 0.5 → 20
+        - ADTE hash lookup malicious → full 40; 0 < confidence < 0.5 → 20
+        - a ``file`` event marked ``event_risk == "confirmed"`` with no hash
+          to verify → 15 ("unverified malware claim")
+        - clean scan / clean lookup → 0 points, but the signal still fires
+          (negative evidence is applicable)
+
+        Returns:
+            ``(score, rationale, confidence)`` when the incident carries any
+            file evidence, else ``None`` — the signal is then not applicable
+            and never enters the signal set (parity on non-file alerts).
+        """
+        weight = SIGNAL_WEIGHTS["file_reputation"]
+        best_points: float | None = None
+        best_confidence = 0.0
+        best_label = ""
+        best_note = ""
+        malicious_labels: list[str] = []
+
+        for event in self._incident.events:
+            artifact = event.file
+            file_hash = ""
+            if artifact is not None:
+                file_hash = (artifact.sha256 or artifact.sha1 or artifact.md5).lower()
+            label = ""
+            if artifact is not None:
+                label = artifact.path or (file_hash[:12] if file_hash else "")
+            label = label or "unknown file"
+
+            points: float | None = None
+            confidence = 0.0
+            note = ""
+
+            if (
+                artifact is not None
+                and artifact.vt_positives is not None
+                and artifact.vt_total
+            ):
+                ratio = artifact.vt_positives / artifact.vt_total
+                note = (
+                    f"VirusTotal {artifact.vt_positives}/{artifact.vt_total} "
+                    f"engines flagged it malicious (embedded verdict)"
+                )
+                if artifact.vt_malicious or ratio >= 0.5:
+                    points, confidence = float(weight), min(1.0, 0.5 + ratio)
+                elif ratio > 0:
+                    points, confidence = 20.0, 0.4 + ratio
+                else:
+                    points, confidence = 0.0, 0.8
+            elif file_hash and file_hash in self._file_reputation_results:
+                result = self._file_reputation_results[file_hash]
+                tag_str = ", ".join(result.tags) if result.tags else "no tags"
+                note = (
+                    f"hash reputation {result.source} "
+                    f"(confidence {result.confidence:.2f}; {tag_str})"
+                )
+                if result.is_malicious:
+                    points, confidence = float(weight), result.confidence
+                elif result.confidence > 0:
+                    points, confidence = 20.0, result.confidence
+                else:
+                    points, confidence = 0.0, 0.7
+            elif event.type == "file" and event.event_risk == "confirmed":
+                points, confidence = 15.0, 0.4
+                note = "source flagged confirmed malware (no hash to verify)"
+
+            if points is None:
+                continue  # this event carried no scoreable file evidence
+            if points >= float(weight):
+                malicious_labels.append(label)
+            if best_points is None or points > best_points:
+                best_points, best_confidence = points, confidence
+                best_label, best_note = label, note
+
+        if best_points is None:
+            return None  # not applicable — no file evidence in the incident
+
+        rationale = f"Malware reputation — {best_label}: {best_note}"
+        if len(malicious_labels) > 1:
+            rationale += f"; {len(malicious_labels)} malicious file(s) total"
+        return (best_points, rationale, best_confidence)
+
     # ------------------------------------------------------------------
     # Output helpers
     # ------------------------------------------------------------------
@@ -704,9 +873,12 @@ class TriageEngine:
         """Compile raw evidence artefacts for the output report.
 
         Returns:
-            Dict of evidence sections keyed by category.
+            Dict of evidence sections keyed by category.  File sections
+            (``files`` / ``file_reputation``) are added ONLY when file
+            evidence exists — an unconditional key would change every
+            solo alert's serialized output and break sha256 parity.
         """
-        return {
+        evidence: dict[str, Any] = {
             "threat_intel": {
                 ip: {
                     "is_malicious": r.is_malicious,
@@ -724,6 +896,40 @@ class TriageEngine:
             "user": self._incident.user,
             "incident_id": self._incident.incident_id,
         }
+
+        # File observables (Phase 32) — conditional, see docstring.
+        file_artifacts = [
+            (event.file, event) for event in self._incident.events
+            if event.file is not None
+        ]
+        if file_artifacts:
+            evidence["files"] = [
+                {
+                    "path": fa.path,
+                    "sha256": fa.sha256,
+                    "sha1": fa.sha1,
+                    "md5": fa.md5,
+                    "fim_action": fa.fim_action,
+                    "vt_positives": fa.vt_positives,
+                    "vt_total": fa.vt_total,
+                    "vt_permalink": fa.vt_permalink,
+                }
+                for fa, _event in file_artifacts
+            ]
+        if self._file_reputation_results:
+            evidence["file_reputation"] = {
+                h: {
+                    "is_malicious": r.is_malicious,
+                    "confidence": r.confidence,
+                    "positives": r.positives,
+                    "total": r.total,
+                    "source": r.source,
+                    "tags": r.tags,
+                    "permalink": r.permalink,
+                }
+                for h, r in self._file_reputation_results.items()
+            }
+        return evidence
 
     def _build_safety(self) -> dict[str, Any]:
         """Compile safety metadata for the output report.
