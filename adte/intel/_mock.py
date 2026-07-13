@@ -1,8 +1,9 @@
 """Internal mock threat intelligence lookups.
 
-Provides deterministic IP-range matching for development, testing, and
-fallback when no external API keys are configured.  Not part of the public
-API — imported only by ``threat_intel`` and ``aggregator``.
+Provides deterministic IP-range matching and file-hash table matching for
+development, testing, and fallback when no external API keys are
+configured.  Not part of the public API — imported only by ``threat_intel``
+and ``aggregator``.
 
 NIST 800-61 Phase: Detection & Analysis — enriches observables with threat
 context to support triage decisions without requiring external API access.
@@ -12,8 +13,9 @@ from __future__ import annotations
 
 import ipaddress
 from datetime import datetime, timezone
+from typing import Literal
 
-from adte.models import ThreatIntelResult
+from adte.models import FileReputationResult, ThreatIntelResult
 
 # ---------------------------------------------------------------------------
 # Deterministic mock IP ranges
@@ -103,5 +105,97 @@ def _mock_lookup(ip: str) -> ThreatIntelResult:
         confidence=0.0,
         source="mock-no-match",
         tags=[],
+        queried_at=now,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic mock file-hash table
+# ---------------------------------------------------------------------------
+#
+# EICAR test file — the industry-standard, universally-recognised antivirus
+# test string.  All three digest algorithms of the same file are listed so
+# a lookup is a "hit" regardless of which hash type the caller supplies.
+# One additional demo-only "suspicious" entry (sha256 of the literal string
+# "test") rounds out the fixture with a non-malicious, non-clean case.
+#
+# Table shape: hash -> (confidence, source, tags).
+
+_MALICIOUS_HASHES: dict[str, tuple[float, str, list[str]]] = {
+    # EICAR test file — sha256 / md5 / sha1 of the same well-known file.
+    "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f": (
+        0.95,
+        "mock-vt-file-feed",
+        ["eicar-test", "malware"],
+    ),
+    "44d88612fea8a8f36de82e1278abb02f": (
+        0.95,
+        "mock-vt-file-feed",
+        ["eicar-test", "malware"],
+    ),
+    "3395856ce81f2b7382dee72602f798b642f14140": (
+        0.95,
+        "mock-vt-file-feed",
+        ["eicar-test", "malware"],
+    ),
+    # Demo-only: sha256("test") — a deterministic "suspicious" (not
+    # confirmed-malicious) fixture entry.
+    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08": (
+        0.45,
+        "mock-vt-file-feed",
+        ["suspicious"],
+    ),
+}
+
+
+def _mock_hash_lookup(
+    file_hash: str, hash_type: Literal["md5", "sha1", "sha256"]
+) -> FileReputationResult:
+    """Return a deterministic mock FileReputationResult for a pre-validated hash.
+
+    Checks the hash against a hardcoded table of known malicious/suspicious
+    hashes (the EICAR test file across all three digest algorithms, plus one
+    demo "suspicious" entry).  Returns a benign result for hashes that do
+    not match any table entry.  Table hits synthesise ``positives``/``total``
+    from the confidence score (out of a fixed 70-engine denominator, matching
+    a typical VirusTotal engine count) since the mock has no real engine
+    data; misses leave both ``None``.
+
+    Args:
+        file_hash: A pre-validated, lowercase hex digest string.  No
+            validation is performed here — the caller must validate first.
+        hash_type: The digest algorithm implied by *file_hash*'s length.
+
+    Returns:
+        A ``FileReputationResult`` based on hardcoded hash-table matching.
+    """
+    now = datetime.now(timezone.utc)
+    entry = _MALICIOUS_HASHES.get(file_hash)
+
+    if entry is not None:
+        confidence, source, tags = entry
+        return FileReputationResult(
+            file_hash=file_hash,
+            hash_type=hash_type,
+            is_malicious=confidence >= 0.5,
+            confidence=confidence,
+            positives=round(confidence * 70),
+            total=70,
+            source=source,
+            tags=tags,
+            permalink=f"https://www.virustotal.com/gui/file/{file_hash}",
+            queried_at=now,
+        )
+
+    return FileReputationResult(
+        file_hash=file_hash,
+        hash_type=hash_type,
+        is_malicious=False,
+        confidence=0.0,
+        positives=None,
+        total=None,
+        source="mock-no-match",
+        tags=[],
+        permalink="",
         queried_at=now,
     )

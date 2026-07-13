@@ -1,16 +1,23 @@
 """Threat intelligence aggregator — combines results from multiple providers.
 
 ``ThreatIntelAggregator`` queries all configured threat intel sources and
-returns a single normalised ``ThreatIntelResult``.  It is instantiated via
-``from_env()`` which reads ``ADTE_ABUSEIPDB_KEY``, ``ADTE_VT_API_KEY``, and
-``ADTE_OTX_KEY`` from the environment.
+returns a single normalised ``ThreatIntelResult`` (IP lookups via
+``check()``) or ``FileReputationResult`` (file-hash lookups via
+``check_hash()``).  It is instantiated via ``from_env()`` which reads
+``ADTE_ABUSEIPDB_KEY``, ``ADTE_VT_API_KEY``, and ``ADTE_OTX_KEY`` from the
+environment.
 
-Fallback behaviour:
+Fallback behaviour (IP lookups):
   - If no keys at all are set, the deterministic mock lookup is used.
   - If at least one key is set, only live API clients are queried.
   - If all live clients return errors, the mock lookup is used as a last
     resort and a warning is logged.
   - Private and loopback IPs are short-circuited without any API call.
+
+Fallback behaviour (file-hash lookups): hash reputation is VirusTotal-only
+(AbuseIPDB and OTX are IP-only feeds), so there is no multi-source
+averaging step — see ``check_hash()`` for its own, simpler resolution
+order.
 
 NIST 800-61 Phase: Detection & Analysis — aggregates threat context from
 multiple feeds to produce a single weighted enrichment signal.
@@ -25,12 +32,13 @@ import os
 import threading
 import time
 from datetime import date, datetime, timezone
+from typing import Literal
 
-from adte.intel._mock import _mock_lookup
+from adte.intel._mock import _mock_hash_lookup, _mock_lookup
 from adte.intel.abuseipdb import AbuseIPDBClient
 from adte.intel.otx import OTXClient
 from adte.intel.virustotal import VirusTotalClient
-from adte.models import ThreatIntelResult
+from adte.models import FileReputationResult, ThreatIntelResult
 
 _log = logging.getLogger(__name__)
 
@@ -187,8 +195,17 @@ class ThreatIntelAggregator:
 
     Attributes:
         _use_mock: Whether to use the deterministic mock exclusively.
-        _clients: Live API client instances to query.
-        _cache: Per-instance result cache keyed by IP string.
+        _clients: Live API client instances to query (IP lookups).
+        _cache: Per-instance result cache, keyed by bare IP string for
+            ``check()`` and by ``"hash:<value>"`` for ``check_hash()`` — the
+            prefix keeps the two lookup kinds from colliding in the same
+            cache store.
+        _vt_client: Direct reference to the configured ``VirusTotalClient``,
+            or ``None`` when VirusTotal is not configured.  File-hash
+            lookups are VT-only, so ``check_hash()`` needs this without
+            scanning ``_clients`` by type.
+        _vt_quota: Direct reference to the VirusTotal ``_DailyQuota``, or
+            ``None`` when VirusTotal is not configured.
     """
 
     def __init__(
@@ -212,14 +229,23 @@ class ThreatIntelAggregator:
         self._clients: list[AbuseIPDBClient | VirusTotalClient | OTXClient] = []
         self._cache: _TTLCache = _TTLCache()
         self._quotas: list[_DailyQuota] = []
+        # Direct references to the VirusTotal client/quota — file-hash
+        # reputation is VT-only, so check_hash() needs them without
+        # scanning self._clients by type.  None when VT is not configured.
+        self._vt_client: VirusTotalClient | None = None
+        self._vt_quota: _DailyQuota | None = None
 
         if not self._use_mock:
             if abuseipdb_key:
                 self._clients.append(AbuseIPDBClient(abuseipdb_key))
                 self._quotas.append(_DailyQuota(_quota_limit("ABUSEIPDB", 1000)))
             if vt_key:
-                self._clients.append(VirusTotalClient(vt_key))
-                self._quotas.append(_DailyQuota(_quota_limit("VIRUSTOTAL", 500)))
+                vt_client = VirusTotalClient(vt_key)
+                vt_quota = _DailyQuota(_quota_limit("VIRUSTOTAL", 500))
+                self._clients.append(vt_client)
+                self._quotas.append(vt_quota)
+                self._vt_client = vt_client
+                self._vt_quota = vt_quota
             # OTX works unauthenticated; always include when in live mode.
             self._clients.append(OTXClient(otx_key))
             self._quotas.append(_DailyQuota(_quota_limit("OTX", 10000)))
@@ -350,4 +376,74 @@ class ThreatIntelAggregator:
             queried_at=datetime.now(timezone.utc),
         )
         self._cache[ip] = result
+        return result
+
+    def check_hash(
+        self, file_hash: str, hash_type: Literal["md5", "sha1", "sha256"]
+    ) -> FileReputationResult:
+        """Query VirusTotal for a file hash and return a reputation result.
+
+        File-hash reputation is VirusTotal-only (AbuseIPDB and OTX are
+        IP-only feeds), so there is no cross-source averaging step here —
+        unlike ``check()``, resolution either reaches VirusTotal or falls
+        back to the mock directly.
+
+        Resolution order:
+          1. Return the cached result if this hash was already queried.
+          2. Return the deterministic mock result if no keys are configured
+             at all (pure mock mode).
+          3. Return the mock result if VirusTotal specifically is not
+             configured, or its daily quota is exhausted.
+          4. Query VirusTotal; fall back to the mock result if the call
+             errors.
+
+        Args:
+            file_hash: Pre-validated, lowercase hex digest string.
+            hash_type: The digest algorithm implied by *file_hash*'s length.
+
+        Returns:
+            A ``FileReputationResult``.
+        """
+        cache_key = f"hash:{file_hash}"
+
+        # 1. Cache hit (get-once: entries can expire between checks).
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # 2. Pure mock mode.
+        if self._use_mock:
+            result = _mock_hash_lookup(file_hash, hash_type)
+            self._cache[cache_key] = result
+            return result
+
+        # 3. VirusTotal not configured or its daily quota is exhausted
+        # (tolerate hand-constructed aggregators without _vt_client/_vt_quota
+        # — tests build instances via __new__, mirroring check()'s handling
+        # of a missing _quotas list).
+        vt_client = getattr(self, "_vt_client", None)
+        vt_quota = getattr(self, "_vt_quota", None)
+        if vt_client is None or vt_quota is None or not vt_quota.try_acquire():
+            _log.info(
+                "ThreatIntelAggregator: VirusTotal unavailable for hash lookup "
+                "of %s; serving mock result",
+                file_hash,
+            )
+            result = _mock_hash_lookup(file_hash, hash_type)
+            self._cache[cache_key] = result
+            return result
+
+        # 4. Live VirusTotal lookup, falling back to the mock on error.
+        live_result = vt_client.check_hash(file_hash, hash_type)
+        if live_result.source.endswith("-error"):
+            _log.warning(
+                "ThreatIntelAggregator: VirusTotal hash lookup failed for %s; "
+                "falling back to mock",
+                file_hash,
+            )
+            result = _mock_hash_lookup(file_hash, hash_type)
+        else:
+            result = live_result
+
+        self._cache[cache_key] = result
         return result

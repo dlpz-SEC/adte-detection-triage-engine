@@ -1,15 +1,18 @@
-"""VirusTotal v3 HTTP client for IP address reputation lookups.
+"""VirusTotal v3 HTTP client for IP address and file-hash reputation lookups.
 
-Queries the VirusTotal ``/api/v3/ip_addresses/{ip}`` endpoint and maps
-``last_analysis_stats.malicious`` counts to a normalised confidence score.
+Queries the VirusTotal ``/api/v3/ip_addresses/{ip}`` and
+``/api/v3/files/{hash}`` endpoints and maps ``last_analysis_stats.malicious``
+counts to a normalised confidence score.
 
 Configure via environment variable ``ADTE_VT_API_KEY``.
 
 Rate limit: 4 requests/minute for public API keys.  A configurable
-inter-request sleep (default 15 s) is applied after each successful call.
+inter-request sleep (default 15 s) is applied after each successful call,
+shared between IP and hash lookups.
 
-NIST 800-61 Phase: Detection & Analysis — enriches IP observables with
-multi-engine antivirus verdict data to support triage decisions.
+NIST 800-61 Phase: Detection & Analysis — enriches IP and file-hash
+observables with multi-engine antivirus verdict data to support triage
+decisions.
 """
 
 from __future__ import annotations
@@ -17,14 +20,16 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from typing import Literal
 
 import requests
 
-from adte.models import ThreatIntelResult
+from adte.models import FileReputationResult, ThreatIntelResult
 
 _log = logging.getLogger(__name__)
 
 _BASE_URL = "https://www.virustotal.com/api/v3/ip_addresses"
+_FILES_BASE_URL = "https://www.virustotal.com/api/v3/files"
 _TIMEOUT = 10  # seconds
 
 
@@ -47,6 +52,33 @@ def _neutral(ip: str) -> ThreatIntelResult:
         confidence=0.0,
         source="virustotal-error",
         tags=[],
+        queried_at=datetime.now(timezone.utc),
+    )
+
+
+def _neutral_hash(
+    file_hash: str, hash_type: Literal["md5", "sha1", "sha256"]
+) -> FileReputationResult:
+    """Return a neutral result indicating a failed or skipped hash lookup.
+
+    Args:
+        file_hash: The hash that could not be queried.
+        hash_type: The digest algorithm implied by *file_hash*'s length.
+
+    Returns:
+        A ``FileReputationResult`` with zero confidence and source
+        ``"virustotal-error"``.
+    """
+    return FileReputationResult(
+        file_hash=file_hash,
+        hash_type=hash_type,
+        is_malicious=False,
+        confidence=0.0,
+        positives=None,
+        total=None,
+        source="virustotal-error",
+        tags=[],
+        permalink="",
         queried_at=datetime.now(timezone.utc),
     )
 
@@ -144,5 +176,93 @@ class VirusTotalClient:
             confidence=confidence,
             source="virustotal",
             tags=[],
+            queried_at=datetime.now(timezone.utc),
+        )
+
+    def check_hash(
+        self, file_hash: str, hash_type: Literal["md5", "sha1", "sha256"]
+    ) -> FileReputationResult:
+        """Query VirusTotal for a file hash's analysis statistics.
+
+        Computes a confidence score as ``malicious / total_engines`` where
+        total includes malicious, suspicious, undetected, and harmless
+        counts (timeout is excluded from the denominator) — identical
+        arithmetic to ``check()`` for IP addresses.  Shares the same
+        class-level rate-limit throttle as IP lookups: hash and IP checks
+        compete for the same 4 req/min window.
+
+        Args:
+            file_hash: Pre-validated, lowercase hex digest string.
+            hash_type: The digest algorithm implied by *file_hash*'s length.
+
+        Returns:
+            A ``FileReputationResult``.  On HTTP error, network failure, or
+            a response that cannot be parsed, returns a neutral result with
+            ``source="virustotal-error"`` and logs a warning.
+        """
+        if not self._api_key:
+            _log.warning(
+                "VirusTotalClient: no API key configured, skipping hash lookup for %s",
+                file_hash,
+            )
+            return _neutral_hash(file_hash, hash_type)
+
+        url = f"{_FILES_BASE_URL}/{file_hash}"
+        headers = {"x-apikey": self._api_key}
+
+        # Only sleep the remaining window if a previous call was made recently.
+        elapsed = time.time() - VirusTotalClient._last_call_time
+        wait = self._rate_limit_sleep - elapsed
+        if wait > 0:
+            time.sleep(wait)
+
+        try:
+            response = requests.get(url, headers=headers, timeout=_TIMEOUT)
+            VirusTotalClient._last_call_time = time.time()  # record on class, not self
+
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            _log.warning(
+                "VirusTotalClient: hash request failed for %s (%s)",
+                file_hash,
+                type(exc).__name__,
+            )
+            return _neutral_hash(file_hash, hash_type)
+
+        try:
+            attributes = response.json().get("data", {}).get("attributes", {})
+            stats: dict[str, int] = attributes.get("last_analysis_stats", {})
+            malicious = stats.get("malicious", 0)
+            suspicious = stats.get("suspicious", 0)
+            undetected = stats.get("undetected", 0)
+            harmless = stats.get("harmless", 0)
+            total = malicious + suspicious + undetected + harmless
+
+            confidence = malicious / total if total > 0 else 0.0
+
+            threat_label = attributes.get("popular_threat_classification", {}).get(
+                "suggested_threat_label"
+            )
+            tags = [threat_label] if threat_label else []
+        except (ValueError, AttributeError, TypeError) as exc:
+            # response.json() raises ValueError on malformed JSON; a
+            # non-dict payload raises AttributeError/TypeError on .get().
+            _log.warning(
+                "VirusTotalClient: failed to parse hash response for %s (%s)",
+                file_hash,
+                type(exc).__name__,
+            )
+            return _neutral_hash(file_hash, hash_type)
+
+        return FileReputationResult(
+            file_hash=file_hash,
+            hash_type=hash_type,
+            is_malicious=confidence >= 0.5,
+            confidence=confidence,
+            positives=malicious,
+            total=total,
+            source="virustotal",
+            tags=tags,
+            permalink=f"https://www.virustotal.com/gui/file/{file_hash}",
             queried_at=datetime.now(timezone.utc),
         )
