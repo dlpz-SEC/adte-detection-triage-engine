@@ -49,7 +49,8 @@ ADTE is not a SOC replacement. It is a force multiplier — it handles the mecha
 
 ## What This Is
 
-- Automated triage for security incidents from multiple sources using 5 core weighted signals, plus an additive cluster-context signal (up to +15) when an alert correlates with recent related alerts
+- Automated triage for security incidents from multiple sources using 5 core weighted signals, plus two additive signals: cluster-context (up to +15, correlated related alerts) and file-reputation (up to +40, malware verdict) — both aggravators that never reduce a score
+- Wazuh FIM/VirusTotal malware-pipeline integration — ingests rule 554/87105/553 alerts, scores the embedded VirusTotal verdict (or an ADTE `/files` hash lookup), correlates the same hash across hosts into one campaign case, and recommends containment. **Triage-only: ADTE recommends, Wazuh's active response executes** (see `docs/WAZUH_MALWARE_INTEGRATION.md`)
 - Source-agnostic OCSF-inspired incident schema — normalized `events[]` with per-event `type` and `source`; severity is engine-derived (rejected on input)
 - Deterministic scoring (0-100 risk score, 0-100 confidence)
 - Human-in-the-loop by default — recommends an action, never executes one
@@ -281,9 +282,10 @@ commercial API key or expect delays.
 | IP Reputation | 20 | C2/Tor/scanner feeds, but NAT can cause FPs |
 | Device Novelty | 15 | New device alone is moderate signal |
 | Login Hour Anomaly | 10 | Weakest standalone, best as corroboration |
+| File Reputation (additive) | +40 | Malware verdict — embedded VirusTotal result or ADTE `/files` hash lookup; aggravator only, clean scan = 0, never reduces a score |
 | Cluster Context (additive) | +15 | Correlated-case siblings + kill-chain progression — aggravator only, never reduces a score |
 
-The five core weights sum to 100 and map directly to the 0–100 base score. Cluster context is additive on top: up to +15 when the alert belongs to a correlated case (1 sibling → +5, 2 → +8, 3+ → +10; ascending kill-chain → +5 more; capped at 15, final score capped at 100). An uncorrelated alert scores byte-identically to the 5-signal engine. See [docs/DECISIONS.md](docs/DECISIONS.md) for threshold logic and confidence formula.
+The five core weights sum to 100 and map directly to the 0–100 base score. Two additive signals sit on top (final score capped at 100): **file reputation** adds up to +40 when a file event carries a malware verdict (confirmed → +40, partial detection → +20, clean → 0), and **cluster context** adds up to +15 when the alert belongs to a correlated case (1 sibling → +5, 2 → +8, 3+ → +10; ascending kill-chain → +5 more). Each is not-applicable (never enters the signal set) when its input is absent, so a plain uncorrelated non-file alert scores byte-identically to the 5-signal engine. See [docs/DECISIONS.md](docs/DECISIONS.md) for threshold logic and confidence formula.
 
 ## Safety Model
 
@@ -297,7 +299,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-577 tests across 31 files — test_geo, test_intel, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration
+666 tests across 34 files — test_geo, test_intel, test_intel_hash, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration, test_file_signal, test_file_integration
 
 Example verdicts:
 - `incident_account_takeover_tor_exfil.json` → **CRITICAL** (~99)
@@ -387,6 +389,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Verdict History + Feedback History views with filter and clear controls
 - [x] Alert correlation / case management — rolling-window entity correlation (IP/user), ATT&CK kill-chain detection, explainable case-level escalation, Cases view + `/api/cases` endpoints; per-alert verdicts untouched at the time (Phase 30 — superseded by the cluster-context signal below)
 - [x] Cluster-context 6th signal — correlated-case context (sibling volume + kill-chain) feeds the per-alert score as an additive signal, up to +15 on top of the 100-point core; solo alerts byte-identical, parity golden-pinned (Phase 31)
+- [x] File-reputation 7th signal + Wazuh malware-pipeline integration — ingests FIM/VirusTotal alerts (rule 554/87105/553), an additive malware verdict (up to +40) built from the embedded VT result or an ADTE `/files` hash lookup, file-hash campaign correlation across hosts, and recommend-only containment actions; ADTE never executes (Phase 32, see `docs/WAZUH_MALWARE_INTEGRATION.md`)
 - [ ] Real Sentinel REST API integration (live Azure ingestion)
 - [ ] Automated containment/response-execution layer (gated) — currently recommend-only
 - [ ] Batch processing mode
