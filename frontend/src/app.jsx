@@ -799,6 +799,22 @@ import ReactDOM from 'react-dom/client';
     /* TriageResult                                                         */
     /* ------------------------------------------------------------------ */
 
+    // Alert-supplied URLs are UNTRUSTED (a hostile alert controls
+    // data.virustotal.permalink). React does not sanitize href, so a
+    // javascript:/data: URI would be executable on click. Render a link only
+    // when it is an https:// URL on VirusTotal's own host.
+    function safeVtPermalink(raw) {
+      if (typeof raw !== 'string' || !raw) return null;
+      try {
+        const u = new URL(raw);
+        if (u.protocol !== 'https:') return null;
+        if (u.hostname !== 'virustotal.com' && !u.hostname.endsWith('.virustotal.com')) return null;
+        return u.href;
+      } catch {
+        return null;  // not an absolute URL → never rendered as a link
+      }
+    }
+
     function MalwarePanel({ result }) {
       const files = result.evidence?.files;
       if (!files || files.length === 0) return null;
@@ -845,12 +861,16 @@ import ReactDOM from 'react-dom/client';
                       {hash.slice(0, 16)}… ({hash.length === 64 ? 'sha256' : hash.length === 40 ? 'sha1' : 'md5'})
                     </div>
                   )}
-                  {f.vt_permalink && (
-                    <a href={f.vt_permalink} target="_blank" rel="noopener noreferrer"
-                       style={{ fontSize: '0.68rem', color: 'var(--accent)' }}>
-                      VirusTotal report →
-                    </a>
-                  )}
+                  {(() => {
+                    const href = safeVtPermalink(f.vt_permalink);
+                    if (!href) return null;
+                    return (
+                      <a href={href} target="_blank" rel="noopener noreferrer"
+                         style={{ fontSize: '0.68rem', color: 'var(--accent)' }}>
+                        VirusTotal report →
+                      </a>
+                    );
+                  })()}
                 </div>
               );
             })}

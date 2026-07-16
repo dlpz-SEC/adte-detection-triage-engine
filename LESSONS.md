@@ -104,3 +104,73 @@ discarding real findings. The tell: the `<failures>` list names `find:*`/`verify
 the dead dimensions in a follow-up workflow before believing "0 confirmed." Round 1 of the
 Phase-30 review lost 2 finder dimensions + 6 verifiers this way; round 2 surfaced 7 more real
 findings the truncated round would have implied didn't exist.
+
+---
+
+### 2026-07-12 — Add an aggravator signal additively, not by share-renormalization
+
+**Rule:** When adding a new signal to a weighted 0-100 scorer where the signal is meant to
+only *raise* risk (an aggravator — correlation context, reputation, etc.), add its points on
+top (`risk = min(100, core + points)`), do NOT grow the denominator and renormalize
+(`risk = raw*100/(100+W)`). Share-renormalization is **non-monotonic**: a low-scoring new
+signal drops the denominator's fill-ratio, so a strong core score goes DOWN when the signal
+fires weakly. Phase 31's first design did exactly this and downgraded the Wazuh skip case
+78→67 (high→medium) on a single correlated sibling — correlation *lowering* a verdict.
+Additive uplift is monotonic by construction, keeps the existing weights' meaning intact, and
+(bonus) leaves the core scoring block literally untouched, shrinking a change-controlled diff.
+Reserve share-normalization for signals that can legitimately pull a score in either direction.
+
+---
+
+### 2026-07-12 — Self-exclusion must extend to every derived/cached aggregate, not just the direct query
+
+**Rule:** When a computation deliberately excludes an entity from itself (a re-triaged alert
+must not count as its own correlation "sibling"), auditing the direct row query is not enough —
+any *pre-aggregated* value read alongside it was computed over the FULL set and silently
+re-includes the excluded entity. Phase 31's peek self-excluded the incident from
+sibling_count/tactics/max-risk (per-row `WHERE incident_id != ?`) but read `kill_chain_detected`
+from the case-level stored blob, which was computed over all members including this one → a
+re-triaged member could self-award the +5 kill-chain bonus off its own tactics. Fix: recompute
+the aggregate over the self-excluded set, don't read the cached whole-set value. The tell: a
+finding says "field X honors the exclusion but field Y (an aggregate/rollup) doesn't."
+
+---
+
+### 2026-07-13 — An optional feature's new output keys must be conditional, or byte-parity dies
+
+**Rule:** When bolting an optional feature onto an existing *serialized* contract (an API response,
+an evidence blob, an audit row) while promising "inactive input ⇒ unchanged output", every new key
+must be gated on that feature's data actually existing. An unconditional key breaks parity even
+when the feature never fires — `{"files": []}` or `{"file_reputation": {}}` is a *different*
+serialization from no key at all, so every existing payload's hash changes and the "byte-identical"
+claim is false. Phase 32 added file evidence to `_build_evidence()`; emitting the two new keys
+unconditionally would have silently broken all four golden examples while the signal itself was
+provably inert. The same discipline already holds implicitly for rationale/signal_summary entries
+(only registered signals appear) — make it explicit for evidence and any dict you serialize.
+
+Generalises past scoring: the parity contract is over the **serialized bytes**, not over the
+feature's logic. "The code path can't run" is necessary but not sufficient — grep for every dict
+literal the output is built from. The cheap enforcement is the one that caught nothing here only
+because it was designed in up front: hash the full normalized output of known inputs at a rollback
+tag, re-hash after each change-controlled batch, and pin the values in a permanent golden test.
+
+---
+
+### 2026-07-13 — React does not sanitize `href`; allowlist scheme AND host for any URL from alert data
+
+**Rule:** React escapes text children, so it is easy to assume rendering untrusted data is safe. It
+is not: `href`/`src` are **not** sanitized, so `<a href={untrusted}>` with a `javascript:` URI is
+executable on click, and any `https://` URI is a phishing navigation wearing your UI's chrome.
+Phase 32 rendered `data.virustotal.permalink` — a field an attacker fully controls, since malware
+metadata *is* attacker-authored — straight into an `<a href>` labelled "VirusTotal report". Fix at
+the sink: `new URL(raw)`, require `protocol === 'https:'`, require the hostname to be on an
+allowlist, render nothing on mismatch or parse failure. Better still, **derive** the URL from an
+already-validated field (the hash) instead of accepting the source's string at all.
+
+Two traps this exposed. (1) **CSP is a backstop, not the control.** Here `script-src` without
+`'unsafe-inline'` happened to block the `javascript:` escalation — so the bug graded phishing, not
+stored XSS. That is luck, and it silently becomes stored XSS the day someone adds `'unsafe-inline'`
+for a chart library. (2) **In a security tool, "the SIEM is trusted" is wrong** — the whole payload
+describes what an adversary did, and the triage endpoint accepts analyst-pasted JSON. Treat every
+alert field as hostile input, and audit the *attack surface* before shipping, not after: functional
+tests and byte-parity proofs both passed while this sink was wide open.
