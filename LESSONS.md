@@ -174,3 +174,44 @@ for a chart library. (2) **In a security tool, "the SIEM is trusted" is wrong** 
 describes what an adversary did, and the triage endpoint accepts analyst-pasted JSON. Treat every
 alert field as hostile input, and audit the *attack surface* before shipping, not after: functional
 tests and byte-parity proofs both passed while this sink was wide open.
+
+---
+
+### 2026-07-16 — Reproducing a mechanism is not confirming a diagnosis
+
+**Rule:** Before fixing a reported symptom, **observe the failing path itself** — one probe of the
+actual request beats any amount of plausible theory. A reproduction proves a mechanism *exists*; it
+does not prove that mechanism *produced this symptom*. Both can be true at once, and the coherence
+of the story is what makes the error invisible.
+
+The queue rendered zeros. The theory: intel keys set → VirusTotal sleeps 15 s/lookup → ~10 IPs →
+~150 s → gunicorn `--timeout 60` kills the worker. It was mechanically real — measured 15.0 s per
+lookup — so it got fixed and shipped, and the dashboard **still showed zeros**. The actual cause was
+a plain `401`: sessions are wiped by every redeploy, and the UI mistranslated auth failure into
+"WAZUH UNAVAILABLE". A single `curl /api/queue` would have shown `{"error":"Authentication
+required"}` in seconds, before any code was written. The throttle fix was worth keeping — it closed
+a real DoS — which is precisely the trap: **a fix that is independently correct feels like
+confirmation.** The tell is that the symptom survives the fix; treat that as "the diagnosis was
+wrong," not "there must be a second bug."
+
+Corollary for HTTP clients: **a non-2xx response with a JSON body defeats the naive fetch chain.**
+`.then(r => r.json())` parses a 401 body happily, `.catch()` never fires (it is not a network
+error), and the destructured fields come back `undefined` — so downstream code sees "empty data" and
+any `else` branch will confidently narrate a cause it never established. Check `r.status` (or
+`r.ok`) before `.json()`, and never let a fallback branch assert *why* data is missing unless it
+actually knows.
+
+---
+
+### 2026-07-16 — Document the environment a quoted output value depends on, or it reads as a bug forever
+
+**Rule:** Any concrete value pinned in docs (an example score, a benchmark, a sample response) that
+varies with configuration must state the configuration it was captured under. Otherwise every reader
+who reproduces it under different config files it as a defect — including your future self.
+
+The README quoted the high-risk example as **79**; the test suite golden-pinned it at **99**. It sat
+on the follow-up list for two sessions as a confirmed "doc bug". It was neither: with live
+threat-intel keys the fixture's IP is not flagged (0 pts → 79), while the mock feed pins
+`198.51.100.23` as known C2 (+20 → 99). Both numbers were correct; only the missing "captured with
+mock intel / no API keys" caption was wrong. Prefer quoting the value a **fresh clone with no
+credentials** reproduces (that is what a reader gets, and what CI pins), then note the variance.
