@@ -267,6 +267,19 @@ _EXAMPLE_FILES: dict[str, str] = {
     "medium_risk": "incident_needs_human_ambiguous.json",
 }
 
+# Raw Wazuh alerts (NOT Sentinel-format) seeded into the demo queue so the
+# malware-response pipeline is visible without a reachable Wazuh instance:
+# file added -> VirusTotal conviction -> active-response deletion, plus the
+# same hash on a second host (a campaign the case layer correlates).  These
+# are deliberately kept OUT of _EXAMPLE_FILES: that dict feeds /api/examples,
+# whose four incidents are golden-pinned (GOLDEN_SOLO) and must not move.
+_DEMO_WAZUH_FILES: tuple[str, ...] = (
+    "wazuh_malware_01_file_added.json",
+    "wazuh_malware_02_virustotal_conviction.json",
+    "wazuh_malware_03_active_response_deleted.json",
+    "wazuh_malware_04_second_host_campaign.json",
+)
+
 _log = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
@@ -972,6 +985,45 @@ def triage_batch() -> Any:
 # Phase 31) so a queue row's score matches what the analyst sees on
 # click-through triage; the 5-min cache means context may lag by up to the
 # TTL — same staleness class as the threat-intel cache.
+def _demo_incidents() -> list[NormalizedIncident]:
+    """Build the curated alert set served when no live Wazuh host is reachable.
+
+    Two families, deliberately normalised through the same code paths a live
+    deployment uses:
+
+    1. The four Sentinel-format identity incidents (``_EXAMPLE_FILES``) —
+       impossible travel, MFA fatigue, benign VPN, ambiguous.
+    2. Four RAW Wazuh alerts (``_DEMO_WAZUH_FILES``) telling the malware story
+       end-to-end: file added (554) → VirusTotal conviction (87105) →
+       active-response deletion (553), plus the same hash convicted on a second
+       host — which the case layer correlates into one campaign once the alerts
+       are triaged.  These run through ``WazuhAdapter.normalize_alert``, the
+       real ingestion path, so the demo exercises the adapter rather than
+       faking its output.
+
+    Returns:
+        Normalised incidents for the queue.  Never raises: a malformed or
+        missing demo file is skipped and logged, since an empty-ish queue is
+        preferable to a 500 on the landing view.
+    """
+    from adte.adapters.wazuh import WazuhAdapter  # deferred, mirrors the caller
+
+    incidents: list[NormalizedIncident] = []
+    for filename in _EXAMPLE_FILES.values():
+        try:
+            raw = json.loads((EXAMPLES_DIR / filename).read_text(encoding="utf-8"))
+            incidents.append(NormalizedIncident.from_sentinel(SentinelIncident(**raw)))
+        except Exception as exc:
+            _log.error("demo example %s failed to load (%s)", filename, type(exc).__name__)
+    for filename in _DEMO_WAZUH_FILES:
+        try:
+            raw = json.loads((EXAMPLES_DIR / filename).read_text(encoding="utf-8"))
+            incidents.append(WazuhAdapter.normalize_alert(raw))
+        except Exception as exc:
+            _log.error("demo alert %s failed to load (%s)", filename, type(exc).__name__)
+    return incidents
+
+
 @app.route("/api/queue")
 @require_role("analyst")
 @limiter.limit("20/minute")
@@ -1014,7 +1066,7 @@ def queue() -> Any:
     min_level = _clamp(request.args.get("min_level"),  1,  1,  15)
 
     incidents: list[NormalizedIncident] = []
-    data_source = "mock"
+    data_source = "demo"
     try:
         # Deferred import: keeps server startup clean when the adapter's
         # env vars (ADTE_WAZUH_HOST etc.) are absent.
@@ -1022,9 +1074,10 @@ def queue() -> Any:
         incidents = WazuhAdapter.from_env().fetch_incidents(hours=hours, limit=limit, min_level=min_level)
         data_source = "wazuh"
     except Exception:
-        for filename in _EXAMPLE_FILES.values():
-            raw = json.loads((EXAMPLES_DIR / filename).read_text(encoding="utf-8"))
-            incidents.append(NormalizedIncident.from_sentinel(SentinelIncident(**raw)))
+        # No reachable Wazuh instance — serve the curated demo set.  This is
+        # the EXPECTED state for the hosted deployment (the Indexer lives on a
+        # private VM), not a failure, and the UI labels it as such.
+        incidents = _demo_incidents()
 
     now = time.monotonic()
     rows: list[dict[str, Any]] = []

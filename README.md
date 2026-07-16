@@ -117,6 +117,25 @@ python -m adte.server
 # Open http://localhost:5000
 ```
 
+**Alert Queue — demo mode.** With no Wazuh Indexer reachable (the expected state
+for a hosted deployment, since the Indexer lives on a private VM), the queue
+serves a curated 8-alert set rather than an empty view: the four identity
+incidents above, plus **four raw Wazuh alerts** carrying the malware-response
+story end-to-end —
+
+| Seeded alert | Score | Evidence path exercised |
+|--------------|-------|-------------------------|
+| `554` file added — `/tmp/malware/eicar.com` | 73 `high_risk` | no verdict yet → **ADTE** VirusTotal hash lookup |
+| `87105` VirusTotal conviction (58/72) | 73 `high_risk` | **embedded Wazuh verdict** — zero API calls |
+| `553` file deleted by active response | 73 `high_risk` | pre-delete checksum still convicts |
+| `87105` on a **second host** | 73 → **78** | joins the first host's case by **file hash**, then gains +5 cluster context |
+
+These are normalised through `WazuhAdapter.normalize_alert` — the same ingestion
+path a live Indexer feeds — so the demo exercises the adapter rather than
+faking its output. Click any row to triage it; the malware rows render the
+file-reputation signal, the VirusTotal evidence panel, and the correlated
+campaign case. No Wazuh credentials and no VirusTotal key are required.
+
 ## Wazuh Integration
 
 > **Two ways in — only one needs infrastructure.**

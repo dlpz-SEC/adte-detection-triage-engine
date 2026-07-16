@@ -1131,19 +1131,26 @@ import ReactDOM from 'react-dom/client';
             </div>
           );
         }
+        // Demo mode is the EXPECTED state for the hosted deployment (the Wazuh
+        // Indexer lives on a private VM), so it reads as deliberate, not as an
+        // outage.  The old copy shouted "WAZUH UNAVAILABLE" in warning amber
+        // and told visitors to configure an env var — an operator message on a
+        // showcase, which made a healthy deploy look broken.
         return (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '10px 16px', borderRadius: 6, marginBottom: 16,
-            background: 'rgba(234,179,8,0.08)',
-            border: '1px solid var(--medium)',
+            background: 'rgba(59,130,246,0.08)',
+            border: '1px solid var(--accent)',
           }}>
-            <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>⚠</span>
-            <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--medium)', fontWeight: 600 }}>
-              WAZUH UNAVAILABLE
+            <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>▶</span>
+            <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
+              DEMO MODE
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              — Showing {rows ? rows.length : 3} example incident{(!rows || rows.length !== 1) ? 's' : ''} (mock fallback). Configure <code style={{ fontSize: '0.7rem' }}>ADTE_WAZUH_HOST</code> to connect a live instance.
+              — {rows ? rows.length : 8} sample alert{(!rows || rows.length !== 1) ? 's' : ''}: identity attacks plus a live Wazuh
+              FIM → VirusTotal → active-response malware pipeline. Click any row to triage it.
+              Point <code style={{ fontSize: '0.7rem' }}>ADTE_WAZUH_HOST</code> at a Wazuh Indexer to stream real alerts.
             </span>
           </div>
         );
