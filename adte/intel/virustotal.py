@@ -32,6 +32,16 @@ _BASE_URL = "https://www.virustotal.com/api/v3/ip_addresses"
 _FILES_BASE_URL = "https://www.virustotal.com/api/v3/files"
 _TIMEOUT = 10  # seconds
 
+# Maximum seconds this client may EVER block waiting on the shared rate-limit
+# window.  Zero: never block.  These lookups run on the request thread inside
+# TriageEngine.enrich(), which iterates observables sequentially — sleeping the
+# 15 s window per observable turned a 10-IP queue refresh into ~150 s and let
+# gunicorn's --timeout 60 kill the worker (a self-inflicted DoS, and the same
+# path an attacker could drive with a many-hash alert).  When the window is
+# still closed we abstain instead: a "-error" source, which the aggregator
+# already excludes from the confidence average.
+_MAX_THROTTLE_WAIT: float = 0.0
+
 
 # _neutral() mirrors the same helper in abuseipdb.py and otx.py.
 # Each copy uses a different source string so the aggregator can identify
@@ -87,9 +97,10 @@ class VirusTotalClient:
     """HTTP client for the VirusTotal v3 IP address reputation API.
 
     Rate limit: 4 requests/minute (public key).  A class-level timestamp
-    tracks the last call time so the inter-request delay is only applied
-    when a previous call was made within the rate-limit window — single
-    lookups incur no delay.
+    tracks the last call time.  When a call would land inside that window
+    the client **abstains** (returns a neutral ``-error`` result the
+    aggregator excludes from its average) rather than sleeping — it runs on
+    the request thread and must never block it.  See ``_MAX_THROTTLE_WAIT``.
 
     Attributes:
         _api_key: VirusTotal API key, or ``None`` if unconfigured.
@@ -101,6 +112,23 @@ class VirusTotalClient:
     # VirusTotalClient objects are ever created they compete on the same
     # rate-limit window, which is the correct conservative behaviour.
     _last_call_time: float = 0.0
+
+    @classmethod
+    def _throttled(cls, rate_limit_sleep: float) -> bool:
+        """Report whether the shared rate-limit window is still closed.
+
+        The caller is on a request thread, so a closed window must SKIP the
+        lookup rather than sleep through it (see ``_MAX_THROTTLE_WAIT``).
+
+        Args:
+            rate_limit_sleep: The configured inter-request spacing.
+
+        Returns:
+            ``True`` when the next call would have to wait longer than
+            ``_MAX_THROTTLE_WAIT``.
+        """
+        wait = rate_limit_sleep - (time.time() - cls._last_call_time)
+        return wait > _MAX_THROTTLE_WAIT
 
     def __init__(self, api_key: str | None, *, rate_limit_sleep: float = 15.0) -> None:
         """Initialise the client.
@@ -123,8 +151,8 @@ class VirusTotalClient:
         (timeout is excluded from the denominator).  IPs with score ≥ 0.5
         are marked malicious.
 
-        Sleeps for ``rate_limit_sleep`` seconds after each successful call to
-        respect the public API rate limit of 4 requests/minute.
+        Abstains (never blocks) when the shared 4-req/min rate-limit window
+        is still closed — see the class docstring and ``_MAX_THROTTLE_WAIT``.
 
         Args:
             ip: IPv4 address string to look up.
@@ -141,11 +169,15 @@ class VirusTotalClient:
         url = f"{_BASE_URL}/{ip}"
         headers = {"x-apikey": self._api_key}
 
-        # Only sleep the remaining window if a previous call was made recently.
-        elapsed = time.time() - VirusTotalClient._last_call_time
-        wait = self._rate_limit_sleep - elapsed
-        if wait > 0:
-            time.sleep(wait)
+        # Rate-limit window still closed → SKIP, never sleep.  enrich() runs
+        # this on the request thread and loops observables sequentially, so
+        # sleeping the window blocks the worker (N observables x 15s) and
+        # gunicorn's --timeout kills the request outright.  A skipped lookup
+        # is a "-error" source, which the aggregator excludes from the
+        # average, so VirusTotal simply abstains for this observable.
+        if self._throttled(self._rate_limit_sleep):
+            _log.info("VirusTotalClient: rate-limit window open, skipping %s", ip)
+            return _neutral(ip)
 
         try:
             response = requests.get(url, headers=headers, timeout=_TIMEOUT)
@@ -210,11 +242,14 @@ class VirusTotalClient:
         url = f"{_FILES_BASE_URL}/{file_hash}"
         headers = {"x-apikey": self._api_key}
 
-        # Only sleep the remaining window if a previous call was made recently.
-        elapsed = time.time() - VirusTotalClient._last_call_time
-        wait = self._rate_limit_sleep - elapsed
-        if wait > 0:
-            time.sleep(wait)
+        # Rate-limit window still closed → SKIP, never sleep (see check()).
+        # The embedded Wazuh/VirusTotal verdict is preferred anyway, so a
+        # skipped hash lookup only affects alerts that carry no verdict.
+        if self._throttled(self._rate_limit_sleep):
+            _log.info(
+                "VirusTotalClient: rate-limit window open, skipping hash %s", file_hash
+            )
+            return _neutral_hash(file_hash, hash_type)
 
         try:
             response = requests.get(url, headers=headers, timeout=_TIMEOUT)

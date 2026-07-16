@@ -7,6 +7,7 @@ path.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -28,6 +29,62 @@ _UNKNOWN_SHA256 = "0" * 64
 # ---------------------------------------------------------------------------
 # check_file_hash() — validation + mock-fallback mode
 # ---------------------------------------------------------------------------
+
+
+class TestRateLimitNeverBlocks:
+    """The client abstains inside the rate-limit window; it must NEVER sleep.
+
+    Regression guard for the self-inflicted DoS: enrich() runs these lookups
+    on the request thread and iterates observables sequentially, so sleeping
+    the 15 s window per observable blew gunicorn's --timeout 60 and killed the
+    worker (a 10-IP /api/queue refresh blocked ~150 s and returned nothing).
+    """
+
+    def _warm_window(self) -> None:
+        """Mark the shared rate-limit window as just-used."""
+        VirusTotalClient._last_call_time = time.time()
+
+    def teardown_method(self) -> None:
+        """Reset the class-level window so other tests are unaffected."""
+        VirusTotalClient._last_call_time = 0.0
+
+    @resp.activate
+    def test_ip_check_inside_window_returns_fast_without_http(self) -> None:
+        """A throttled IP lookup abstains immediately and issues no request."""
+        self._warm_window()
+        client = VirusTotalClient("key")  # default 15s spacing, NOT overridden
+        start = time.time()
+        result = client.check("203.0.113.9")
+        assert time.time() - start < 1.0, "client slept on the request thread"
+        assert result.source == "virustotal-error"
+        assert len(resp.calls) == 0  # abstained, never hit the network
+
+    @resp.activate
+    def test_hash_check_inside_window_returns_fast_without_http(self) -> None:
+        """A throttled hash lookup abstains immediately and issues no request."""
+        self._warm_window()
+        client = VirusTotalClient("key")
+        start = time.time()
+        result = client.check_hash(_EICAR_SHA256, "sha256")
+        assert time.time() - start < 1.0, "client slept on the request thread"
+        assert result.source == "virustotal-error"
+        assert len(resp.calls) == 0
+
+    @resp.activate
+    def test_open_window_still_queries(self) -> None:
+        """With the window open the lookup proceeds normally (no regression)."""
+        VirusTotalClient._last_call_time = 0.0
+        resp.add(
+            resp.GET,
+            f"https://www.virustotal.com/api/v3/files/{_EICAR_SHA256}",
+            json={"data": {"attributes": {"last_analysis_stats": {
+                "malicious": 58, "suspicious": 0, "undetected": 14,
+                "harmless": 0, "timeout": 0}}}},
+            status=200,
+        )
+        result = VirusTotalClient("key").check_hash(_EICAR_SHA256, "sha256")
+        assert result.is_malicious is True
+        assert len(resp.calls) == 1
 
 
 class TestCheckFileHash:
