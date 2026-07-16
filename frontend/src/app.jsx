@@ -1014,6 +1014,7 @@ import ReactDOM from 'react-dom/client';
       const [limit, setLimit] = useState(50);
       const [minLevel, setMinLevel] = useState(1);
       const [lastFetch, setLastFetch] = useState(null);
+      const [authError, setAuthError] = useState(null);
       const [sortCol, setSortCol] = useState('risk_score');
       const [sortDir, setSortDir] = useState('desc');
 
@@ -1021,14 +1022,33 @@ import ReactDOM from 'react-dom/client';
         setLoading(true);
         const params = new URLSearchParams({ hours: h, limit: lim, min_level: ml });
         fetch(`${API_BASE}/api/queue?${params}`, { headers: authHeaders() })
-          .then(r => r.json())
+          .then(r => {
+            // An auth failure is NOT a Wazuh outage.  A 401/403 body is valid
+            // JSON, so without this status check it parsed cleanly, left
+            // rows/source undefined, and rendered the amber "WAZUH
+            // UNAVAILABLE" banner — telling the operator to configure a SIEM
+            // when they simply needed to log in.  Sessions are wiped by every
+            // redeploy, so this is the common case, not an edge case.
+            if (r.status === 401 || r.status === 403) {
+              const err = new Error('auth');
+              err.authStatus = r.status;
+              throw err;
+            }
+            return r.json();
+          })
           .then(data => {
+            setAuthError(null);
             setRows(data.rows || []);
             setDataSource(data.source || null);
             setLastFetch(new Date());
             setLoading(false);
           })
-          .catch(() => { setRows([]); setDataSource(null); setLoading(false); });
+          .catch(e => {
+            setAuthError(e && e.authStatus ? e.authStatus : null);
+            setRows([]);
+            setDataSource(null);
+            setLoading(false);
+          });
       }, []);
 
       useEffect(() => {
@@ -1071,6 +1091,28 @@ import ReactDOM from 'react-dom/client';
       // (null / wazuh banner / mock banner) — cleaner than nested ternaries.
       const sourceBanner = (() => {
         if (loading && rows === null) return null;
+        // Auth first: a logged-out session must never be reported as a SIEM
+        // outage.  Sessions are cleared by every redeploy (ephemeral disk).
+        if (authError) {
+          return (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 16px', borderRadius: 6, marginBottom: 16,
+              background: 'rgba(59,130,246,0.08)',
+              border: '1px solid var(--accent)',
+            }}>
+              <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>🔒</span>
+              <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
+                {authError === 403 ? 'INSUFFICIENT ROLE' : 'AUTHENTICATION REQUIRED'}
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                {authError === 403
+                  ? '— Your API key lacks the analyst role needed to read the queue.'
+                  : '— Open Settings and log in with an ADTE API key to load the queue. Sessions are cleared on every redeploy.'}
+              </span>
+            </div>
+          );
+        }
         if (dataSource === 'wazuh') {
           return (
             <div style={{
