@@ -74,6 +74,14 @@ import OverviewPage from './overview.jsx';
     };
     const EXAMPLE_BADGE_CLASS = { high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low' };
 
+    // Public demo passkey (analyst role) — deliberately embedded so a recruiter
+    // can try the live deployment without being provisioned a key. Analyst scope
+    // ONLY: runs triage and reads the queue, cases, threat intel, and audit log;
+    // it cannot delete anything or read config/other keys. To revoke, rotate
+    // ADTE_API_KEY_ANALYST on Railway (this literal stays in git history but stops
+    // working the moment the env value changes).
+    const RECRUITER_PASSKEY = '63bf8ebf59563765ce55e95f534b0b9724baa5e7c5a5b3b7';
+
     const VIEW_LABELS = {
       overview: 'Overview',
       triage: 'Alert Input', queue: 'Alert Queue', cases: 'Cases',
@@ -1126,8 +1134,8 @@ import OverviewPage from './overview.jsx';
               </span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 {authError === 403
-                  ? '— Your API key lacks the analyst role needed to read the queue.'
-                  : '— Open Settings and log in with an ADTE API key to load the queue. Sessions are cleared on every redeploy.'}
+                  ? '— This passkey lacks the analyst role needed to read the queue.'
+                  : '— Open Settings and log in to load the queue. Recruiters: grab the analyst passkey there. Sessions are cleared on every redeploy.'}
               </span>
             </div>
           );
@@ -2884,14 +2892,14 @@ import OverviewPage from './overview.jsx';
                   <input type="password" value={adteApiKey}
                     onChange={e => { setAdteApiKey(e.target.value); setKeyStatus(null); setKeyRole(''); }}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                    placeholder="Paste your ADTE API key…" className="mono"
+                    placeholder="Paste your ADTE passkey…" className="mono"
                     style={{ width: '100%', fontSize: '0.8rem', marginBottom: 8 }} />
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 10 }}>
-                    Key is exchanged for an HttpOnly session cookie — it is never stored in the browser after login.
+                    The passkey is exchanged for an HttpOnly session cookie — it is never stored in the browser after login.
                   </div>
                   {keyStatus === 'invalid' && (
                     <div style={{ fontSize: '0.7rem', color: 'var(--high)', marginBottom: 8, fontWeight: 600 }}>
-                      Key not recognised — check it matches an <code>ADTE_API_KEY_*</code> value in your <code>.env</code>.
+                      Passkey not recognised — check it matches an <code>ADTE_API_KEY_*</code> value in your <code>.env</code>.
                     </div>
                   )}
                 </div>
@@ -2904,6 +2912,26 @@ import OverviewPage from './overview.jsx';
               <button className="btn btn-primary" onClick={handleLogin} disabled={!adteApiKey.trim()}>Log In</button>
             )}
           </div>
+
+          {!isLoggedIn && (
+            <div className="panel" style={{ marginTop: 16, borderLeft: '3px solid var(--accent)' }}>
+              <div className="panel-header">Recruiter access</div>
+              <div className="panel-body" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Trying the live demo? Use the shared analyst passkey below. It runs triage and
+                reads the alert queue, cases, threat intel, and audit log (it cannot delete
+                anything or read configuration).
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                  <code className="mono" style={{ fontSize: '0.72rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', padding: '4px 8px', borderRadius: 4, userSelect: 'all', wordBreak: 'break-all' }}>
+                    {RECRUITER_PASSKEY}
+                  </code>
+                  <button className="btn" style={{ fontSize: '0.7rem', padding: '5px 12px', flexShrink: 0 }}
+                    onClick={() => { setAdteApiKey(RECRUITER_PASSKEY); setKeyStatus(null); setKeyRole(''); }}>
+                    Fill passkey
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="panel" style={{ marginTop: 20, borderLeft: '3px solid var(--medium)' }}>
             <div className="panel-body" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
@@ -3174,7 +3202,7 @@ import OverviewPage from './overview.jsx';
             // Surface the real reason per HTTP status so a role-based-access
             // failure is not mislabelled as a CORS or network problem.
             if (status === 401) {
-              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in with your API key.`);
+              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in — recruiters can use the analyst passkey there.`);
             } else if (status === 403) {
               // Includes the CSRF "Cross-origin request rejected" and the
               // demo-mode / insufficient-permissions messages verbatim.
@@ -3208,7 +3236,7 @@ import OverviewPage from './overview.jsx';
               return;
             }
             if (status === 401) {
-              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in with your API key.`);
+              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in — recruiters can use the analyst passkey there.`);
             } else if (status === 403) {
               setError(d?.error || 'Request forbidden by the server.');
             } else {

@@ -419,7 +419,7 @@ function ViewCardsGrid({ onNav }) {
   return (
     <div style={{ paddingBottom: 44 }}>
       <SectionHeading eyebrow="CONSOLE TOUR" title="Ten views, one investigation"
-        sub="Everything below is live in this deployment — click any card to open the view. Read views work without a login; chips mark the ones whose data needs an API key in secured mode." />
+        sub="Everything below is live in this deployment — click any card to open the view. Read views work without a login; chips mark the ones whose data needs a passkey in secured mode (recruiters: the analyst passkey is in Settings)." />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
         {VIEW_CARDS.map(v => (
           <div key={v.action} className="panel" onClick={() => onNav(v.action)} role="button" tabIndex={0}
