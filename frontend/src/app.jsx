@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
+import OverviewPage from './overview.jsx';
 
     // Same-origin: empty base means every fetch is relative ("/api/...", "/health"),
     // so the UI talks to whatever origin served it — localhost:5000/8080 in dev, or the
@@ -11,6 +12,19 @@ import ReactDOM from 'react-dom/client';
     // The cookie is sent automatically by the browser — no JS-readable
     // storage is used and no header needs to be constructed manually.
     const authHeaders = () => ({});
+
+    // First-visit flag for the Overview landing page. This is the ONLY thing the
+    // app ever puts in localStorage — a '1' marker, nothing sensitive (the auth
+    // promise above still holds). window.localStorage PROPERTY ACCESS itself can
+    // throw in blocked-storage modes (e.g. Chrome with cookies disabled), so the
+    // whole expression sits inside try/catch, not just getItem. When storage is
+    // unavailable every visit looks like a first visit and lands on the Overview
+    // — the right degradation for a portfolio site.
+    const SEEN_OVERVIEW_KEY = 'adte_seen_overview';
+    const hasSeenOverview = () => {
+      try { return window.localStorage.getItem(SEEN_OVERVIEW_KEY) === '1'; }
+      catch { return false; }
+    };
 
     /* ------------------------------------------------------------------ */
     /* Constants                                                            */
@@ -61,6 +75,7 @@ import ReactDOM from 'react-dom/client';
     const EXAMPLE_BADGE_CLASS = { high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low' };
 
     const VIEW_LABELS = {
+      overview: 'Overview',
       triage: 'Alert Input', queue: 'Alert Queue', cases: 'Cases',
       signals: 'Signal Breakdown', mitre: 'MITRE / NIST',
       intel: 'Threat Intel',
@@ -71,6 +86,7 @@ import ReactDOM from 'react-dom/client';
     };
 
     const VIEW_TO_KEY = {
+      overview: 'overview',
       triage: 'alert-input', queue: 'alert-queue', cases: 'cases',
       signals: 'signal-breakdown', mitre: 'mitre-nist',
       intel: 'threat-intel',
@@ -80,6 +96,9 @@ import ReactDOM from 'react-dom/client';
     };
 
     const NAV = [
+      { section: 'START', items: [
+        { key: 'overview', label: 'Overview', action: 'view:overview', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+      ]},
       { section: 'TRIAGE', items: [
         { key: 'alert-input', label: 'Alert Input', action: 'view:triage', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
         { key: 'alert-queue', label: 'Alert Queue', action: 'view:queue', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
@@ -1101,7 +1120,7 @@ import ReactDOM from 'react-dom/client';
               background: 'rgba(59,130,246,0.08)',
               border: '1px solid var(--accent)',
             }}>
-              <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>🔒</span>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
               <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
                 {authError === 403 ? 'INSUFFICIENT ROLE' : 'AUTHENTICATION REQUIRED'}
               </span>
@@ -3003,7 +3022,9 @@ import ReactDOM from 'react-dom/client';
       const [triageCount, setTriageCount] = useState(0);
       const [scoreBarPct, setScoreBarPct] = useState(0);
       const [utcTime, setUtcTime] = useState('--:--:-- UTC');
-      const [activeView, setActiveView] = useState('queue');
+      // First visit lands on the Overview; once the visitor enters the console
+      // (by any route) the flag is set and later visits open the queue as before.
+      const [activeView, setActiveView] = useState(() => hasSeenOverview() ? 'queue' : 'overview');
       const [serverOnline, setServerOnline] = useState(true);
       const [lastTriageTime, setLastTriageTime] = useState(null);
       const [intelIp, setIntelIp] = useState('');
@@ -3026,6 +3047,16 @@ import ReactDOM from 'react-dom/client';
       useEffect(() => {
         fetch(`${API_BASE}/api/examples`, { headers: authHeaders() }).then(r => r.json()).then(setExamples).catch(() => {});
       }, []);
+
+      // Mark the Overview as seen the moment the visitor leaves it by ANY route
+      // (Enter Console, sidebar, settings gear, query bar) — no exit path can
+      // forget to set the flag.
+      useEffect(() => {
+        if (activeView !== 'overview') {
+          try { window.localStorage.setItem(SEEN_OVERVIEW_KEY, '1'); }
+          catch { /* blocked storage: Overview simply shows again next visit */ }
+        }
+      }, [activeView]);
 
       useEffect(() => {
         const tick = () => setUtcTime(new Date().toISOString().slice(11,19) + ' UTC');
@@ -3243,6 +3274,10 @@ import ReactDOM from 'react-dom/client';
 
             {/* Content */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 64, minHeight: 0 }}>
+              {/* Enter Console lands on Alert Input (a full workspace for an
+                  anonymous visitor) rather than the auth-gated queue — the cold
+                  first impression the Overview exists to fix. */}
+              {activeView === 'overview' && <OverviewPage onEnterConsole={() => setActiveView('triage')} onNav={handleNav} />}
               {activeView === 'queue' && <QueueView onLoadIncident={handleLoadIncident} onGoIntel={navigateToIntel} />}
               {activeView === 'cases' && <CasesView focusCaseId={focusCaseId} onGoIntel={navigateToIntel} />}
               {activeView === 'signals' && <SignalsView result={result} onGoTriage={() => setActiveView('triage')} />}

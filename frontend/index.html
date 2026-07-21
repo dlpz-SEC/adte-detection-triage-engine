@@ -377,6 +377,14 @@
     [data-theme="light"] .theme-toggle { background: var(--accent); }
     [data-theme="light"] .theme-toggle::after { transform: translateX(16px); }
 
+    /* Overview pipeline diagram: wide layout on desktop, tall on narrow screens */
+    .pipeline-wide { display: block; }
+    .pipeline-tall { display: none; }
+    @media (max-width: 700px) {
+      .pipeline-wide { display: none; }
+      .pipeline-tall { display: block; }
+    }
+
     @media (max-width: 900px) {
       .sidebar { display: none !important; }
       .content-area { margin-left: 0 !important; }
