@@ -601,9 +601,9 @@ pip install -e ".[dev]"
 
 ---
 
-### Tests Fail or Drop Below 272
+### Tests Fail or Drop Below 669
 
-The project enforces a 272-test minimum. If `pytest` reports fewer than 272 passing tests after any change, something regressed. Run:
+The project enforces a 669-test minimum. If `pytest` reports fewer than 669 passing tests after any change, something regressed. Run:
 ```powershell
 pytest -v --tb=short
 ```
