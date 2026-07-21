@@ -27,6 +27,8 @@ import time
 from datetime import datetime, timezone
 
 from pathlib import Path
+from urllib.parse import urlsplit
+
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)  # always finds repo-root .env; override=True forces .env to win over existing shell vars
 import os
@@ -355,12 +357,67 @@ app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 # from the same origin as the API (localhost:5000), so CORS is not needed for
 # normal use.  Set ADTE_CORS_ORIGINS to a comma-separated list of allowed origins
 # only when the frontend is hosted on a different origin.
+
+# Tokens that mark an origin as an unfilled template placeholder rather than a
+# real host.  A forgotten placeholder — e.g. the Railway / .env.example default
+# ``https://YOUR-APP.up.railway.app`` — must never become a trusted cross-origin:
+# because it names a host the operator does not own, anyone who claims that
+# hostname would pass the CSRF/CORS trust check.  We drop such values fail-safe.
+_CORS_PLACEHOLDER_TOKENS: tuple[str, ...] = (
+    "your-app",
+    "your_app",
+    "yourapp",
+    "example.com",
+    "example.org",
+    "changeme",
+    "placeholder",
+    "<",
+    ">",
+)
+
+
+def _is_trusted_cors_origin(origin: str) -> bool:
+    """Return True if ``origin`` is a concrete http(s) origin safe to trust.
+
+    Rejects malformed values, anything carrying a path/query/fragment (an origin
+    is ``scheme://host[:port]`` only), and unfilled template placeholders, so a
+    misconfigured ``ADTE_CORS_ORIGINS`` can never widen the trust boundary to a
+    host the operator does not actually control.
+
+    Args:
+        origin: A single candidate origin string (already whitespace-trimmed).
+
+    Returns:
+        True if the origin is well-formed and not a placeholder, else False.
+    """
+    if any(token in origin.lower() for token in _CORS_PLACEHOLDER_TOKENS):
+        return False
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    if parsed.path or parsed.query or parsed.fragment:
+        return False
+    return True
+
+
 _raw_cors: str = os.environ.get("ADTE_CORS_ORIGINS", "").strip()
-_CORS_ORIGINS: list[str] = [o.strip() for o in _raw_cors.split(",") if o.strip()]
+_candidate_cors: list[str] = [o.strip() for o in _raw_cors.split(",") if o.strip()]
+_CORS_ORIGINS: list[str] = [o for o in _candidate_cors if _is_trusted_cors_origin(o)]
+_rejected_cors: list[str] = [o for o in _candidate_cors if o not in _CORS_ORIGINS]
+if _rejected_cors:
+    _log.warning(
+        "Ignoring %d ADTE_CORS_ORIGINS value(s) that are unfilled placeholders or "
+        "malformed origins and will NOT be trusted: %s",
+        len(_rejected_cors),
+        ", ".join(_rejected_cors),
+    )
 if not _CORS_ORIGINS:
     _log.info(
-        "ADTE_CORS_ORIGINS is not set — all cross-origin requests are denied. "
-        "Set ADTE_CORS_ORIGINS=<origin> to permit specific external origins."
+        "No usable ADTE_CORS_ORIGINS configured — all cross-origin requests are "
+        "denied. Set ADTE_CORS_ORIGINS=<origin> to permit specific external origins."
     )
 CORS(app, origins=_CORS_ORIGINS)
 
