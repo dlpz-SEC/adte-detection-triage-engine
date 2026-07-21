@@ -3052,7 +3052,13 @@ import OverviewPage from './overview.jsx';
       const [utcTime, setUtcTime] = useState('--:--:-- UTC');
       // First visit lands on the Overview; once the visitor enters the console
       // (by any route) the flag is set and later visits open the queue as before.
-      const [activeView, setActiveView] = useState(() => hasSeenOverview() ? 'queue' : 'overview');
+      // The #overview fragment ALWAYS forces the Overview regardless of the flag —
+      // it's the link shared on resumes/portfolio, so every click lands on the
+      // pitch page even for a repeat visitor.
+      const [activeView, setActiveView] = useState(() => {
+        if (window.location.hash === '#overview') return 'overview';
+        return hasSeenOverview() ? 'queue' : 'overview';
+      });
       const [serverOnline, setServerOnline] = useState(true);
       const [lastTriageTime, setLastTriageTime] = useState(null);
       const [intelIp, setIntelIp] = useState('');
