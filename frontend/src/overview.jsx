@@ -37,7 +37,7 @@ const STAGE_DETAILS = [
   { n: '01', title: 'Ingest', body: 'POST /api/triage auto-detects four input shapes: a canonical NormalizedIncident, a raw Wazuh/OpenSearch alert, a Sentinel-format incident, or a batch wrapper holding exactly one alert. Multi-alert payloads route to POST /api/triage/batch — capped at 25 alerts with a 45 s deadline and per-alert error isolation.' },
   { n: '02', title: 'Normalize', body: 'Every source lands in one OCSF-inspired schema: events[] with per-event type and auth status, a top-level source enum. Input severity is rejected outright — the engine derives it from the computed score, so a source can never pre-inflate its own priority. Malformed input returns 422, never 500.' },
   { n: '03', title: 'Correlation peek', body: 'Before scoring, a read-only peek asks the case store whether sibling alerts already share this alert’s source IP, user, or file hash. The peek excludes the incident’s own ID, so re-triaging an alert can never boost itself.' },
-  { n: '04', title: 'Enrich', body: 'Threat intel per unique IP across AbuseIPDB, VirusTotal, and AlienVault OTX, aggregated with provider-failure isolation — with no API keys a deterministic mock feed answers instead. Plus the analyst-fed false-positive registry, per-user behavioral history, and bounded file-hash lookups (at most 5 per alert).' },
+  { n: '04', title: 'Enrich', body: 'Threat intel per unique IP across AbuseIPDB, VirusTotal, and AlienVault OTX, aggregated with provider-failure isolation — with no API keys a deterministic synthetic feed answers instead. Plus the analyst-fed false-positive registry, per-user behavioral history, and bounded file-hash lookups (at most 5 per alert).' },
   { n: '05', title: 'Score', body: 'Five core weighted signals summing to exactly 100: impossible travel 30, MFA fatigue 25, IP reputation 20, device novelty 15, login-hour anomaly 10. A signal with no evaluable data skips, and its weight redistributes proportionally across the rest — a Wazuh alert with no geo data still scores over the full 0–100 range. Two additive aggravators then apply only when their evidence exists: cluster context up to +15, file reputation up to +40, capped at 100 total. Aggravators can raise a score, never lower one.' },
   { n: '06', title: 'Verdict', body: 'Below 30 is low risk, 30–70 is medium, above 70 is high. Fully deterministic — the same incident always produces the same score, the same per-signal rationale, the same recommendation. There is no black box to argue with.' },
   { n: '07', title: 'Audit, correlate, respond', body: 'The verdict is written to the SQLite audit trail first, then a fail-open case ingest joins or creates a correlated case (shared source IP, user, or file hash inside a 60-minute window; a kill-chain flag fires on 3+ ascending ATT&CK tactics across 2+ members). The response carries the score, verdict, per-signal rationale, MITRE technique details, and recommended actions.' },
@@ -505,7 +505,7 @@ function OverviewFooter() {
       </div>
       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', width: '100%' }}>
         Demo note: with no threat-intel API keys configured, enrichment answers from a deterministic
-        mock feed — scores are reproducible, and the example scenarios are golden-pinned in the test suite.
+        synthetic feed — scores are reproducible, and the example scenarios are golden-pinned in the test suite.
       </div>
     </div>
   );

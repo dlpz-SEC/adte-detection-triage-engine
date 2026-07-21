@@ -142,7 +142,7 @@ cd adte-detection-triage-engine
 pip install -e ".[dev]"
 pytest -v
 
-# Run triage on example incidents (mock source, default)
+# Run triage on example incidents (offline, no API keys needed)
 python -m adte triage --input examples/incident_impossible_travel_mfa_fatigue.json --format pretty --explain
 python -m adte triage --input examples/incident_benign_vpn_travel.json --format pretty --explain
 python -m adte triage --input examples/incident_needs_human_ambiguous.json --format pretty --explain
@@ -312,12 +312,12 @@ groups related alerts into **cases**:
 
 ADTE enriches IP addresses against live threat intelligence sources when API
 keys are configured.  All keys are optional — without any keys the engine
-falls back to deterministic mock lookups suitable for offline testing and CI.
+falls back to deterministic synthetic lookups suitable for offline testing and CI.
 
 | Environment Variable | Source | Required |
 |---------------------|--------|----------|
-| `ADTE_ABUSEIPDB_KEY` | [AbuseIPDB](https://www.abuseipdb.com) | No (mock fallback) |
-| `ADTE_VT_API_KEY` | [VirusTotal](https://www.virustotal.com) | No (mock fallback) |
+| `ADTE_ABUSEIPDB_KEY` | [AbuseIPDB](https://www.abuseipdb.com) | No (synthetic fallback) |
+| `ADTE_VT_API_KEY` | [VirusTotal](https://www.virustotal.com) | No (synthetic fallback) |
 | `ADTE_OTX_KEY` | [AlienVault OTX](https://otx.alienvault.com) | No (anonymous allowed) |
 
 ### Setup
@@ -341,7 +341,7 @@ When multiple sources are configured:
 - **`is_malicious`**: `True` if any source flags the IP, or if average confidence ≥ 0.5.
 - **Tags**: merged and deduplicated across sources.
 - **Source**: comma-joined provider names (e.g. `"abuseipdb,virustotal,otx"`).
-- **Fallback**: if all configured sources return errors, the mock lookup is used and a warning is logged.
+- **Fallback**: if all configured sources return errors, the synthetic lookup is used and a warning is logged.
 - **Private IPs**: `127.x`, `10.x`, `172.16.x`, `192.168.x` are short-circuited without any API call.
 
 ### Rate Limits
@@ -384,7 +384,7 @@ environment variables reserved for a future automated-containment layer.
 
 669 tests across 34 files — test_geo, test_intel, test_intel_hash, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration, test_file_signal, test_file_integration
 
-Example verdicts (fresh clone, no API keys — deterministic mock intel):
+Example verdicts (fresh clone, no API keys — deterministic synthetic intel):
 
 | Example | Verdict | Score | Confidence |
 |---------|---------|-------|-----------|
@@ -401,7 +401,7 @@ Example verdicts (fresh clone, no API keys — deterministic mock intel):
 > **They are intel-mode dependent.** With live threat-intel keys configured, the
 > IP-reputation signal reflects what the real feeds say about the fixture's IPs
 > — e.g. the impossible-travel example scores **79** with live keys (its IP is
-> not currently flagged) versus **99** against the mock feed, which pins
+> not currently flagged) versus **99** against the synthetic feed, which pins
 > `198.51.100.23` as known C2. The scores above are what a fresh clone and CI
 > reproduce.
 

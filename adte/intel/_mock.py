@@ -44,20 +44,20 @@ from adte.models import FileReputationResult, ThreatIntelResult
 
 _MALICIOUS_RANGES: list[tuple[ipaddress.IPv4Network, float, str, list[str]]] = [
     # RFC 5737 TEST-NET-2 — C2 infrastructure (safe in production: never real traffic)
-    (ipaddress.IPv4Network("198.51.100.0/24"), 0.95, "mock-c2-feed", ["c2", "cobalt-strike"]),
+    (ipaddress.IPv4Network("198.51.100.0/24"), 0.95, "synthetic-c2-feed", ["c2", "cobalt-strike"]),
     # Demo-only: realistic Tor exit range — may match real traffic in staging
-    (ipaddress.IPv4Network("185.220.101.0/24"), 0.85, "mock-tor-list", ["tor-exit"]),
+    (ipaddress.IPv4Network("185.220.101.0/24"), 0.85, "synthetic-tor-list", ["tor-exit"]),
     # Demo-only: realistic hosting/scanner range — may match real traffic in staging
-    (ipaddress.IPv4Network("45.33.32.0/24"), 0.75, "mock-scanner-feed", ["scanner", "brute-force"]),
+    (ipaddress.IPv4Network("45.33.32.0/24"), 0.75, "synthetic-scanner-feed", ["scanner", "brute-force"]),
     # RFC 5737 TEST-NET-3 — crypto-mining proxies (safe in production: never real traffic)
-    (ipaddress.IPv4Network("203.0.113.0/24"), 0.70, "mock-mining-feed", ["cryptominer", "proxy"]),
+    (ipaddress.IPv4Network("203.0.113.0/24"), 0.70, "synthetic-mining-feed", ["cryptominer", "proxy"]),
 ]
 
 _SUSPICIOUS_RANGES: list[tuple[ipaddress.IPv4Network, float, str, list[str]]] = [
     # RFC 6598 Shared Address Space (CGNAT) — residential proxy (not publicly routable)
-    (ipaddress.IPv4Network("100.64.0.0/16"), 0.45, "mock-proxy-feed", ["residential-proxy"]),
+    (ipaddress.IPv4Network("100.64.0.0/16"), 0.45, "synthetic-proxy-feed", ["residential-proxy"]),
     # RFC 5737 TEST-NET-1 — abused hosting provider (safe in production: never real traffic)
-    (ipaddress.IPv4Network("192.0.2.0/24"), 0.40, "mock-abuse-db", ["hosting", "bulletproof"]),
+    (ipaddress.IPv4Network("192.0.2.0/24"), 0.40, "synthetic-abuse-db", ["hosting", "bulletproof"]),
 ]
 
 
@@ -103,7 +103,7 @@ def _mock_lookup(ip: str) -> ThreatIntelResult:
         ip=ip,
         is_malicious=False,
         confidence=0.0,
-        source="mock-no-match",
+        source="synthetic-no-match",
         tags=[],
         queried_at=now,
     )
@@ -125,24 +125,24 @@ _MALICIOUS_HASHES: dict[str, tuple[float, str, list[str]]] = {
     # EICAR test file — sha256 / md5 / sha1 of the same well-known file.
     "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f": (
         0.95,
-        "mock-vt-file-feed",
+        "synthetic-vt-file-feed",
         ["eicar-test", "malware"],
     ),
     "44d88612fea8a8f36de82e1278abb02f": (
         0.95,
-        "mock-vt-file-feed",
+        "synthetic-vt-file-feed",
         ["eicar-test", "malware"],
     ),
     "3395856ce81f2b7382dee72602f798b642f14140": (
         0.95,
-        "mock-vt-file-feed",
+        "synthetic-vt-file-feed",
         ["eicar-test", "malware"],
     ),
     # Demo-only: sha256("test") — a deterministic "suspicious" (not
     # confirmed-malicious) fixture entry.
     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08": (
         0.45,
-        "mock-vt-file-feed",
+        "synthetic-vt-file-feed",
         ["suspicious"],
     ),
 }
@@ -194,7 +194,7 @@ def _mock_hash_lookup(
         confidence=0.0,
         positives=None,
         total=None,
-        source="mock-no-match",
+        source="synthetic-no-match",
         tags=[],
         permalink="",
         queried_at=now,

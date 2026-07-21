@@ -261,7 +261,7 @@ class TestThreatIntelAggregatorHash:
         result = agg.check_hash(_EICAR_SHA256, "sha256")
         assert result.is_malicious is True
         assert result.confidence == pytest.approx(0.95)
-        assert result.source == "mock-vt-file-feed"
+        assert result.source == "synthetic-vt-file-feed"
 
     def test_mock_mode_eicar_md5_malicious(self) -> None:
         """EICAR md5 hits the mock table: malicious, confidence 0.95."""
@@ -283,7 +283,7 @@ class TestThreatIntelAggregatorHash:
         result = agg.check_hash(_UNKNOWN_SHA256, "sha256")
         assert result.is_malicious is False
         assert result.confidence == 0.0
-        assert result.source == "mock-no-match"
+        assert result.source == "synthetic-no-match"
 
     # -- Cache namespacing --
 
@@ -307,10 +307,10 @@ class TestThreatIntelAggregatorHash:
 
         result = agg.check_hash(_UNKNOWN_SHA256, "sha256")
 
-        assert result.source == "mock-no-match"  # not "poisoned"
+        assert result.source == "synthetic-no-match"  # not "poisoned"
         namespaced = agg._cache.get(f"hash:{_UNKNOWN_SHA256}")
         assert namespaced is not None
-        assert namespaced.source == "mock-no-match"
+        assert namespaced.source == "synthetic-no-match"
 
     # -- VT-unavailable fallbacks --
 
@@ -326,7 +326,7 @@ class TestThreatIntelAggregatorHash:
         result = agg.check_hash(_EICAR_SHA256, "sha256")
 
         vt_client.check_hash.assert_not_called()
-        assert result.source == "mock-vt-file-feed"
+        assert result.source == "synthetic-vt-file-feed"
 
     def test_vt_not_configured_falls_back_to_mock(self) -> None:
         """VirusTotal not configured at all -> mock fallback."""
@@ -337,7 +337,7 @@ class TestThreatIntelAggregatorHash:
         agg._vt_quota = None
 
         result = agg.check_hash(_UNKNOWN_SHA256, "sha256")
-        assert result.source == "mock-no-match"
+        assert result.source == "synthetic-no-match"
 
     def test_vt_client_error_falls_back_to_mock(self) -> None:
         """VirusTotal returning an error result -> mock fallback."""
@@ -360,7 +360,7 @@ class TestThreatIntelAggregatorHash:
         result = agg.check_hash(_EICAR_SHA256, "sha256")
 
         vt_client.check_hash.assert_called_once_with(_EICAR_SHA256, "sha256")
-        assert result.source == "mock-vt-file-feed"
+        assert result.source == "synthetic-vt-file-feed"
 
     # -- Caching --
 

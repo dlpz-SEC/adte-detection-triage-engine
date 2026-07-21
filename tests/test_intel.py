@@ -30,7 +30,7 @@ class TestCheckThreatIntel:
         result = check_threat_intel("198.51.100.14")
         assert result.is_malicious is True
         assert result.confidence == 0.95
-        assert result.source == "mock-c2-feed"
+        assert result.source == "synthetic-c2-feed"
         assert "c2" in result.tags
         assert "cobalt-strike" in result.tags
 
@@ -39,7 +39,7 @@ class TestCheckThreatIntel:
         result = check_threat_intel("8.8.8.8")
         assert result.is_malicious is False
         assert result.confidence == 0.0
-        assert result.source == "mock-no-match"
+        assert result.source == "synthetic-no-match"
         assert result.tags == []
 
     def test_threat_intel_suspicious_ip(self) -> None:
@@ -395,7 +395,7 @@ class TestThreatIntelAggregator:
     # -- Mock fallback --
 
     def test_fallback_to_mock_when_no_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With no keys set, mock fallback returns known mock-c2-feed result."""
+        """With no keys set, mock fallback returns known synthetic-c2-feed result."""
         monkeypatch.delenv("ADTE_ABUSEIPDB_KEY", raising=False)
         monkeypatch.delenv("ADTE_VT_API_KEY", raising=False)
         monkeypatch.delenv("ADTE_OTX_KEY", raising=False)
@@ -403,7 +403,7 @@ class TestThreatIntelAggregator:
         assert agg._use_mock is True
         result = agg.check("198.51.100.14")
         assert result.is_malicious is True
-        assert result.source == "mock-c2-feed"
+        assert result.source == "synthetic-c2-feed"
 
     # -- from_env key reading --
 
@@ -476,7 +476,7 @@ class TestThreatIntelAggregator:
         agg._cache = {}
 
         result = agg.check("8.8.8.8")
-        assert result.source == "mock-no-match"
+        assert result.source == "synthetic-no-match"
 
     def test_tags_deduplicated_across_sources(self) -> None:
         """Duplicate tags from different sources appear only once."""

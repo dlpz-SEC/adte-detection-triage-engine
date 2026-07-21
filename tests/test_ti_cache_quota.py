@@ -127,16 +127,16 @@ class TestQuotaAwareAggregation:
         assert fresh.calls == 1
         assert result.source == "fresh"
 
-    def test_all_exhausted_falls_back_to_mock_with_warning(
+    def test_all_exhausted_falls_back_to_synthetic_with_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """No quota anywhere → mock result + one clear warning log."""
+        """No quota anywhere → synthetic fallback result + one clear warning log."""
         client = _StubClient()
         agg = _live_aggregator([client], [_DailyQuota(limit=0)])
         with caplog.at_level("WARNING", logger="adte.intel.aggregator"):
             result = agg.check("203.0.113.11")
         assert client.calls == 0
-        assert result.source.startswith("mock")
+        assert result.source.startswith("synthetic")
         assert any("daily quotas exhausted" in r.message for r in caplog.records)
 
     def test_cache_hit_burns_no_quota(self) -> None:
