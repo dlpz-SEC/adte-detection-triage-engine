@@ -13,7 +13,40 @@
 ![Python](https://img.shields.io/badge/Python-Engineering%20Logic-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pytest](https://img.shields.io/badge/Testing-Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
 
+**Live deployment: [autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app)**
+
 </div>
+
+Deployed on Railway and serving the full web UI, so there is no clone, no install
+and no local server needed to look around. Browsing the interface and the four
+bundled example incidents is open to anyone; loading the alert queue and running
+triage require an ADTE API key. See [Access](#access) for the split.
+
+---
+
+## Access
+
+The hosted instance runs in **secured mode**, so the API is not open to the
+public internet. What that means for a visitor:
+
+| Available without a key | Requires an API key |
+|---|---|
+| Browsing the UI and navigating every view | Running triage (`POST /api/triage`) |
+| The four bundled example incidents (`GET /api/examples`) | The alert queue and its 8 seeded demo alerts |
+| `GET /health` | Cases, verdict history, audit log, stats |
+
+Views that read protected data render an `AUTHENTICATION REQUIRED` notice until
+you log in, rather than failing silently or appearing empty.
+
+To run triage on the hosted instance, open **Settings**, enter an ADTE API key,
+and log in. Sessions are stored server-side with an 8 hour TTL and are cleared
+by every redeploy, so an occasional re-login is expected rather than a fault.
+
+Running it locally behaves the same way. With no `ADTE_API_KEY_*` variables set
+the server starts in demo mode, where reads are open but any write (triage
+included, since it is a `POST`) returns 403. Set one key and log in to use the
+local web UI end to end. The **CLI never goes through Flask**, so
+`python -m adte triage` runs with no key configured at all.
 
 ---
 
@@ -96,6 +129,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed pipeline and modul
 
 ## Quickstart
 
+**Nothing to install:** the deployed instance is at
+[autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app).
+Open it to browse the UI and the bundled example incidents. Running triage there
+needs an API key, as described in [Access](#access).
+
+To run it locally instead:
+
 ```bash
 git clone https://github.com/dlpz-SEC/adte-detection-triage-engine.git
 cd adte-detection-triage-engine
@@ -111,6 +151,10 @@ python -m adte triage --input examples/incident_needs_human_ambiguous.json --for
 ## Demo
 
 Interactive web UI for running triage on incident JSON and reviewing verdicts live.  No CLI required — paste any `NormalizedIncident` JSON, or use the **Quick Load** tiles to pre-fill one of the four bundled scenarios (critical / high / medium / low), then click **Run Triage**.
+
+The deployed instance already serves this UI at
+[autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app);
+log in via Settings first so **Run Triage** is permitted. To serve it yourself:
 
 ```bash
 python -m adte.server
