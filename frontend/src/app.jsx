@@ -1136,7 +1136,7 @@ import OverviewPage from './overview.jsx';
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 {authError === 403
                   ? '— This passkey lacks the analyst role needed to read the queue.'
-                  : '— Open Settings and log in to load the queue. Recruiters: grab the analyst passkey there. Sessions are cleared on every redeploy.'}
+                  : '— Open Settings and log in to load the queue. Recruiters: grab the recruiter passkey there. Sessions are cleared on every redeploy.'}
               </span>
             </div>
           );
@@ -3209,7 +3209,7 @@ import OverviewPage from './overview.jsx';
             // Surface the real reason per HTTP status so a role-based-access
             // failure is not mislabelled as a CORS or network problem.
             if (status === 401) {
-              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in — recruiters can use the analyst passkey there.`);
+              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in. Recruiters: use the recruiter passkey ${RECRUITER_PASSKEY}`);
             } else if (status === 403) {
               // Includes the CSRF "Cross-origin request rejected" and the
               // demo-mode / insufficient-permissions messages verbatim.
@@ -3243,7 +3243,7 @@ import OverviewPage from './overview.jsx';
               return;
             }
             if (status === 401) {
-              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in — recruiters can use the analyst passkey there.`);
+              setError(`${d?.error || 'Authentication required'} — open Settings (gear icon, top-right) and log in. Recruiters: use the recruiter passkey ${RECRUITER_PASSKEY}`);
             } else if (status === 403) {
               setError(d?.error || 'Request forbidden by the server.');
             } else {
