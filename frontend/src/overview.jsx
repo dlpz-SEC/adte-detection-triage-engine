@@ -236,10 +236,12 @@ function PipelineDiagramWide() {
         <line key={`a2-${i}`} x1={x2(i) + BW} y1={Y2 + BH / 2} x2={x2(i + 1) - 3} y2={Y2 + BH / 2}
           stroke="var(--accent)" strokeWidth="1.5" markerEnd="url(#ov-arrow-w)" />
       ))}
-      {/* LLM advisory box — dashed, hanging off VERDICT */}
+      {/* LLM advisory box — dashed, hanging off VERDICT. Width 510 so the
+          9px-mono subtitle (~455 units) sits INSIDE the dashed border with
+          padding, instead of running through it. */}
       <path d={`M ${x2(0) + BW / 2} ${Y2 + BH} L ${x2(0) + BW / 2} ${Y2 + BH + 26}`}
         fill="none" stroke="var(--medium)" strokeWidth="1.2" strokeDasharray="4 4" />
-      <rect x={x2(0) - 20} y={Y2 + BH + 26} width={BW + 130} height="52" rx="6"
+      <rect x={x2(0) - 20} y={Y2 + BH + 26} width="510" height="52" rx="6"
         fill="none" stroke="var(--medium)" strokeWidth="1.2" strokeDasharray="4 4" />
       <text x={x2(0) - 6} y={Y2 + BH + 47} fill="var(--medium)" fontSize="10.5" fontWeight="700" fontFamily="var(--font-mono)" letterSpacing="1">
         LLM NARRATIVE — ADVISORY ONLY
