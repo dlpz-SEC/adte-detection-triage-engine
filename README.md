@@ -13,14 +13,14 @@
 ![Python](https://img.shields.io/badge/Python-Engineering%20Logic-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pytest](https://img.shields.io/badge/Testing-Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
 
-**Live deployment: [autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app)**
+**Live demo: [autonomousdetection.up.railway.app/#overview](https://autonomousdetection.up.railway.app/#overview)**
 
 </div>
 
 Deployed on Railway and serving the full web UI, so there is no clone, no install
 and no local server needed to look around. Browsing the interface and the four
 bundled example incidents is open to anyone; loading the alert queue and running
-triage require an ADTE API key. See [Access](#access) for the split.
+triage require a passkey, which is provided below. See [Access](#access) for the split.
 
 ---
 
@@ -29,7 +29,7 @@ triage require an ADTE API key. See [Access](#access) for the split.
 The hosted instance runs in **secured mode**, so the API is not open to the
 public internet. What that means for a visitor:
 
-| Available without a key | Requires an API key |
+| Available without a passkey | Requires a passkey |
 |---|---|
 | Browsing the UI and navigating every view | Running triage (`POST /api/triage`) |
 | The four bundled example incidents (`GET /api/examples`) | The alert queue and its 8 seeded demo alerts |
@@ -38,9 +38,17 @@ public internet. What that means for a visitor:
 Views that read protected data render an `AUTHENTICATION REQUIRED` notice until
 you log in, rather than failing silently or appearing empty.
 
-To run triage on the hosted instance, open **Settings**, enter an ADTE API key,
-and log in. Sessions are stored server-side with an 8 hour TTL and are cleared
-by every redeploy, so an occasional re-login is expected rather than a fault.
+To run triage on the hosted instance, open **Settings** and log in. **Reviewers
+and recruiters** can use the shared analyst passkey:
+
+```
+5547a65b2cbf0692a5a4a416278713d69465a12b70bf85ac
+```
+
+It runs triage and reads the queue, cases, threat intel, and audit log; it
+cannot delete anything or change configuration. Sessions are stored server-side
+with an 8 hour TTL and are cleared by every redeploy, so an occasional re-login
+is expected rather than a fault.
 
 Running it locally behaves the same way. With no `ADTE_API_KEY_*` variables set
 the server starts in demo mode, where reads are open but any write (triage
