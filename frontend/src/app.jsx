@@ -74,13 +74,14 @@ import OverviewPage from './overview.jsx';
     };
     const EXAMPLE_BADGE_CLASS = { high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low' };
 
-    // Public demo passkey (analyst role) — deliberately embedded so a recruiter
-    // can try the live deployment without being provisioned a key. Analyst scope
-    // ONLY: runs triage and reads the queue, cases, threat intel, and audit log;
-    // it cannot delete anything or read config/other keys. To revoke, rotate
-    // ADTE_API_KEY_ANALYST on Railway (this literal stays in git history but stops
-    // working the moment the env value changes).
-    const RECRUITER_PASSKEY = '63bf8ebf59563765ce55e95f534b0b9724baa5e7c5a5b3b7';
+    // Public demo passkey — deliberately embedded so a recruiter can try the live
+    // deployment without being provisioned a key. It is its OWN credential
+    // (ADTE_API_KEY_RECRUITER on the server), granting analyst scope only: runs
+    // triage and reads the queue, cases, threat intel, and audit log; it cannot
+    // delete anything or read config/other keys. To revoke, rotate
+    // ADTE_API_KEY_RECRUITER on Railway — the real analyst key is untouched (this
+    // literal stays in git history but stops working the moment the env changes).
+    const RECRUITER_PASSKEY = '5547a65b2cbf0692a5a4a416278713d69465a12b70bf85ac';
 
     const VIEW_LABELS = {
       overview: 'Overview',

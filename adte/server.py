@@ -98,22 +98,38 @@ _ROLE_ENV_MAP: dict[str, str] = {
     "readonly": "ADTE_API_KEY_READONLY",
 }
 
+# Alias credentials that grant an EXISTING role under their own env var. The
+# public recruiter demo key grants analyst privileges (enough to run triage and
+# read the queue/cases/intel/audit) but lives in ADTE_API_KEY_RECRUITER so it can
+# be rotated or revoked without disturbing the real analyst key. Not a new
+# privilege tier — the value maps straight onto an entry in ROLES.
+_ALIAS_ENV_MAP: dict[str, str] = {
+    "ADTE_API_KEY_RECRUITER": "analyst",
+}
+
 
 def _any_keys_configured() -> bool:
     """Return True if at least one RBAC API key is set in the environment.
 
     Used to distinguish open/demo mode (no keys set) from secured mode
     (at least one key configured).  When False, all RBAC checks are
-    bypassed so the web UI works without configuration.
+    bypassed so the web UI works without configuration.  Alias keys
+    (e.g. the recruiter demo key) count too: setting only the recruiter
+    key still puts the app in secured mode.
 
     Returns:
-        True if any ADTE_API_KEY_* env var is non-empty.
+        True if any ADTE_API_KEY_* env var (role or alias) is non-empty.
     """
-    return any(os.environ.get(v, "") for v in _ROLE_ENV_MAP.values())
+    return any(os.environ.get(v, "") for v in _ROLE_ENV_MAP.values()) or any(
+        os.environ.get(v, "") for v in _ALIAS_ENV_MAP
+    )
 
 
 def _resolve_role(api_key: str) -> str | None:
     """Match an API key to its role by checking environment variables.
+
+    Real per-tier role keys are checked first, then alias keys (which map
+    onto an existing role).  All comparisons are constant-time.
 
     Args:
         api_key: The key value from the X-ADTE-Key header.
@@ -122,6 +138,10 @@ def _resolve_role(api_key: str) -> str | None:
         The role name if matched, or None if no match found.
     """
     for role, env_var in _ROLE_ENV_MAP.items():
+        expected = os.environ.get(env_var, "")
+        if expected and hmac.compare_digest(api_key, expected):
+            return role
+    for env_var, role in _ALIAS_ENV_MAP.items():
         expected = os.environ.get(env_var, "")
         if expected and hmac.compare_digest(api_key, expected):
             return role
