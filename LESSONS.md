@@ -215,3 +215,72 @@ threat-intel keys the fixture's IP is not flagged (0 pts → 79), while the mock
 `198.51.100.23` as known C2 (+20 → 99). Both numbers were correct; only the missing "captured with
 mock intel / no API keys" caption was wrong. Prefer quoting the value a **fresh clone with no
 credentials** reproduces (that is what a reader gets, and what CI pins), then note the variance.
+
+---
+
+### 2026-07-22 — A subagent's negative finding is only as wide as the scope you gave it
+
+**Rule:** When a verification/search agent reports something is **absent** ("no support for this
+claim", "no such usage", "unsupported"), the finding is bounded by the files that agent could see —
+never promote a scoped negative to a global one. Confirm the negative against the full corpus
+before acting on it, especially when the claim could legitimately live in a sibling repo/module the
+agent wasn't given.
+
+A resume-accuracy agent scoped to the ADTE repo declared the "KQL" and "GitHub Actions CI" bullets
+**unsupported** — and it was right *about ADTE*. But both are real in other portfolio repos
+(`detection-as-code` has the CI workflow; the SQL threat-hunting lab has 7 `.kql` files). Acting on
+the agent's negative would have deleted true, defensible resume claims. A positive finding ("here it
+is, at file:line") is self-validating; a negative one carries the search boundary as an invisible
+premise. This is the same failure mode as the 2026-07-16 diagnosis lesson — an internally-coherent
+result that is wrong because of what was outside the frame.
+
+---
+
+### 2026-07-22 — Probe the live auth surface before writing "click here to try it"
+
+**Rule:** Before documenting a deployed demo as interactive ("click here and run it"), probe the
+live auth surface anonymously first — hit the actual endpoints a first-time visitor would, un-keyed,
+and see what returns 200 vs 401/403. Write the invitation to match what an anonymous visitor can
+*actually* do, not what you (an authenticated operator) can do.
+
+The first README pass this session promised a working triage demo that the login wall blocked. A
+live probe (anonymous `POST /api/triage` → **401**) showed only the SPA shell and `/api/examples`
+are open to an anonymous visitor; running triage needs a key. The fix was both to correct the copy
+*and* to hand the recruiter a passkey inline — but the copy would have shipped a broken promise if
+the live surface hadn't been probed. Deployed auth posture is empirical; never infer it from the
+code you remember writing.
+
+---
+
+### 2026-07-22 — String/quoting syntax must match the TOOL you're calling, not the host OS
+
+**Rule:** This box exposes two shells — the Bash tool (POSIX sh) and the PowerShell tool. Multi-line
+strings, here-docs, and quoting must use the syntax of the *tool you're invoking*, not the syntax of
+the underlying OS. On Windows it is tempting to reach for PowerShell idioms in the Bash tool; they
+mangle silently.
+
+The first commit this session used a PowerShell here-string (`@'…'@`) as a `git commit -m` body
+*inside the Bash tool*. Bash doesn't parse `@'…'@`, so the message came out mangled; it had to be
+repaired with `git commit --amend` before the push. For a Bash-tool multi-line commit message use a
+heredoc (`git commit -m "$(cat <<'EOF' … EOF)"`) or repeated `-m` flags; reserve `@'…'@` for the
+PowerShell tool. The OS is Windows either way — the deciding factor is which tool the call routes
+through.
+
+---
+
+### 2026-08-16 — Verify a subagent's proposed FIX against the tests, not just its finding
+
+**Rule:** An adversarial/review workflow hands you plausible findings AND plausible remediations,
+and a proposed fix carries the same "internally-coherent yet wrong" risk as a finding. Before
+shipping any agent-proposed fix — especially to a golden-pinned or correlation subsystem — trace it
+against the real test suite and the demo showcase. A fix that reads as free hardening can be a
+regression; a positive fix is not self-validating.
+
+Triaging ADTE's Phase-32 findings, the agents' F5 remediation (gate hash-correlation on per-event
+maliciousness) looked like clean, no-waiver hardening. Checked against the suite it would have
+fragmented the legitimate 554→87105→553 FIM malware trio (`tests/test_file_integration.py:185-193`
+pins the three events to one case): only the VT-conviction event carries a maliciousness signal, so
+a benign vendor-patch false positive and a real multi-event malware incident are indistinguishable
+at the individual-event level — the gate cannot separate them without a regression. Same failure
+family as the 2026-07-22 negative-finding lesson, now extended to *proposed fixes*: run the agent's
+fix against the tests before you believe it.
