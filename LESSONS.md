@@ -284,3 +284,36 @@ a benign vendor-patch false positive and a real multi-event malware incident are
 at the individual-event level — the gate cannot separate them without a regression. Same failure
 family as the 2026-07-22 negative-finding lesson, now extended to *proposed fixes*: run the agent's
 fix against the tests before you believe it.
+
+---
+
+### 2026-08-16 — Anchor validation regexes with \A/\Z, never ^/$
+
+**Rule:** In Python, `$` matches *before a trailing newline*, so `re.match(r"^...$", "value\n")`
+accepts input a strict validator must reject. Any security-relevant format validator (GUIDs, IDs
+interpolated into URLs/paths, allowlist patterns) must anchor with `\Z` (or use `re.fullmatch`),
+never `$`.
+
+Caught by the new Sentinel adapter's own test suite: the GUID path-injection guard used `^...$`
+and a GUID plus `\n` sailed through (`re.match` + `$` → matched before the newline). One character
+of injection surface on values interpolated into fixed-host URLs. Fixed to `\Z`; the parametrized
+malformed-input test now pins it. Write the trailing-newline case into every validator's tests —
+it is the canonical bypass for `$`-anchored patterns.
+
+---
+
+### 2026-08-16 — An empty workflow result with errored agents is not a clean pass
+
+**Rule:** A multi-agent workflow that returns a well-formed empty result (`0 findings, 0 refuted`)
+while its `<failures>`/`agents_error` count is non-zero has performed **zero** review — the empty
+result is the absence of reviewers, not the absence of defects. Check the failure/agents_done
+counts BEFORE interpreting any aggregate result; if the agents died (session limit, timeout),
+either re-run or do the review inline yourself, and salvage the dead agents' partial transcripts
+for leads.
+
+The Sentinel-adapter review workflow returned `{confirmed: [], refutedCount: 0}` — structurally a
+perfect pass — because all 3 finder agents hit the session usage limit and errored before
+returning. Treated as a pass it would have skipped review entirely. Sibling of the 2026-07-22
+subagent-scope lesson (a negative finding is only as wide as the scope that RAN — here, zero) and
+Phase 31's verify-agents-died miscount; this variant is specifically about aggregate emptiness
+masking total reviewer failure.
