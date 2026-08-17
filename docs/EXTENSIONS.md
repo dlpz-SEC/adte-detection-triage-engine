@@ -6,9 +6,45 @@ enrichment sources.
 > **Scope note:** ADTE is a triage engine — it ingests, scores, and recommends.
 > An automated-containment / response-execution layer (acting on verdicts in
 > Sentinel, Entra ID, etc.) is a roadmap item, not part of the current codebase.
-> The extension points below all sit on the triage side of the pipeline. For a
-> new *ingestion* source, model it on the live `adte/adapters/wazuh.py` adapter,
-> which converts an external alert feed into `NormalizedIncident` objects.
+> The extension points below all sit on the triage side of the pipeline.
+
+## The adapter contract (adding an ingestion source)
+
+Two live adapters ship today — `adte/adapters/wazuh.py` (Wazuh Indexer /
+OpenSearch, HTTP Basic Auth) and `adte/adapters/sentinel.py` (Microsoft
+Sentinel / Log Analytics, OAuth2 client-credentials).  Every new source
+(Splunk, Elastic, AWS, ...) follows the same de facto contract both implement:
+
+1. **`from_env() -> Adapter`** (classmethod) — reads `ADTE_<SOURCE>_*`
+   variables and raises `EnvironmentError` naming the exact missing variable
+   and the CLI flag it unblocks (`--source <name>`).
+2. **`fetch_incidents(hours, limit, ...) -> list[NormalizedIncident]`** —
+   the one method callers use: fetch + normalise.
+3. **A pure, static `normalize_*`** — network-free translation of one raw
+   payload (or row group) into `NormalizedIncident`.  Keeping it static and
+   offline is what makes the adapter testable without credentials and lets
+   `server.py` reuse it for pasted JSON.
+4. **An input-validation guard** matched to the transport — URL scheme +
+   IMDS/link-local SSRF checks when the operator supplies the host
+   (`_validate_indexer_url` in wazuh.py); strict GUID validation when IDs are
+   interpolated into fixed vendor hosts (`_validate_guid` in sentinel.py).
+5. **A credential-safe `__repr__`** — never echo passwords or secrets.
+6. **Degrade, never raise, inside normalisation** — malformed fields fall
+   back (epoch timestamps, empty lists); transport errors (`requests.HTTPError`)
+   propagate so callers decide the fallback.
+7. **Missing-signal honesty** — when the source lacks geo or an MFA outcome,
+   pass `location=None` / `auth_status=None` so the engine *skips* those
+   signals and redistributes weight.  Never fabricate placeholders (a
+   `GeoLocation(0, 0)` would mis-fire the travel signal).
+
+Wiring checklist for a new adapter: add the module under `adte/adapters/`,
+append one `(name, loader)` entry to the queue's source ladder in
+`server.py`, add a `SourceType` member + dispatch branch in `cli.py`, add a
+banner entry to `LIVE_SOURCE_BANNERS` in `frontend/src/app.jsx`, document the
+env vars in `.env.example`, and mirror `tests/test_sentinel_adapter.py`'s
+class layout for the test file.  Note that `adte/adapters/` is
+change-controlled — record the decision (waiver, branch, rollback tag,
+golden-example parity run) before writing code.
 
 ## Adding New Signal Types
 

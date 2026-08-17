@@ -1107,10 +1107,10 @@ def _demo_incidents() -> list[NormalizedIncident]:
 def queue() -> Any:
     """Return a triage-scored summary of recent alerts for the queue view.
 
-    Accepts optional query parameters to control the Wazuh fetch window.
-    Attempts to pull live alerts from the Wazuh adapter.  Falls back
-    silently to the three bundled example incidents when the adapter is
-    unavailable (no Wazuh credentials, adapter offline, etc.).
+    Accepts optional query parameters to control the fetch window.
+    Attempts each live adapter in ladder order (Wazuh first — the
+    flagship — then Sentinel) and falls back silently to the bundled
+    demo incidents when no adapter is configured or reachable.
 
     Each row includes the full ``incident_json`` field so the frontend
     can pre-populate the triage input on row click without a second
@@ -1125,11 +1125,12 @@ def queue() -> Any:
         min_level: Minimum Wazuh rule.level to include (default 1, range 1–15).
 
     Returns:
-        JSON object with ``source`` (``"wazuh"`` or ``"mock"``), ``params``
-        (the resolved fetch parameters), and ``rows`` — each row containing
-        ``incident_id``, ``timestamp``, ``user``, ``source_ip``,
-        ``verdict``, ``risk_score``, ``top_signal``, ``mitre_tactic``,
-        ``status``, and ``incident_json``.
+        JSON object with ``source`` (``"wazuh"``, ``"sentinel"``, or
+        ``"demo"``), ``params`` (the resolved fetch parameters), and
+        ``rows`` — each row containing ``incident_id``, ``timestamp``,
+        ``user``, ``source_ip``, ``verdict``, ``risk_score``,
+        ``top_signal``, ``mitre_tactic``, ``status``, and
+        ``incident_json``.
     """
     # Inner helper — not hoisted to module level because it's only needed here.
     def _clamp(val: str | None, default: int, lo: int, hi: int) -> int:
@@ -1142,18 +1143,41 @@ def queue() -> Any:
     limit     = _clamp(request.args.get("limit"),     50,  1, 500)
     min_level = _clamp(request.args.get("min_level"),  1,  1,  15)
 
-    incidents: list[NormalizedIncident] = []
-    data_source = "demo"
-    try:
+    # Live-source ladder: each entry is (source_name, zero-arg loader).
+    # Tried in order; the first adapter that is configured AND reachable
+    # wins.  Wazuh stays first (the flagship live SIEM); adding a future
+    # adapter (Splunk, Elastic, ...) is a one-line append here.
+    def _load_wazuh() -> list[NormalizedIncident]:
         # Deferred import: keeps server startup clean when the adapter's
         # env vars (ADTE_WAZUH_HOST etc.) are absent.
         from adte.adapters.wazuh import WazuhAdapter
-        incidents = WazuhAdapter.from_env().fetch_incidents(hours=hours, limit=limit, min_level=min_level)
-        data_source = "wazuh"
-    except Exception:
-        # No reachable Wazuh instance — serve the curated demo set.  This is
-        # the EXPECTED state for the hosted deployment (the Indexer lives on a
-        # private VM), not a failure, and the UI labels it as such.
+        return WazuhAdapter.from_env().fetch_incidents(
+            hours=hours, limit=limit, min_level=min_level
+        )
+
+    def _load_sentinel() -> list[NormalizedIncident]:
+        from adte.adapters.sentinel import SentinelAdapter
+        return SentinelAdapter.from_env().fetch_incidents(hours=hours, limit=limit)
+
+    _SOURCE_LADDER: list[tuple[str, Any]] = [
+        ("wazuh", _load_wazuh),
+        ("sentinel", _load_sentinel),
+    ]
+
+    incidents: list[NormalizedIncident] = []
+    data_source = "demo"
+    for source_name, loader in _SOURCE_LADDER:
+        try:
+            incidents = loader()
+            data_source = source_name
+            break
+        except Exception:
+            continue  # Unconfigured/unreachable — try the next rung.
+    else:
+        # No live source available — serve the curated demo set.  This is
+        # the EXPECTED state for the hosted deployment (the Indexer lives on
+        # a private VM and no Sentinel credentials are deployed), not a
+        # failure, and the UI labels it as such.
         incidents = _demo_incidents()
 
     now = time.monotonic()

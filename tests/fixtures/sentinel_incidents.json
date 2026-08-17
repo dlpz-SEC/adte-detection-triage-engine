@@ -1,0 +1,61 @@
+{
+  "tables": [
+    {
+      "name": "PrimaryResult",
+      "columns": [
+        {"name": "IncidentNumber", "type": "long"},
+        {"name": "IncidentTitle", "type": "string"},
+        {"name": "IncidentStatus", "type": "string"},
+        {"name": "IncidentCreated", "type": "datetime"},
+        {"name": "AlertName", "type": "string"},
+        {"name": "AlertSeverity", "type": "string"},
+        {"name": "AlertTime", "type": "datetime"},
+        {"name": "Entities", "type": "string"},
+        {"name": "Techniques", "type": "string"},
+        {"name": "Tactics", "type": "string"},
+        {"name": "ProviderName", "type": "string"}
+      ],
+      "rows": [
+        [
+          42,
+          "Brute-force burst against cloud account",
+          "New",
+          "2026-08-15T14:05:00.1234567Z",
+          "Failed sign-in burst",
+          "Medium",
+          "2026-08-15T14:00:00Z",
+          "[{\"Type\":\"account\",\"Name\":\"testuser1\",\"UPNSuffix\":\"securitylabzz.onmicrosoft.com\"},{\"Type\":\"ip\",\"Address\":\"203.0.113.50\"},{\"Type\":\"host\",\"HostName\":\"CLOUD-SVC\"}]",
+          "[\"T1110\"]",
+          "CredentialAccess",
+          "ASI Scheduled Alerts"
+        ],
+        [
+          42,
+          "Brute-force burst against cloud account",
+          "New",
+          "2026-08-15T14:05:00.1234567Z",
+          "Successful sign-in after failure burst",
+          "High",
+          "2026-08-15T14:10:00Z",
+          "[{\"Type\":\"account\",\"Name\":\"testuser1\",\"UPNSuffix\":\"securitylabzz.onmicrosoft.com\"},{\"Type\":\"ip\",\"Address\":\"203.0.113.50\"}]",
+          "[\"T1110\",\"T1078\"]",
+          "CredentialAccess, InitialAccess",
+          "ASI Scheduled Alerts"
+        ],
+        [
+          43,
+          "Risky sign-in escalation",
+          "Active",
+          "2026-08-15T16:30:00+00:00",
+          "Risky sign-in from anonymizer infrastructure",
+          "High",
+          "2026-08-15T16:25:00+00:00",
+          "[{\"Type\":\"account\",\"Name\":\"testuser2\",\"UPNSuffix\":\"securitylabzz.onmicrosoft.com\"},{\"Type\":\"ip\",\"Address\":\"198.51.100.23\"},{\"Type\":\"url\",\"Url\":\"https://example.invalid/login\"}]",
+          "[\"T1078\"]",
+          "InitialAccess",
+          "ASI Scheduled Alerts"
+        ]
+      ]
+    }
+  ]
+}

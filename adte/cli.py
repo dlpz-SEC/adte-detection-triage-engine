@@ -60,6 +60,7 @@ class SourceType(str, Enum):
     mock = "mock"
     normalized = "normalized"
     wazuh = "wazuh"
+    sentinel = "sentinel"
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +241,8 @@ def triage(
         typer.Option(
             "--source",
             help="Alert source: 'mock' reads from --input file (default); "
-                 "'wazuh' fetches live from Wazuh REST API.",
+                 "'wazuh' fetches live from the Wazuh Indexer; 'sentinel' "
+                 "fetches live from a Microsoft Sentinel workspace.",
         ),
     ] = SourceType.mock,
     hours: Annotated[
@@ -293,9 +295,10 @@ def triage(
     """Triage incidents through the ADTE pipeline.
 
     Reads from a local Sentinel JSON file (--source mock, default) or
-    fetches live alerts from Wazuh (--source wazuh).  Runs enrichment
-    and scoring and outputs the verdict with risk score, per-signal
-    rationale, and the recommended human-review action.
+    fetches live alerts from Wazuh (--source wazuh) or a Microsoft
+    Sentinel workspace (--source sentinel).  Runs enrichment and scoring
+    and outputs the verdict with risk score, per-signal rationale, and
+    the recommended human-review action.
     """
     # --source mock and --source normalized both require --input.
     if source in (SourceType.mock, SourceType.normalized) and input_file is None:
@@ -310,6 +313,22 @@ def triage(
         incidents: list[NormalizedIncident] = [_load_incident(input_file)]  # type: ignore[arg-type]
     elif source == SourceType.normalized:
         incidents = [_load_normalized_incident(input_file)]  # type: ignore[arg-type]
+    elif source == SourceType.sentinel:
+        try:
+            from adte.adapters.sentinel import SentinelAdapter
+
+            incidents = SentinelAdapter.from_env().fetch_incidents(
+                hours=hours, limit=limit
+            )
+        except EnvironmentError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=2)
+        if not incidents:
+            typer.echo(
+                "No incidents returned from Sentinel for the given time window.",
+                err=True,
+            )
+            raise typer.Exit(code=0)
     else:  # wazuh
         try:
             adapter = WazuhAdapter.from_env()

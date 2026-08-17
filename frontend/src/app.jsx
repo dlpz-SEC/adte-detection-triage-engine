@@ -1115,8 +1115,26 @@ import OverviewPage from './overview.jsx';
         { key: 'status', label: 'Status' },
       ];
 
+      // Live-source banner styling as data, not code: adding a future
+      // adapter (splunk, elastic, ...) is one entry here — any source not
+      // in this map falls through to the DEMO MODE banner.
+      const LIVE_SOURCE_BANNERS = {
+        wazuh: {
+          label: 'WAZUH LIVE',
+          color: 'var(--success)',
+          background: 'var(--success-dim)',
+          noun: 'alert',
+        },
+        sentinel: {
+          label: 'SENTINEL LIVE',
+          color: 'var(--accent)',
+          background: 'rgba(59,130,246,0.08)',
+          noun: 'incident',
+        },
+      };
+
       // IIFE used here because the banner has three possible outcomes
-      // (null / wazuh banner / mock banner) — cleaner than nested ternaries.
+      // (null / live-source banner / demo banner) — cleaner than nested ternaries.
       const sourceBanner = (() => {
         if (loading && rows === null) return null;
         // Auth first: a logged-out session must never be reported as a SIEM
@@ -1141,20 +1159,21 @@ import OverviewPage from './overview.jsx';
             </div>
           );
         }
-        if (dataSource === 'wazuh') {
+        const liveBanner = LIVE_SOURCE_BANNERS[dataSource];
+        if (liveBanner) {
           return (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '10px 16px', borderRadius: 6, marginBottom: 16,
-              background: 'var(--success-dim)',
-              border: '1px solid var(--success)',
+              background: liveBanner.background,
+              border: `1px solid ${liveBanner.color}`,
             }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)', flexShrink: 0 }} />
-              <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
-                WAZUH LIVE
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: liveBanner.color, flexShrink: 0 }} />
+              <span className="mono" style={{ fontSize: '0.75rem', color: liveBanner.color, fontWeight: 600 }}>
+                {liveBanner.label}
               </span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                — {rows ? rows.length : 0} alert{rows && rows.length !== 1 ? 's' : ''} retrieved (last {hours}h)
+                — {rows ? rows.length : 0} {liveBanner.noun}{rows && rows.length !== 1 ? 's' : ''} retrieved (last {hours}h)
               </span>
             </div>
           );
