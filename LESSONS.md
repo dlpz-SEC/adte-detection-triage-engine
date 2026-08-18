@@ -317,3 +317,161 @@ returning. Treated as a pass it would have skipped review entirely. Sibling of t
 subagent-scope lesson (a negative finding is only as wide as the scope that RAN — here, zero) and
 Phase 31's verify-agents-died miscount; this variant is specifically about aggregate emptiness
 masking total reviewer failure.
+
+---
+
+### 2026-08-18 — Read the governing plan file before advising inside its scope
+
+**Rule:** When a plan file governs the work, grep it for the decision *before* recommending
+anything in its domain. A plan that records an option as considered-and-rejected outranks fresh
+reasoning, and a requirement written in the plan is not optional context to re-derive from first
+principles.
+
+Spent several turns recommending a standalone Entra ID P2 trial as the cheaper, more surgical
+alternative to Microsoft 365 E5. The child plan already said, at line 20–21: *"M365 E5 30-day
+trial for Entra P1/P2 (**not the standalone Entra P2 trial this session recommended**)"* — the
+exact option, already weighed and overruled, with my prior recommendation named in the rejection.
+Same file, same session: I specified `incident creation ON` for the analytics rule but omitted
+`alert grouping ON`, which line 141 states outright (*"incident creation ON + alert grouping ON
+or `SecurityIncident` stays empty"*) — an omission that would have produced firing alerts, an
+empty incident table, and an hour spent debugging the adapter over a rule setting. One root
+cause behind both: advising in the plan's domain without opening the plan. The reasoning felt
+sound each time; the plan had already been there and disagreed.
+
+---
+
+### 2026-08-18 — When enforcing a plan constraint, check whether its rationale is still live
+
+**Rule:** A constraint's letter can keep matching after its purpose is spent. Before invoking
+"the plan says don't," name what the rule protects and check whether that thing is still
+protectable. Over-correcting into rigid compliance after being caught improvising is a second
+failure, not a return to safety.
+
+After being corrected for running week-6 work (A1 live wiring) during week 1, I told David to
+stop and revert to housekeeping, citing the plan's week-1 "no clocks started" rule. But that
+rule exists to prevent *deploying the Sentinel workspace* — which had already happened before
+the session began. The 31-day clock was burning regardless of anything done that evening,
+~19 spare workspace trials remained, and finishing the work retired precisely the week-6
+blow-up scenario the plan's own risk table names ("adapter blocked on live shape surprises").
+David pushed back and was correct. Swinging from improvising past the plan to reciting it was
+two errors, not one correction followed by compliance.
+
+---
+
+### 2026-08-18 — In Azure/Sentinel, "Connected" is plumbing status, not evidence of data
+
+**Rule:** A connector showing **Connected** means the wiring is attached — not that a licence
+entitles the data, nor that any has arrived. Verify presence by querying, never by reading a
+status column:
+`union withsource=TableName * | where TimeGenerated > ago(24h) | summarize Count=count() by TableName | sort by Count desc`
+Also check the blade's active filters before concluding content is missing.
+
+`law-sc200-sentinel` displayed **7 connectors, 7 Connected** — Defender for Endpoint, Defender
+for Identity, Defender for Cloud Apps, Entra ID Protection among them — on a workspace with zero
+ingestion and $0.00 cost. Every one was licence-gated and dry: the tenant held only Microsoft
+Entra ID **Free** and **Office 365** E5 (not Microsoft 365 E5), so none of those products were
+entitled. Seven green rows read convincingly as "set up." Separately, the Data connectors blade
+defaulted to a `Status: Connected` filter that hid every unconfigured connector, making the
+catalogue look nearly empty when it was merely filtered.
+
+---
+
+### 2026-08-18 — An Azure budget alert is not a spending cap
+
+**Rule:** Azure Cost Management **budgets only notify** at their thresholds; spend continues
+straight past them. The control that actually halts ingestion is the Log Analytics workspace
+**daily cap** (workspace → Usage and estimated costs → Daily cap). Different blade, different
+mechanism. Setting the budget and believing you are capped is the dangerous state — a smoke
+detector is not a sprinkler.
+
+Surfaced while standing up the Sentinel lab on an **Azure Plan** (MCA pay-as-you-go) subscription
+— which, unlike an Azure Free subscription, carries no free-credit buffer, so consumption bills
+directly to the payment profile. Both controls are cheap; only one of them stops anything.
+
+---
+
+### 2026-08-18 — Split "not generated" from "not delivered" before debugging a telemetry pipeline
+
+**Rule:** When expected data is missing at a SIEM or log destination, the first move is to confirm
+the events exist **at the source**, not to keep inspecting the destination. Every pipeline has a
+source-side view independent of the delivery path — Azure's Monitor → Activity log, Wazuh's own
+alert log, the Windows event channel. Checking it splits one unknown into two, and the two have
+entirely different fixes.
+
+Spent a long stretch of the Sentinel wiring session querying `AzureActivity` in Log Analytics,
+getting zero, waiting, generating another event, and querying again — without once opening
+**Monitor → Activity log**, the portal view of those same events *before* they enter the export
+path. Three plausible causes (nothing generated / not exported / not yet ingested) stayed
+collapsed into a single symptom the entire time, so every action taken was a guess across all
+three. Companion trap from the same night: **diagnostic settings are not retroactive** and take
+10–15 minutes to activate, so any event fired inside that window is lost permanently — establish
+that before concluding a setting is misconfigured.
+
+---
+
+### 2026-08-18 — A bare `summarize` always returns one row; row count is not record count
+
+**Rule:** `summarize Records = count()` with no `by` clause emits exactly one row even over an
+empty table. A results pane reading **"1 – 1 of 1"** therefore means one *summary* row was
+produced, not that one record exists. Read the value in the cell, never the row counter; a null in
+a companion `min()`/`max()` column is the corroborating tell that the input was empty. When an
+unambiguous answer matters more than a guaranteed row, use `TableName | count` — one column, one
+number, nothing to misread.
+
+Caused a wrong read during the Sentinel wiring session: `AzureActivity | summarize
+Records=count(), Earliest=min(TimeGenerated)` returned `Records 0` with a blank `Earliest`, and
+the "1 – 1 of 1" footer was taken as evidence that data had arrived. Building the analytics rule
+on that reading would have produced a rule that silently never fires — the most expensive failure
+available at that step, because it is indistinguishable from "still waiting for the schedule."
+
+---
+
+### 2026-08-18 — `python -m package.module` with no `__main__` guard is a silent no-op that exits 0
+
+**Rule:** Zero output plus exit 0 from `python -m <pkg>.<module>` can mean the module was merely
+imported and nothing ran — a missing `if __name__ == "__main__":` guard produces a perfect false
+pass. Before trusting any CLI invocation's clean exit, confirm the entry point actually executes
+(`python -m <pkg>` via `__main__.py`, or the console script). The tell: a command that should
+always print *something* (an error, a usage line, a result) printing nothing at all.
+
+The prior session's Handoff recorded the smoke test as `python -m adte.cli --source sentinel`.
+That command exits 0 silently — `adte/cli.py` has no main guard; the real entry points are
+`python -m adte triage ...` (via `adte/__main__.py`) and the `adte` console script. Run as
+written, it would have been read as "adapter authenticated fine, workspace just empty" while the
+client secret was in fact invalid — a false pass stacked directly on top of the real bug.
+
+---
+
+### 2026-08-18 — A mocked-HTTP test suite cannot validate a hardcoded cloud audience; smoke live before claiming an adapter works
+
+**Rule:** Any hardcoded external endpoint, token audience, or scope string is unverifiable by
+tests that mock the transport — 70 green adapter tests said nothing about whether the string was
+one Azure would accept. Until an adapter has made one real call, "tested" means "the code around
+the constants is tested." Budget a live smoke as part of shipping, and when a supposedly
+identical request succeeds where another fails, **diff the two requests field by field** before
+reaching for temporal explanations — a deterministic failure on repeat rules out propagation,
+caching, and "wait longer."
+
+The Sentinel adapter shipped with `_SCOPE = "https://api.loganalytics.azure.com/.default"`;
+David's tenant does not hold that resource principal (`AADSTS500011`), while the classic
+`api.loganalytics.io` audience works and both query hosts accept its tokens. The first live 400
+was misread as new-secret propagation delay; the second, identical 400 disproved that, and the
+actual difference was that the working probe had used the `.io` scope all along. Fixed under
+waiver (one constant, commit `666e755`) after proving the full path live: token → workspace
+query via the adapter's own KQL → 200 with 0 rows.
+
+---
+
+### 2026-08-18 — Azure client secret: the Value is shown once; a GUID in a secret field means the wrong column was copied
+
+**Rule:** An Azure app-registration client secret has two columns: **Value** (~40 chars, mixed
+symbols, usually contains `~`) is the credential; **Secret ID** (a 36-char GUID) is a label that
+authenticates nothing. The Value is retrievable only at creation — no later blade shows it, so a
+suspected-bad stored secret is never "checked in the portal," it is replaced (10 seconds, new
+secret, delete the old). Diagnostics: a stored "secret" that is 36 chars with hyphens IS the
+Secret ID; other lengths suggest a truncated paste; `AADSTS7000215` is the token endpoint saying
+exactly this.
+
+The `.env` from the prior session held an 18-character fragment — flagged on length alone at
+session start, confirmed by `AADSTS7000215`, whose message literally warns about the
+Value/Secret-ID mix-up. Fixed by minting a new secret and copying the Value column.
