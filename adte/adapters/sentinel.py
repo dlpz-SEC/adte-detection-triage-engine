@@ -61,7 +61,11 @@ from adte.models import AlertEntity, NormalizedIncident, SignInMetadata
 
 _TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 _QUERY_URL_TEMPLATE = "https://api.loganalytics.azure.com/v1/workspaces/{workspace_id}/query"
-_SCOPE = "https://api.loganalytics.azure.com/.default"
+# Token audience deliberately differs from the query host: not every tenant
+# holds the ``api.loganalytics.azure.com`` resource principal (AADSTS500011
+# observed live 2026-08-18), while the classic ``api.loganalytics.io``
+# audience is universally provisioned and accepted by both query hosts.
+_SCOPE = "https://api.loganalytics.io/.default"
 _REQUEST_TIMEOUT = 30  # Seconds, on both the token and query calls.
 _TOKEN_REFRESH_MARGIN = 300  # Refresh this many seconds before expiry.
 _DEFAULT_TOKEN_TTL = 3600  # Assumed lifetime when the response omits expires_in.
