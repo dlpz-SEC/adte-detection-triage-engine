@@ -497,3 +497,36 @@ scheduled analytics rule with incident creation, alert grouping, entity mappings
 tags landed via a single `az rest --method PUT`, and the echoed JSON proved every field. The
 incident fired five minutes later. Portal UI is for humans; the management plane is for
 automation — start at the API when the task is "create a resource with exact settings."
+
+---
+
+### 2026-08-19 — A backgrounded shell inherits drifted cwd, and a launch failure can still exit 0
+
+**Rule:** The Bash tool's working directory persists across calls, including into
+`run_in_background` commands — a `cd frontend` from three calls ago silently relocates a
+later background command. Worse, the failed launch (`python.exe: No such file or directory`)
+reported **exit code 0**, so trusting the exit code would have recorded a test run that never
+executed as a pass. Two defenses, both mandatory: anchor every state-bearing command with an
+absolute `cd <repo-root> &&` prefix (or absolute interpreter paths), and READ the output of
+any gate command — a green exit code with the wrong (or empty) output is a false pass, the
+same family as the empty-verify-fleet and `-m adte.cli` no-op lessons.
+
+The full-suite gate before the milestone push "completed successfully" having run zero tests;
+the only tell was one stderr line in the output file. Re-run from the repo root: 766 passed.
+
+---
+
+### 2026-08-19 — A ship-it green light mid-refactor means ship the coherent subset, not the half-migrated state
+
+**Rule:** When "commit and deploy" arrives while a multi-phase refactor is mid-flight, neither
+obey literally (shipping a broken intermediate state) nor refuse (stalling the user's intent).
+Carve the boundary: identify the subset that is complete, verified, and self-consistent; revert
+the half-migrated remainder to its last working form; ship the subset with the plan file
+carrying the rest. State plainly what shipped and what didn't. A refactor plan whose phases
+each end in a working build (the polish plan's per-phase checkpoints) makes this carve trivial
+— which is itself a reason to structure phases that way.
+
+Green light arrived one edit into the nav restructure: VIEW_LABELS had dropped keys that live
+views still referenced — committing would have shipped undefined page titles to the
+recruiter-facing deploy. Shipped Phase 1 (foundation CSS, verified with old JSX) + the
+self-contained 4-tile fix; reverted the nav constants; 766 green; deployed clean.
