@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "adte-detection-triage-engine"
 version = "0.1.0"
-description = "Automated Detection Triage Engine — source-agnostic security alert triage with weighted signals and explainable verdicts"
+description = "Autonomous Detection & Triage Engine — source-agnostic security alert triage with weighted signals and explainable verdicts"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -23,7 +23,7 @@ dependencies = [
     "anthropic>=0.25,<1.0",
     "flask-limiter>=3.5,<4.0",
     "flask-cors>=4.0,<5.0",
-    "gunicorn>=22.0,<24.0",
+    "gunicorn>=23.0,<24.0",
 ]
 
 [project.optional-dependencies]
