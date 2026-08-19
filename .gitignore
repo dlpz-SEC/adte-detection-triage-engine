@@ -31,6 +31,10 @@ htmlcov/
 # Database files (runtime artefacts — not source)
 *.db
 
+# Local-only evidence — unsanitized live captures (real IPs); sanitized twins
+# live in tests/fixtures/ and ARE committed
+_live_capture_raw.json
+
 # Frontend build artifacts
 frontend/node_modules/
 frontend/bundle.js

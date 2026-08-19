@@ -628,3 +628,66 @@ class TestFetchIncidents:
             output = engine.enrich().score().decide().to_output()
             assert _OUTPUT_KEYS.issubset(output.keys())
             assert 0 <= output["risk_score"] <= 100
+
+
+# ---------------------------------------------------------------------------
+# Live-capture fixture (sanitized real incident, 2026-08-18)
+# ---------------------------------------------------------------------------
+
+
+class TestLiveCaptureFixture:
+    """Pin the contract locked by the first real incident capture.
+
+    ``sentinel_live_capture.json`` is a sanitized real Query API response
+    (incident #1 of workspace ``law-sc200-sentinel``, fired 2026-08-18 by an
+    ``AzureActivity`` analytics rule); only the caller IP was replaced with a
+    TEST-NET-3 address. These tests fail if the adapter stops parsing the
+    shape production actually emits — including the unified-portal
+    ``ProviderName`` (``Microsoft XDR``) and the ``$id``-bearing Entities.
+    """
+
+    @pytest.fixture()
+    def live_capture(self) -> dict[str, Any]:
+        """Load the sanitized live-capture fixture."""
+        return json.loads(
+            (FIXTURES_DIR / "sentinel_live_capture.json").read_text(encoding="utf-8")
+        )
+
+    def test_normalizes_field_for_field(self, live_capture: dict[str, Any]) -> None:
+        """The live shape maps into NormalizedIncident exactly as designed."""
+        rows = _rows_as_dicts(live_capture["tables"][0])
+        incident = SentinelAdapter.normalize_incident(rows)
+        assert isinstance(incident, NormalizedIncident)
+        assert incident.incident_id == "sentinel-1"
+        assert incident.source == "azure_ad"
+        assert incident.user == "dlpz@SecurityLabzz.onmicrosoft.com"
+        assert len(incident.events) == 1
+        event = incident.events[0]
+        assert event.ip_address == "203.0.113.96"
+        assert event.technique_ids == ["T1578"]
+        assert event.location is None  # travel signal must skip, not false-fire
+        assert event.auth_status is None  # MFA signal must skip, not false-fire
+        assert event.timestamp.replace(microsecond=0) == datetime(
+            2026, 8, 18, 21, 31, 11, tzinfo=timezone.utc
+        )
+
+    def test_roundtrips_through_triage(
+        self,
+        adapter: SentinelAdapter,
+        live_capture: dict[str, Any],
+        fp_registry: FPRegistry,
+    ) -> None:
+        """The captured incident triages end-to-end (mock intel, offline)."""
+        adapter._session.post = MagicMock(
+            side_effect=[
+                _mock_response(_TOKEN_PAYLOAD),
+                _mock_response(live_capture),
+            ]
+        )
+        incidents = adapter.fetch_incidents()
+        assert len(incidents) == 1
+        profile = get_user_profile(incidents[0].user)
+        engine = TriageEngine(incidents[0], profile, fp_registry)
+        output = engine.enrich().score().decide().to_output()
+        assert _OUTPUT_KEYS.issubset(output.keys())
+        assert 0 <= output["risk_score"] <= 100

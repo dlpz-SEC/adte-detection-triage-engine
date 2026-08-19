@@ -1,0 +1,36 @@
+{
+  "_comment": "SANITIZED REAL CAPTURE 2026-08-18: first live SecurityIncident fetched by adte/adapters/sentinel.py from workspace law-sc200-sentinel (rule 'adte-lab-mgmt-write' on AzureActivity, created via az rest, incident #1 fired 22:25:55Z). Sanitization: CallerIpAddress 47.x.x.x -> 203.0.113.96 (TEST-NET-3). Everything else byte-faithful, including the unified-portal ProviderName 'Microsoft XDR' (classic portal emits 'ASI Scheduled Alerts') and the $id-bearing Entities shape. This file locks the previously PROVISIONAL KQL column set + Entities contract; sentinel_incidents.json remains the synthetic multi-alert/grouping fixture.",
+  "tables": [
+    {
+      "name": "PrimaryResult",
+      "columns": [
+        {"name": "IncidentNumber", "type": "long"},
+        {"name": "IncidentTitle", "type": "string"},
+        {"name": "IncidentStatus", "type": "string"},
+        {"name": "IncidentCreated", "type": "datetime"},
+        {"name": "AlertName", "type": "string"},
+        {"name": "AlertSeverity", "type": "string"},
+        {"name": "AlertTime", "type": "datetime"},
+        {"name": "Entities", "type": "string"},
+        {"name": "Techniques", "type": "string"},
+        {"name": "Tactics", "type": "string"},
+        {"name": "ProviderName", "type": "string"}
+      ],
+      "rows": [
+        [
+          1,
+          "ADTE Lab - Azure management-plane write",
+          "New",
+          "2026-08-18T22:25:55.02Z",
+          "ADTE Lab - Azure management-plane write",
+          "Medium",
+          "2026-08-18T21:31:11.0057949Z",
+          "[{\"$id\":\"3\",\"Name\":\"dlpz\",\"UPNSuffix\":\"SecurityLabzz.onmicrosoft.com\",\"IsDomainJoined\":true,\"DisplayName\":\"dlpz@SecurityLabzz.onmicrosoft.com\",\"Type\":\"account\",\"UserPrincipalName\":\"dlpz@SecurityLabzz.onmicrosoft.com\",\"AccountName\":\"dlpz\"},{\"$id\":\"4\",\"Address\":\"203.0.113.96\",\"Type\":\"ip\"}]",
+          "[\"T1578\"]",
+          "DefenseEvasion",
+          "Microsoft XDR"
+        ]
+      ]
+    }
+  ]
+}
