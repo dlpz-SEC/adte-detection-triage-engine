@@ -6,7 +6,7 @@ A detailed, chronological account of every major decision, feature, and fix made
 
 ## Project Overview
 
-**ADTE (Autonomous Detection & Triage Engine)** is a deterministic, source-agnostic security incident triage engine. It ingests alerts from multiple SIEM sources, normalises them into a common schema, scores across five core weighted signals (plus an additive cluster-context signal when an alert correlates with recent related alerts — Phase 31), and produces a structured verdict with per-signal rationale and a recommended action. ADTE recommends, it does not act: it performs no automated containment, and every medium/high verdict is flagged for human review. (Historical note: earlier phases described a six-layer execution-gate model; that unwired execution layer was removed in Phase 23 — see below.)
+**ADTE (Autonomous Detection & Triage Engine)** is a deterministic, source-agnostic security incident triage engine. It ingests alerts from multiple SIEM sources — including live Wazuh Indexer ingestion and, since Phase 33, live Microsoft Sentinel ingestion via the Log Analytics Query API — normalises them into a common schema, scores across five core weighted signals plus two additive signals (cluster context, up to +15, when an alert correlates with recent related alerts — Phase 31; file reputation, up to +40, when the alert carries file/malware evidence — Phase 32; both are aggravators only, final score capped at 100), and produces a structured verdict with per-signal rationale and a recommended action. ADTE recommends, it does not act: it performs no automated containment, and every medium/high verdict is flagged for human review. (Historical note: earlier phases described a six-layer execution-gate model; that unwired execution layer was removed in Phase 23 — see below.)
 
 The engine is not a black box. Every verdict can be fully explained: which signals fired, why, at what confidence, and what the recommended containment action is. Human review is explicitly required for medium and high risk verdicts.
 
@@ -55,8 +55,8 @@ The default configuration blocks all execution. A user must explicitly set at mi
 
 | Risk Score | Verdict | Action |
 |-----------|---------|--------|
-| ≥ 70 | `high_risk` | Disable account, revoke sessions, escalate to Tier-2 |
-| 30–69 | `medium_risk` | Escalate for analyst review within SLA |
+| > 70 | `high_risk` | Disable account, revoke sessions, escalate to Tier-2 |
+| 30–70 | `medium_risk` | Escalate for analyst review within SLA |
 | < 30 | `low_risk` | Auto-close, update baseline |
 
 ### Initial test suite
@@ -705,7 +705,7 @@ Full audit confirmed: no credential values appear in any `_log.*` call in the Wa
 ## Current State
 
 ### Test baseline
-**272 tests passing** across 13 files: `test_geo`, `test_intel`, `test_policy`, `test_engine`, `test_llm_assist`, `test_wazuh_adapter`, `test_feedback`, `test_mitre_mapper`, `test_sql_injection`, `test_audit_log`, `test_ticket_client`, `test_verdict_export`, `test_schema_migration`.
+**766 tests passing** across 37 files — from the core suites (`test_geo`, `test_intel`, `test_policy`, `test_engine`) through the adapter suites (`test_wazuh_adapter`, `test_sentinel_adapter`) and the later correlation/case, cluster-signal, file-signal, session-store, batch-triage, RBAC/CORS, and adversarial-injection suites.
 
 ### File inventory
 
@@ -717,9 +717,10 @@ adte/
   engine.py           — TriageEngine: enrich → score → decide → to_output
   models.py           — Pydantic schemas: NormalizedIncident, SignInMetadata, etc.
   report.py           — generate_report: narrative fields from LLM or deterministic path
-  server.py           — Flask app: 14 /api/* route handlers, serves frontend/index.html
+  server.py           — Flask app: 24 /api/* route handlers, serves the esbuild-built frontend
   adapters/
     wazuh.py          — Live Wazuh Indexer adapter (OpenSearch _search API)
+    sentinel.py       — Live Microsoft Sentinel adapter (OAuth2 client-credentials → Log Analytics Query API)
   intel/
     _mock.py          — Deterministic mock threat intel (no API keys needed)
     abuseipdb.py      — AbuseIPDB live client
@@ -735,15 +736,18 @@ adte/
   llm_assist.py       — generate_summary(): verdict narrative + MITRE/NIST annotation
   store/
     audit_log.py      — verdicts + feedback tables; log/query/clear for both; never raises
+    case_store.py     — alert-correlation case store (cases/case_members tables; read-only peek before scoring)
+    session_store.py  — SQLite-backed browser sessions (tokens SHA-256-hashed at rest, 8 h TTL)
     user_history.py   — get_user_profile(): behavioural baseline per user
   utils/
     geo.py            — haversine_distance, calculate_travel_speed, is_impossible_travel
 
 frontend/
-  index.html          — Single-file React SPA (Babel standalone, no build step); 10 views
+  src/app.jsx → esbuild → bundle.js — React SPA, 11 views (loaded by index.html)
 
 examples/
-  incident_impossible_travel_mfa_fatigue.json   — HIGH RISK (score 79)
+  incident_impossible_travel_mfa_fatigue.json   — HIGH RISK (score 99)
+  incident_account_takeover_tor_exfil.json      — CRITICAL (score 99)
   incident_benign_vpn_travel.json               — LOW RISK (score 5)
   incident_needs_human_ambiguous.json           — MEDIUM RISK (score 43)
   fp_registry.yaml                              — Known-benign IP ranges
@@ -757,10 +761,13 @@ docs/
   ARCHITECTURE.md     — Pipeline diagram, module dependency map
   DECISIONS.md        — Signal weight rationale, threshold logic
   SAFETY.md           — Full gate logic and example scenarios
-  EXTENSIONS.md       — Connecting to real Sentinel and Graph APIs
-  EXAMPLE_WALKTHROUGH.md — All 3 scenarios with signal explanations
+  EXTENSIONS.md       — Adapter contract (incl. the shipped live Sentinel adapter) + extension guides
+  EXAMPLE_WALKTHROUGH.md — All 4 scenarios with signal explanations
   ALERT_ROUTING.md    — Alert router setup, env vars, Slack webhook steps
   AUTO_TICKET.md      — Ticket pipeline setup, env vars, Linear and Trello steps
+  INJECTION_GAP_REPORT.md — Adversarial prompt-injection corpus results + sanitizer gap analysis
+  WAZUH_MALWARE_INTEGRATION.md — Wazuh FIM/VirusTotal malware pipeline: lab setup + field contract
+  RUNDOWN.md          — Complete technical reference: startup, RBAC, features, deployment path
   PROJECT_PROGRESS.md — This file
 ```
 
@@ -1111,6 +1118,8 @@ The scenario was enriched to reflect how a real attack of this type actually unf
 | Device novelty | 0/15 | **15/15** |
 | Login hour anomaly | 0/10 | **8.6/10** |
 | **Total** | **55 → MEDIUM** | **79 → HIGH RISK** ✓ |
+
+*(Historical — the example was later enriched again; current pinned score is 99, confidence 85.)*
 
 ---
 
@@ -1543,6 +1552,27 @@ ingestion only, additive schema, scoring parity proven byte-identical on all 4 e
 
 ---
 
+## Phase 30 — Alert Correlation & Case Management (440 → 523 tests) — 2026-07-10
+
+**Scope:** Post-scoring correlation layer that groups related alerts into cases — per-alert
+verdicts stay **byte-identical** (parity proven; `engine.py`/`models.py`/`adapters/`
+untouched, no waiver needed). (The preceding 391 → 440 delta came from the same-day
+multi-format triage input, SQLite session store, and `POST /api/triage/batch` work.)
+
+- `adte/case_policy.py` (constants + kill-chain detector) and `adte/store/case_store.py`
+  (`cases`/`case_members` tables; `BEGIN IMMEDIATE` race-safe join-or-create; fail-open
+  ingest — `"case": null` never blocks a verdict).
+- Correlation keys: shared event source IP (RFC1918 included, loopback excluded) or user
+  (service identities excluded); 60-minute ingestion-time window; kill chain = ≥3 ascending
+  ATT&CK tactics across ≥2 members, ordered by event time.
+- Routes: `GET /api/cases`, `GET /api/cases/<id>` (analyst), `DELETE /api/cases` (admin,
+  soft-delete); batch responses gain a top-level `cases` summary. `/api/queue` deliberately
+  never ingests (re-triage on every poll would multiply membership). Cases are derived data:
+  pruned after 30 idle days. Frontend: new Cases view + batch CASE column.
+- Hardened by two adversarial-review rounds before merge. **Tests: 440 → 523.**
+
+---
+
 ## Phase 31 — Cluster Context: Correlated-Case Uplift as a 6th Signal (523 → 577 tests)
 
 **Scope:** Promote the Phase 30 correlation layer's case context into the scoring engine
@@ -1611,9 +1641,56 @@ integration including golden pins and intra-batch correlation
 
 ---
 
+## Phase 32 — File Reputation 7th Signal + Wazuh Malware Ingestion (577 → 666 tests) — 2026-07-13
+
+**Scope:** Integrate the Wazuh FIM/VirusTotal active-response pipeline as an ADTE alert
+source — ADTE triages, correlates, and audits; Wazuh remains the executor (recommend-only).
+`models.py`, `adapters/wazuh.py`, and `engine.py` edited under an **explicit recorded
+waiver**; additive-only.
+
+- `models.py`: new `FileArtifact`/`FileReputationResult` + optional `SignInMetadata.file`.
+  `adapters/wazuh.py`: `"virustotal"` rule groups classified as file events (fixes rule-87105
+  misclassification); `_extract_file_artifact` lifts `syscheck.*` + `data.virustotal.*`.
+- `engine.py`: ADDITIVE `file_reputation` signal (`WEIGHT_FILE_REPUTATION = 40`), registered
+  only when file evidence exists, `risk = min(100, risk + points)` after the untouched cluster
+  block. Curve: detection ratio ≥ 0.5 → 40; 0 < ratio < 0.5 → 20; confirmed-no-hash → 15;
+  clean → 0 but registered — an aggravator, never a mitigator. Embedded Wazuh/VT verdict
+  preferred over an in-`enrich()` VT hash lookup (bounded, 5 per incident).
+- Case layer (free files): file **hash** is now a third correlation key, so the same malware
+  across hosts becomes one campaign case.
+- **Non-file alerts byte-identical** (sha256 parity + permanent golden pins; rollback tag
+  `pre-file-signal`). Lab setup + field contract: `docs/WAZUH_MALWARE_INTEGRATION.md`.
+  **Tests: 577 → 666.**
+
+---
+
+## Phase 33 — Live Microsoft Sentinel Adapter (694 → 764 tests) — 2026-08-16
+
+**Scope:** Real Azure ingestion — new file `adte/adapters/sentinel.py` created under an
+**explicit recorded waiver**, additive-only: **zero edits** to `engine.py`, `models.py`, or
+`adapters/wazuh.py` (golden sha256 parity re-proven regardless). (The preceding 666 → 694
+delta came from the 2026-07-22 recruiter RBAC alias + CORS placeholder-filter hardening.)
+
+- OAuth2 client-credentials → Log Analytics Query API; a `SecurityIncident` ⋈ `SecurityAlert`
+  KQL join projects incidents into the existing normalization path. The four
+  `ADTE_SENTINEL_*` env vars (tenant/client/secret/workspace) are strictly GUID-validated —
+  a path-injection guard.
+- Builds `SignInMetadata` directly with `location=None`/`auth_status=None` so the travel/MFA
+  signals *skip* (deliberately not via `from_sentinel()`, whose missing-geo `GeoLocation(0,0)`
+  default could false-fire impossible travel).
+- Integration (free files): `/api/queue` source ladder wazuh → sentinel → demo; CLI
+  `--source sentinel`; adapter contract codified in `docs/EXTENSIONS.md`. **Tests: 694 → 764.**
+- **2026-08-18 — first REAL incident end-to-end:** after a one-line token-scope fix under
+  waiver (`api.loganalytics.io`), analytics rule `adte-lab-mgmt-write` (AzureActivity
+  successful `/WRITE` ops) fired incident #1, which ADTE fetched and triaged live —
+  **medium_risk 39/33** with correct signal skips and live TI on the caller IP. The wire
+  contract (KQL column set + Entities JSON shape) is locked by the sanitized capture
+  `tests/fixtures/sentinel_live_capture.json` (tests: 764 → **766**).
+
+---
+
 ## Open Items
 
 - **Automated containment / response-execution layer** — removed in Phase 23; ADTE is recommend-only. If revived, `docs/SAFETY.md` documents the reserved env-var gating contract it is expected to honour.
-- **Real Sentinel REST API** — live ingestion from Azure Monitor / SecurityIncidents table is not implemented (ADTE accepts the Sentinel incident JSON *format* only).
 - **Batch processing for mock source** — `--source mock` processes one file at a time; a `--batch` flag for a directory of incidents is not implemented.
 - **SOAR-ready output** — the verdict JSON is structured but not yet validated against any SOAR platform's action schema.

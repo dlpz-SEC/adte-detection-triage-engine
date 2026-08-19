@@ -7,7 +7,7 @@
 # Nixpacks builder provisions one primary language, so it will not put Node and
 # Python in the same build environment — this Dockerfile does it explicitly.
 #
-# Mirrors the proven Render build:
+# Mirrors the original Render build (Render is now parked; Railway is live):
 #   build : pip install . && cd frontend && npm install && npm run build
 #   start : gunicorn adte.server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
 
@@ -33,9 +33,9 @@ COPY pyproject.toml README.md ./
 COPY adte/ ./adte/
 RUN pip install .
 
-# Bring in the rest of the source tree. gunicorn runs from /app (the repo root),
-# the same way Render runs it, so the server reads frontend/index.html and any
-# data files relative to cwd.
+# Bring in the rest of the source tree. gunicorn runs from /app (the repo
+# root), so the server reads frontend/index.html and any data files relative
+# to cwd.
 COPY . .
 
 # Overlay the freshly built bundle from the frontend stage (the COPY above

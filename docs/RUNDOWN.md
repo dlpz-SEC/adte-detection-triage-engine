@@ -12,7 +12,7 @@
 2. [RBAC: Role-Based Access Control & The ADTE_API_KEY_ADMIN System](#2-rbac-role-based-access-control--the-adte_api_key_admin-system)
 3. [Four Tiers: readonly, analyst, senior_analyst, admin](#3-four-tiers-readonly-analyst-senior_analyst-admin)
 4. [How ADTE Separates Work by User](#4-how-adte-separates-work-by-user)
-5. [Recruiter Access: localhost Limitation & Deployment Path](#5-recruiter-access-localhost-limitation--deployment-path)
+5. [Recruiter Access: Live Deployment](#5-recruiter-access-live-deployment)
 6. [Admin Access: Full Permissions & Development Workflow](#6-admin-access-full-permissions--development-workflow)
 7. [ADTE Feature Map: What Each Part Does](#7-adte-feature-map-what-each-part-does)
 8. [API Keys: Where They Live & Why](#8-api-keys-where-they-live--why)
@@ -60,7 +60,7 @@ $env:ADTE_WAZUH_USER = "wazuh-api-user"
 $env:ADTE_WAZUH_PASS = "your-wazuh-password"
 ```
 
-> **Note:** If no `ADTE_API_KEY_*` vars are set, ADTE runs in open/demo mode — RBAC is bypassed and all endpoints are accessible without a key. This is intentional for local testing without configuration overhead.
+> **Note:** If no `ADTE_API_KEY_*` vars are set, ADTE runs in demo mode — read requests (GET/HEAD/OPTIONS) pass through without a key, but **every write (POST/PUT/DELETE/PATCH) returns 403 "Demo mode active"**. This keeps un-keyed browsing friction-free without ever allowing un-keyed triage or deletion.
 
 ### Step 2 — Start the Flask Server
 
@@ -71,13 +71,13 @@ python -m adte.server
 
 ### Step 3 — Open the UI
 
-Navigate to [http://localhost:5000](http://localhost:5000) in a browser. The single-page app (React, no build step) loads immediately.
+Navigate to [http://localhost:5000](http://localhost:5000) in a browser. The single-page app (React, esbuild-bundled: `frontend/src/app.jsx` → `frontend/bundle.js`) loads immediately.
 
-### Step 4 — Paste Your API Key into Settings
+### Step 4 — Log In with Your API Key
 
-1. Click **Settings** in the left sidebar.
+1. Open **Settings** (gear icon, top-right).
 2. Paste the value of `ADTE_API_KEY_ADMIN` into the **ADTE API Key** field.
-3. Click **Save Settings**. The key is stored in `sessionStorage` (clears when the tab closes) and sent automatically on every subsequent request.
+3. Click **Log In**. The browser exchanges the key for an **HttpOnly session cookie** via `POST /api/auth/login` — the raw key is never persisted browser-side. Sessions are SQLite-backed (tokens SHA-256-hashed at rest), expire after 8 hours, and are revoked on logout.
 
 ### Subsystem Status Checks
 
@@ -85,7 +85,7 @@ Navigate to [http://localhost:5000](http://localhost:5000) in a browser. The sin
 |-----------|---------------|
 | Server alive | Header shows green dot; `/health` returns `{"status": "ok"}` |
 | RBAC active | Settings panel shows "RBAC Active" badge when key is saved |
-| Wazuh live | Alert Queue shows **source: wazuh** and real alert count; falls back to 3 mock incidents if adapter unavailable |
+| Live SIEM source | Alert Queue shows **source: wazuh** or **source: sentinel** (ladder order); with no live adapter configured/reachable it falls back to **source: demo** — 8 seeded demo incidents (4 Sentinel identity examples + 4 raw Wazuh malware alerts), labeled DEMO MODE in the UI |
 | Threat intel firing | Triage result shows `source: abuseipdb,virustotal,otx` instead of `source: mock` |
 | LLM summaries active | Settings panel shows **LLM Summaries: AVAILABLE** badge; triage result includes `one_paragraph_summary` narrative |
 
@@ -122,7 +122,7 @@ Write-Host $env:ADTE_API_KEY_ADMIN
 
 ### How the Server Validates Keys
 
-Every request (except in open/demo mode) must include an `X-ADTE-Key` header:
+Every secured request must carry either the `adte_session` HttpOnly cookie (browser clients, set at login) or an `X-ADTE-Key` header (CLI / programmatic clients):
 
 ```
 X-ADTE-Key: adte-admin-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -131,20 +131,20 @@ X-ADTE-Key: adte-admin-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 The `require_role` decorator on each endpoint does the following:
 
 1. Checks if `app.config["TESTING"]` is set → if yes, bypass (test suite only).
-2. Checks if any `ADTE_API_KEY_*` env var is configured → if none set, bypass (open/demo mode).
-3. Reads `X-ADTE-Key` header → returns **401** if missing.
-4. Resolves the key to a role by comparing against all four env vars → returns **401** if no match.
+2. Checks if any `ADTE_API_KEY_*` env var is configured → if none set, demo mode: GET/HEAD/OPTIONS pass through, every write returns **403 "Demo mode active"**.
+3. Looks for the `adte_session` HttpOnly cookie first → resolves it to a role, or returns **401 "Session expired"**.
+4. With no cookie, reads the `X-ADTE-Key` header → returns **401** if missing or if it matches no configured key.
 5. Compares the caller's role level against the endpoint's minimum role → returns **403** if insufficient.
 
 ### How to Use It in the UI
 
-1. In the Settings view, paste the key value into the **ADTE API Key** password field.
-2. Click **Save Settings**.
-3. The `authHeaders()` helper in the frontend reads `sessionStorage.getItem('adte_api_key')` and injects `{ 'X-ADTE-Key': key }` into every `fetch()` call automatically. You never need to set headers manually.
+1. In the Settings view (gear icon, top-right), paste the key value into the **ADTE API Key** password field.
+2. Click **Log In**. `POST /api/auth/login` exchanges the key for an HttpOnly session cookie.
+3. The `authHeaders()` helper in the frontend is now a **stub returning `{}`** — auth rides on the session cookie, which the browser attaches automatically (`credentials: 'include'`). JavaScript can never read the session token (HttpOnly), and no key header is injected client-side.
 
-### sessionStorage Contract
+### Session Contract
 
-The browser stores exactly **one value**: `adte_api_key`. No third-party API keys (AbuseIPDB, VirusTotal, Anthropic) ever touch the browser. The key is stored in `sessionStorage` (auto-clears when the tab closes) and never echoed back to the UI after save.
+The browser persists **no credential at all**. The raw API key exists only transiently in the login form; after **Log In** it is exchanged for an HttpOnly session cookie and discarded. Server-side, session tokens are SHA-256-hashed at rest in SQLite, expire after 8 hours, and are revoked on logout. No third-party API keys (AbuseIPDB, VirusTotal, Anthropic) ever touch the browser.
 
 ---
 
@@ -156,31 +156,41 @@ Role levels are numeric — higher roles inherit all lower-role access:
 
 | Role | Level | Env Var | Endpoints Accessible |
 |------|-------|---------|----------------------|
-| `readonly` | 0 | `ADTE_API_KEY_READONLY` | `GET /`, `GET /health`, `GET /api/examples`, `GET /api/auth-check` |
-| `analyst` | 1 | `ADTE_API_KEY_ANALYST` | All readonly + `POST /api/triage`, `GET /api/queue`, `GET /api/verdicts`, `GET /api/feedback`, `POST /api/feedback`, `GET /api/intel`, `GET /api/verdicts/export` |
+| `readonly` | 0 | `ADTE_API_KEY_READONLY` | Public routes (`GET /`, `/health`, `/api/examples`) + `GET /api/auth-check` |
+| `analyst` | 1 | `ADTE_API_KEY_ANALYST` | All readonly + triage (single + batch), queue, verdicts (+ export + stats), feedback, cases, intel |
 | `senior_analyst` | 2 | `ADTE_API_KEY_SENIOR` | All analyst + `GET /api/config` |
-| `admin` | 3 | `ADTE_API_KEY_ADMIN` | All endpoints + `DELETE /api/verdicts`, `DELETE /api/feedback` |
+| `admin` | 3 | `ADTE_API_KEY_ADMIN` | All endpoints + `DELETE /api/verdicts`, `DELETE /api/feedback`, `DELETE /api/cases` |
 
-### All 16 Endpoints at a Glance
+### All 24 Endpoints at a Glance
 
-| # | Method | Path | Minimum Role | Description |
-|---|--------|------|-------------|-------------|
-| 1 | GET | `/` | readonly | Serve the frontend SPA |
-| 2 | GET | `/health` | readonly | Liveness probe (`{"status": "ok"}`) |
-| 3 | GET | `/api/examples` | readonly | Load the 4 bundled example incidents as NormalizedIncident JSON |
-| 4 | POST | `/api/triage` | analyst | Run full triage pipeline on a NormalizedIncident payload (rate: 10/min) |
-| 5 | GET | `/api/queue` | analyst | Wazuh live alert queue, triage-scored, with mock fallback |
-| 6 | GET | `/api/verdicts` | analyst | Audit log of past triage verdicts (filterable, newest first) |
-| 7 | GET | `/api/feedback` | analyst | Analyst FP/TP feedback history |
-| 8 | POST | `/api/feedback` | analyst | Submit FP/TP label; auto-promotes FP IPs to YAML registry (rate: 30/min) |
-| 9 | DELETE | `/api/verdicts` | admin | Clear all verdict audit log rows |
-| 10 | DELETE | `/api/feedback` | admin | Clear all analyst feedback rows |
-| 11 | GET | `/api/intel` | analyst | Enrich a single IP against live threat intel sources |
-| 12 | GET | `/api/config` | senior_analyst | Read safety gate config + masked API key status + `llm_available` flag |
-| 13 | GET | `/api/verdicts/export` | analyst | Download the verdict audit log as CSV or JSON (rate: 10/min) |
-| 14 | GET | `/api/auth-check` | readonly | Verify an API key and return the resolved role |
-| 15 | POST | `/api/auth/login` | public | Exchange an API key for an HttpOnly session cookie |
-| 16 | POST | `/api/auth/logout` | public | Invalidate the current browser session |
+Regenerated from the `@app.route` decorators in `adte/server.py` (24 route handlers).
+
+| # | Method | Path | Minimum Role | Rate Limit | Description |
+|---|--------|------|-------------|-----------|-------------|
+| 1 | GET | `/` | public | — | Serve the frontend SPA |
+| 2 | GET | `/<path:filename>` | public | — | Serve static frontend assets (bundle.js, CSS, images) |
+| 3 | GET | `/health` | public | — | Liveness probe (`{"status": "ok"}`) |
+| 4 | GET | `/api/examples` | public | — | Load the 4 bundled example incidents as NormalizedIncident JSON |
+| 5 | POST | `/api/triage` | analyst | 10/min | Run full triage pipeline on one incident (auto-detects canonical / raw Wazuh / raw Sentinel payload formats) |
+| 6 | POST | `/api/triage/batch` | analyst | 5/min | Batch triage (25-alert cap, 45 s deadline, per-alert error isolation) |
+| 7 | GET | `/api/queue` | analyst | 20/min | Live alert queue, triage-scored — source ladder wazuh → sentinel → demo |
+| 8 | GET | `/api/verdicts` | analyst | 60/min | Audit log of past triage verdicts (filterable, newest first) |
+| 9 | GET | `/api/verdicts/export` | analyst | 10/min | Download the verdict audit log as CSV or JSON |
+| 10 | GET | `/api/stats/verdicts` | analyst | 10/min | Verdict distribution aggregated from the audit log |
+| 11 | GET | `/api/stats/mitre` | analyst | 10/min | MITRE technique frequency aggregated from the audit log |
+| 12 | GET | `/api/stats/feedback` | analyst | 10/min | FP/TP feedback ratio aggregated from the audit log |
+| 13 | GET | `/api/feedback` | analyst | 60/min | Analyst FP/TP feedback history |
+| 14 | POST | `/api/feedback` | analyst | 30/min | Submit FP/TP label; auto-promotes FP IPs to YAML registry |
+| 15 | DELETE | `/api/verdicts` | admin | 5/min | Clear all verdict audit log rows |
+| 16 | DELETE | `/api/feedback` | admin | 5/min | Clear all analyst feedback rows |
+| 17 | GET | `/api/cases` | analyst | 60/min | List correlated alert cases |
+| 18 | GET | `/api/cases/<case_id>` | analyst | 60/min | Case detail with member alerts |
+| 19 | DELETE | `/api/cases` | admin | 5/min | Soft-delete all cases |
+| 20 | GET | `/api/intel` | analyst | 30/min | Enrich a single IP against live threat intel sources |
+| 21 | GET | `/api/auth-check` | readonly | — | Verify an API key and return the resolved role |
+| 22 | POST | `/api/auth/login` | public | — | Exchange an API key for an HttpOnly session cookie |
+| 23 | POST | `/api/auth/logout` | public | — | Revoke the current browser session |
+| 24 | GET | `/api/config` | senior_analyst | 10/min | Read safety gate config + masked API key status + `llm_available` flag |
 
 ---
 
@@ -199,7 +209,7 @@ Each user receives their own API key mapped to their role:
 | SOC Tier-1 analyst | `analyst` | `ADTE_API_KEY_ANALYST` |
 | Auditor / recruiter | `readonly` | `ADTE_API_KEY_READONLY` |
 
-The key determines what the user can see and do. There is no login/session system — the API key IS the identity.
+The key determines what the user can see and do. Browser users log in once via Settings — `POST /api/auth/login` exchanges the key for an HttpOnly session cookie (SQLite-backed sessions, SHA-256-hashed tokens, 8 h TTL, revoked on logout). CLI and programmatic clients send `X-ADTE-Key` directly on each request.
 
 ### Audit Trail
 
@@ -213,38 +223,32 @@ The audit log does not yet record *which key* submitted an action (key-to-action
 
 ---
 
-## 5. Recruiter Access: localhost Limitation & Deployment Path
+## 5. Recruiter Access: Live Deployment
 
-**Recruiter Access: localhost Limitation & Deployment Path**
+**Recruiter Access — Live on Railway**
 
-### Current State (localhost only)
+### Current State (publicly deployed)
 
-- ADTE runs on `http://localhost:5000` — it is not publicly deployed.
-- Recruiters **cannot** access it remotely without additional setup.
-- **Demo options for recruiters today:**
-  - David runs it locally and shares his screen over video call.
-  - David provides a VM snapshot (OVA file) the recruiter can import and run in VirtualBox/VMware.
-  - David records a walkthrough video showing live triage, queue, threat intel enrichment, and RBAC in action.
+- ADTE is **live** at [https://autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app), auto-deploying from `main` on every push.
+- Recruiters enter at the **Overview** page (`#overview`) — a guided landing view of what ADTE is and how to drive it.
+- A **public recruiter passkey** is published in the Settings panel and the README. It maps (via the `ADTE_API_KEY_RECRUITER` env alias) to the **analyst** role. Publishing it is intentional, not a leak — it is revoked by rotating the env var on Railway.
+- The hosted queue runs in **DEMO MODE by design** — the Wazuh Indexer is VM-private and no Sentinel credentials are deployed on the host, so the queue serves the 8 seeded demo incidents and the UI labels the state DEMO MODE (expected, never an outage).
 
-### Future State (public deployment)
+### How a recruiter gets in
 
-1. Deploy to a public host (Render, Railway, or a VPS with a public IP).
-2. Set all env vars on the host (API keys, Wazuh credentials, CORS origins).
-3. Update `ADTE_CORS_ORIGINS` to the public domain.
-4. Generate a read-only key: `$env:ADTE_API_KEY_READONLY = "adte-readonly-$(New-Guid)"`.
-5. Distribute that key value to recruiters.
+1. Open [https://autonomousdetection.up.railway.app/#overview](https://autonomousdetection.up.railway.app/#overview).
+2. Open **Settings** (gear icon, top-right) — the Recruiter access panel shows the passkey with a one-click fill button.
+3. Click **Log In**. The key is exchanged for an HttpOnly session cookie; nothing is persisted browser-side.
+4. Run triage on the four bundled scenarios, then explore the queue, cases, signal breakdown, MITRE mapping, and audit views.
 
-**What recruiters would see with a readonly key:**
-- The full SPA loads (role 0 can access `GET /`).
-- `/api/examples` populates the three bundled scenarios.
-- They cannot call `/api/triage`, `/api/queue`, `/api/intel`, `/api/verdicts`, `/api/feedback`, or `/api/config` — all require analyst (level 1) or higher.
+**What the analyst-level passkey can and cannot do:**
+- Can: load the four bundled examples, run `/api/triage` (single + batch), view queue, cases, verdicts, feedback, stats, and IP intel.
+- Cannot: `DELETE` anything (admin only) or read `/api/config` (senior_analyst+).
 
-> For a more useful recruiter demo, issue an **analyst-level key** instead. This allows them to load examples, run triage, view the queue, and explore verdicts — all read-heavy operations that demonstrate the core value of the system. Analyst keys cannot delete data.
-
-**Security properties during public deployment:**
+**Security properties of the hosted deployment:**
 - AbuseIPDB, VirusTotal, OTX API keys: env vars on the server, never returned in any response.
 - `ANTHROPIC_API_KEY`: env var only; the browser receives `llm_available: true/false` — never the key itself.
-- ADTE bearer token: lives in the recruiter's browser `sessionStorage`, scoped only to ADTE's own server.
+- Session token: HttpOnly cookie, unreadable by JavaScript; SHA-256-hashed at rest server-side, 8 h TTL, revoked on logout.
 
 ---
 
@@ -292,7 +296,7 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 
 ### Detection & Scoring
 
-**Weighted Scoring Engine — 5 core signals + additive cluster context**
+**Weighted Scoring Engine — 5 core signals (sum 100) + 2 additive signals (cluster context +15, file reputation +40), final score capped at 100**
 
 | Signal | Max Weight | Method |
 |--------|-----------|--------|
@@ -302,13 +306,14 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 | Device Novelty | 15 pts | Device ID compared against user's known inventory |
 | Login Hour Anomaly | 10 pts | Sign-in timestamp vs. user's baseline login-hour window |
 | Cluster Context | +15 pts (additive) | Correlated-case context (shared source IP/user, 60-min window): sibling volume (1 → +5, 2 → +8, 3+ → +10) + kill-chain progression (+5), capped at 15 — applied on top of the 0–100 core score, final capped at 100. Only present when the alert actually correlates; solo alerts score byte-identically to the 5-core-signal engine. |
+| File Reputation | +40 pts (additive) | File-hash verdicts from Wazuh FIM/VirusTotal alerts — the embedded VT verdict is preferred (zero API cost), with a bounded live hash lookup as fallback: malicious ratio ≥ 0.5 → +40, partial detections → +20, confirmed-no-hash → +15, clean → 0. Registered only when file evidence exists; non-file alerts score byte-identically. Aggravator only, never a mitigator. |
 
 **Verdict thresholds:**
 - `risk_score < 30` → `low_risk` — auto-close
 - `30 ≤ risk_score ≤ 70` → `medium_risk` — escalate for analyst review
 - `risk_score > 70` → `high_risk` — disable account, revoke sessions, P1 escalation
 
-**Wazuh weight redistribution:** Wazuh alerts carry no geolocation or MFA data. The engine detects which signals are unevaluable and proportionally redistributes their combined 55-point weight across the three remaining signals, keeping the full 0–100 scoring range reachable. The redistribution operates over the five core signals only — the additive cluster-context uplift, when present, is applied after that normalisation (e.g. the both-skipped 78 becomes 83 with one correlated case sibling).
+**Wazuh weight redistribution:** Wazuh alerts carry no geolocation or MFA data. The engine detects which signals are unevaluable and proportionally redistributes their combined 55-point weight across the three remaining signals, keeping the full 0–100 scoring range reachable. The redistribution operates over the five core signals only — the additive uplifts (cluster context, file reputation), when present, are applied after that normalisation (e.g. the both-skipped 78 becomes 83 with one correlated case sibling).
 
 **Safety Gate Configuration (reserved — ADTE is triage-only):**
 
@@ -324,6 +329,14 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 | 6. Action Allowlist | `ADTE_ACTION_ALLOWLIST` | `CLOSE_INCIDENT,POST_COMMENT` | Whitelist of permitted action types |
 
 There is no execution layer today, so these gates enforce nothing — the table documents the intended contract for a future containment layer.
+
+---
+
+### Live SIEM Ingestion (Wazuh + Sentinel)
+
+- **Wazuh adapter** (`adte/adapters/wazuh.py`) — queries the OpenSearch Indexer (`ADTE_WAZUH_HOST`) for live alerts; the flagship live source, including the FIM/VirusTotal malware pipeline.
+- **Microsoft Sentinel adapter** (`adte/adapters/sentinel.py`) — wired to a **live Microsoft Sentinel workspace**: OAuth2 client-credentials token → Log Analytics Query API (`SecurityIncident` joined with `SecurityAlert`) → normalized incidents. Env vars: `ADTE_SENTINEL_TENANT_ID` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_WORKSPACE_ID` (GUIDs strictly validated). CLI: `python -m adte triage --source sentinel`. The first real Sentinel incident was fetched and triaged end-to-end on 2026-08-18.
+- **Queue ladder** — `/api/queue` tries wazuh → sentinel → demo: the first adapter that is configured AND reachable wins; otherwise the 8 seeded demo incidents serve (`source: "demo"`, labeled DEMO MODE).
 
 ---
 
@@ -367,19 +380,21 @@ There is no execution layer today, so these gates enforce nothing — the table 
 
 ---
 
-### Frontend (9 Views)
+### Frontend (11 Views)
 
 | View | Sidebar Label | Description |
 |------|--------------|-------------|
+| `overview` | Overview | Landing page (`#overview`) for first-time visitors and recruiters — guided tour of what ADTE is and how to drive it |
 | `triage` | Alert Input | Paste NormalizedIncident JSON, load examples, run triage, view scored result |
-| `queue` | Alert Queue | Live Wazuh queue (or mock fallback); click any row to load + triage instantly |
+| `queue` | Alert Queue | Live SIEM queue (wazuh → sentinel ladder, demo fallback); click any row to load + triage instantly |
+| `cases` | Cases | Correlated alert clusters (shared source IP / user / file hash); expand a case for members and kill-chain ordering |
 | `signals` | Signal Breakdown | Per-signal score bars and rationale strings from the last triage run |
 | `mitre` | MITRE/NIST | MITRE ATT&CK technique tags and NIST 800-61 phase badges for the active verdict |
 | `intel` | Threat Intel | IP Rep signal from last triage (top section, when result exists) + IP enrichment lookup (AbuseIPDB/VT/OTX); clicking a signal IP populates the lookup inline |
 | `safety` | Safety Gates | Live read of all 6 gate states from `/api/config` |
 | `weights` | Signal Weights | Current signal weight configuration |
 | `audit` | Audit Log | VERDICTS sub-tab: SQLite audit log with verdict filter + clear; FEEDBACK sub-tab: FP/TP labels with incident ID filter + clear |
-| `settings` | Settings | ADTE API Key entry (write-only password field) + LLM Summaries status badge |
+| `settings` | Settings (gear icon, top-right) | ADTE API Key login (exchanged for an HttpOnly session cookie), Recruiter access panel with one-click passkey fill, LLM Summaries status badge |
 
 **Design:** Dark charcoal aesthetic (SentinelOne-style), JetBrains Mono + IBM Plex Sans, Chart.js for signal visualizations. Light/dark theme toggle in header. Sidebar collapses to icon-only at 56px.
 
@@ -395,13 +410,13 @@ There is no execution layer today, so these gates enforce nothing — the table 
 | `ADTE_VT_API_KEY` | Server env var | Never | Masked in `/api/config` |
 | `ADTE_OTX_KEY` | Server env var | Never | Masked in `/api/config` |
 | `ANTHROPIC_API_KEY` | Server env var | Never | Browser only sees `llm_available: true/false` |
-| `ADTE_API_KEY_ADMIN` (and other roles) | Server env var + browser `sessionStorage` | Only as masked preview in `/api/config` | This is ADTE's own bearer token — correct to be browser-side |
+| `ADTE_API_KEY_ADMIN` (and other roles) | Server env var; browser holds only an HttpOnly session cookie after login | Only as masked preview in `/api/config` | ADTE's own bearer token — exchanged at login, never persisted browser-side |
 
 **Why this split:**
 
 Third-party API keys (AbuseIPDB, VT, OTX, Claude) are server-side secrets. They authenticate ADTE to external paid services. If they leaked to the browser, any visitor could extract them from DevTools and consume your quota. The server mediates all third-party calls and returns only the enriched results.
 
-The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credential — it authenticates the user to ADTE's server, not to any external service. It auto-clears when the tab closes, reducing the window of exposure vs. `localStorage`.
+The ADTE bearer token is ADTE's own credential — it authenticates the user to ADTE's server, not to any external service. The browser never persists it: `POST /api/auth/login` exchanges it for an HttpOnly session cookie (unreadable by JavaScript, SHA-256-hashed at rest server-side, 8 h TTL, revoked on logout).
 
 ---
 
@@ -416,7 +431,7 @@ The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credent
 **Can call:**
 - `GET /` — loads the SPA
 - `GET /health` — liveness check
-- `GET /api/examples` — read the 3 bundled incident examples
+- `GET /api/examples` — read the 4 bundled incident examples
 
 **Cannot call:** Any `/api/triage`, `/api/queue`, `/api/verdicts`, `/api/feedback`, `/api/intel`, or `/api/config` endpoint.
 
@@ -461,7 +476,7 @@ The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credent
 
 **Env var:** `ADTE_API_KEY_ADMIN`
 
-**Can call:** All 12 endpoints, including:
+**Can call:** Every endpoint, including:
 - `DELETE /api/verdicts` — clear all verdict audit log rows (irreversible)
 - `DELETE /api/feedback` — clear all analyst feedback rows (irreversible)
 
@@ -477,7 +492,7 @@ The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credent
 
 - **P13 — SOC Dashboard aggregation endpoints:** **Shipped in Phase 29.** `GET /api/stats/verdicts` (verdict distribution), `GET /api/stats/mitre` (technique frequency), and `GET /api/stats/feedback` (FP/TP ratio) now aggregate the audit-log data — all `analyst`-role, 10/minute, with an optional ISO-8601 `since` window and soft-delete exclusion. A dashboard *view* consuming them is still future UI work; the backend they depend on is now live.
 
-- **P14 — authHeaders() Wiring (Critical Bug Fix):** Before P14, the RBAC decorator on every endpoint was enforcing key validation, but the frontend was not actually sending the `X-ADTE-Key` header on any `fetch()` call. Every API request was returning 401 in secured mode, making RBAC completely non-functional end-to-end. P14 introduced the `authHeaders()` helper (`sessionStorage.getItem('adte_api_key')` → `{ 'X-ADTE-Key': key }`) and wired it into all 12 fetch calls, completing the auth circuit.
+- **P14 — authHeaders() Wiring (Critical Bug Fix):** Before P14, the RBAC decorator on every endpoint was enforcing key validation, but the frontend was not actually sending the `X-ADTE-Key` header on any `fetch()` call. Every API request was returning 401 in secured mode, making RBAC completely non-functional end-to-end. P14 introduced the `authHeaders()` helper (`sessionStorage.getItem('adte_api_key')` → `{ 'X-ADTE-Key': key }`) and wired it into all 12 fetch calls, completing the auth circuit. *(Since superseded: browser auth now rides an HttpOnly session cookie set by `POST /api/auth/login`; `authHeaders()` survives as a stub returning `{}`.)*
 
 - **P15 — Credential Hygiene (Third-Party Key Removal):** Prior Settings UI had input fields for `ANTHROPIC_API_KEY` and potentially other third-party keys, which would have stored secrets in `localStorage` and sent them to the server on settings save. P15 removed all third-party key inputs from the frontend. The server now reads `ANTHROPIC_API_KEY` from env vars only and exposes a `llm_available: bool` capability flag on `/api/config`. The browser never sees or stores any third-party key. `.env.example` was updated to document this model. The Settings view now shows a read-only **LLM Summaries: AVAILABLE / NOT CONFIGURED** badge based on the server-side flag.
 
@@ -489,7 +504,7 @@ The ADTE bearer token (`adte_api_key` in `sessionStorage`) is ADTE's own credent
 
 ### Current State
 
-ADTE is deployed on **Render** (`render.yaml`, native Python runtime) and **Railway** (`Dockerfile` + `railway.json`), both auto-deploying from the `main` branch. It can also be run locally as a single `python -m adte.server` process on port 5000 serving both the Flask API and the static frontend SPA.
+ADTE is **live on Railway only**, at [https://autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app) (`Dockerfile` + `railway.json`, auto-deploying on every push to `main`). **Render is parked** — `render.yaml` remains in the repo but is inert (the GitHub link is severed and the service is out of the deployment picture). ADTE can also be run locally as a single `python -m adte.server` process on port 5000 serving both the Flask API and the static frontend SPA.
 
 ### Deployment Steps (when ready)
 
@@ -502,20 +517,20 @@ ADTE is deployed on **Render** (`render.yaml`, native Python runtime) and **Rail
 ### Critical Before Going Public
 
 - **TI result caching + quota — addressed in Phase 29.** The aggregator now fronts all three providers with a bounded 1-hour TTL cache (in-memory, per process) and enforces per-provider daily quotas (`ADTE_TI_QUOTA_<PROVIDER>`; defaults AbuseIPDB 1000 / VT 500 / OTX 10000) that skip a provider once spent and fall back to mock when all are exhausted — so repeated-IP and high-cardinality demo traffic no longer burns free-tier quota. A cross-process/persistent cache (SQLite or Redis) is still the next step only if the app scales past a single process.
-- **Wazuh connectivity:** The Wazuh Indexer lives at a local VM address (`192.168.127.129:9200`). It is not reachable from a public cloud host without a VPN tunnel or exposing the VM's port publicly. The queue endpoint falls back to 3 mock incidents gracefully when Wazuh is unreachable.
+- **Live SIEM connectivity:** The Wazuh Indexer lives at a local VM address (`192.168.127.129:9200`) — not reachable from a public cloud host without a VPN tunnel or exposing the VM's port publicly. The queue endpoint walks the live-source ladder (wazuh → sentinel) and falls back gracefully to the 8 seeded demo incidents (`source: "demo"`, labeled DEMO MODE) when no live adapter is configured or reachable — the expected hosted state.
 
-### Recruiter Access Model (post-deployment)
+### Recruiter Access Model (live today)
 
 ```
-David runs the server publicly
+Server runs publicly on Railway
     ↓
-Creates ADTE_API_KEY_ANALYST = "adte-analyst-<uuid>"
+ADTE_API_KEY_RECRUITER set on the host (public recruiter passkey → analyst role)
     ↓
-Sends recruiter the public URL + analyst key
+Recruiter opens https://autonomousdetection.up.railway.app/#overview
     ↓
-Recruiter opens URL → Settings → pastes key → Save
+Settings (gear icon) → one-click passkey fill → Log In (HttpOnly session cookie)
     ↓
-Full triage, queue, intel, and verdict history access
+Full triage, queue, cases, intel, and verdict history access
 No ability to delete data or view safety gate config
 ```
 
@@ -527,12 +542,12 @@ No ability to delete data or view safety gate config
 
 ### 401 Unauthorized on All API Calls
 
-**Cause:** ADTE_API_KEY_ADMIN is set in the server's environment, but the browser's `sessionStorage` does not have the matching value (e.g. the tab was closed and reopened, or Settings was never saved).
+**Cause:** The browser has no valid session — you never logged in, the 8-hour session TTL expired, or a redeploy wiped the server-side session store (sessions live on the ephemeral disk, so one re-login after every redeploy is expected).
 
 **Fix:**
 1. Check the server terminal — confirm the key is set: `Write-Host $env:ADTE_API_KEY_ADMIN`
-2. In the UI, go to **Settings** and paste that exact value into the ADTE API Key field.
-3. Click **Save Settings**.
+2. In the UI, open **Settings** (gear icon, top-right) and paste that exact value into the ADTE API Key field.
+3. Click **Log In**.
 4. Refresh and try again.
 
 ---
@@ -545,14 +560,24 @@ No ability to delete data or view safety gate config
 
 ---
 
-### Alert Queue Shows "source: mock" Instead of "source: wazuh"
+### Alert Queue Shows "source: demo" Instead of a Live Source
 
-**Cause:** The Wazuh adapter failed to connect. Most common reasons:
+**First, note:** DEMO MODE is the **expected** state for the hosted deployment (the Wazuh Indexer is VM-private and no Sentinel credentials are deployed) — the UI labels it DEMO MODE, not an outage. The queue walks the ladder wazuh → sentinel → demo and serves the 8 seeded demo incidents on the last rung.
+
+**To get live Sentinel data**, check the four Sentinel env vars first:
+```powershell
+Write-Host $env:ADTE_SENTINEL_TENANT_ID
+Write-Host $env:ADTE_SENTINEL_CLIENT_ID
+Write-Host $env:ADTE_SENTINEL_WORKSPACE_ID
+# ADTE_SENTINEL_CLIENT_SECRET must also be set — don't echo secrets
+```
+All three IDs must be valid GUIDs (strictly validated at adapter construction).
+
+**To get live Wazuh data**, the usual suspects:
 - VM is not running or is not on the expected IP (`192.168.127.129`).
 - `ADTE_WAZUH_HOST`, `ADTE_WAZUH_USER`, or `ADTE_WAZUH_PASS` env vars are not set.
 - Wazuh services (`wazuh-manager`, `wazuh-indexer`) are stopped inside the VM.
 
-**Fix:**
 ```powershell
 # Check env vars
 Write-Host $env:ADTE_WAZUH_HOST
@@ -601,9 +626,9 @@ pip install -e ".[dev]"
 
 ---
 
-### Tests Fail or Drop Below 669
+### Tests Fail or Drop Below 766
 
-The project enforces a 669-test minimum. If `pytest` reports fewer than 669 passing tests after any change, something regressed. Run:
+The project enforces a 766-test minimum. If `pytest` reports fewer than 766 passing tests after any change, something regressed. Run:
 ```powershell
 pytest -v --tb=short
 ```
@@ -611,4 +636,4 @@ and investigate any failures before proceeding.
 
 ---
 
-*Generated 2026-06-08. Reflects codebase state at commit `0a80a20` (main branch, post-OCSF migration).*
+*Updated 2026-08-18. Reflects codebase state at the live-Sentinel milestone (766 tests).*

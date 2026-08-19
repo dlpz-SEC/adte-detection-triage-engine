@@ -7,8 +7,6 @@
 ![Automation](https://img.shields.io/badge/Automation-Recommend--Only%20Triage-DC2626?style=for-the-badge&logo=githubactions&logoColor=white)
 ![Explainability](https://img.shields.io/badge/Explainability-Transparent%20Verdicts-6D28D9?style=for-the-badge&logo=googledocs&logoColor=white)
 
-</p>
-
 ![Multi-Source SIEM](https://img.shields.io/badge/SIEM-Multi--Source%20Ingestion-0078D4?style=for-the-badge&logo=shield&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-Engineering%20Logic-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pytest](https://img.shields.io/badge/Testing-Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
@@ -114,7 +112,7 @@ ADTE is not a SOC replacement. It is a force multiplier — it handles the mecha
 
 ```
 Security Alert / Incident
-  (Wazuh live / raw Wazuh alert / Sentinel-format JSON)
+  (Wazuh live / Sentinel live / raw Wazuh alert / Sentinel-format JSON)
        ↓
   [Normalize]  ← OCSF-inspired schema; source auto-detected
        ↓
@@ -169,8 +167,9 @@ python -m adte.server
 # Open http://localhost:5000
 ```
 
-**Alert Queue — demo mode.** With no Wazuh Indexer reachable (the expected state
-for a hosted deployment, since the Indexer lives on a private VM), the queue
+**Alert Queue — demo mode.** With no Wazuh Indexer reachable and no Sentinel
+credentials configured (the expected state for a hosted deployment — the queue
+ladder tries Wazuh, then Sentinel, then the demo seed), the queue
 serves a curated 8-alert set rather than an empty view: the four identity
 incidents above, plus **four raw Wazuh alerts** carrying the malware-response
 story end-to-end —
@@ -245,6 +244,41 @@ sibling (78 + 5) and 88 when an ascending kill-chain is also detected (78 + 10).
 **Pagination and `--limit`:** ADTE pages through all available Wazuh alerts
 automatically (500 per request). Use `--limit N` to cap the total; a
 warning is printed to stderr when alerts are truncated.
+
+## Microsoft Sentinel Integration
+
+> **Two ways in, mirroring Wazuh.**
+> **Push (no infrastructure):** POST a Sentinel-format incident JSON straight to `/api/triage` — auto-detected and normalized like any other source.
+> **Pull (live workspace):** `--source sentinel` queries a real Microsoft Sentinel workspace over the **Log Analytics Query API** — OAuth2 client-credentials against a least-privilege app registration (Log Analytics Reader on the workspace only), an expiry-aware token cache, strict GUID validation of tenant/workspace IDs before URL interpolation, and a KQL query joining `SecurityIncident` to its `SecurityAlert` rows with Account/IP entities mapped into the normalized schema.
+
+Verified against a live workspace: the **first real incident was fetched and
+triaged end-to-end on 2026-08-18**, and the exact wire shape it returned is
+locked into the test suite as a sanitized fixture
+(`tests/fixtures/sentinel_live_capture.json`).
+
+```bash
+export ADTE_SENTINEL_TENANT_ID=<tenant GUID>
+export ADTE_SENTINEL_CLIENT_ID=<app registration client GUID>
+export ADTE_SENTINEL_CLIENT_SECRET=<client secret — env only, never committed>
+export ADTE_SENTINEL_WORKSPACE_ID=<workspace GUID>
+
+# Triage incidents fired in the last 24 hours
+python -m adte triage --source sentinel --hours 24 --format pretty --explain
+```
+
+| Variable | Description |
+|----------|-------------|
+| `ADTE_SENTINEL_TENANT_ID` | Entra ID tenant GUID |
+| `ADTE_SENTINEL_CLIENT_ID` | App registration (client) GUID |
+| `ADTE_SENTINEL_CLIENT_SECRET` | Client secret — environment only |
+| `ADTE_SENTINEL_WORKSPACE_ID` | Log Analytics workspace GUID |
+
+**Signal behaviour for Sentinel Query-API incidents:** like Wazuh alerts, they
+carry no geolocation or MFA-outcome data, so the travel and MFA signals skip
+and redistribute their weight — deliberately constructed that way (`location`
+and `auth_status` set to `None`) so a missing field can never false-fire
+impossible travel. The hosted demo ships **no Azure credentials**; live Sentinel
+pulls run wherever the four env vars are set.
 
 ## MITRE ATT&CK Integration
 
@@ -390,7 +424,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-669 tests across 34 files — test_geo, test_intel, test_intel_hash, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration, test_file_signal, test_file_integration
+766 tests across 37 files — test_geo, test_intel, test_intel_hash, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_sentinel_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_rbac_recruiter, test_cors_origins, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration, test_file_signal, test_file_integration
 
 Example verdicts (fresh clone, no API keys — deterministic synthetic intel):
 
@@ -503,7 +537,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 
 ## Limitations
 
-- Sentinel support is the incident JSON format only (no live Azure API) — Wazuh Indexer live ingestion is functional
+- Live Microsoft Sentinel ingestion (`--source sentinel`, Log Analytics Query API) requires an Azure app registration with the Log Analytics Reader role on the workspace — the hosted demo ships **no Azure credentials**, so its queue serves the demo seed; pasted Sentinel-format JSON works everywhere. Wazuh Indexer live ingestion is likewise functional (VM-local)
 - Recommend-only — ADTE surfaces a recommended action but performs no automated containment
 - Batch triage ships on the **API/UI** (`POST /api/triage/batch`, 25-alert cap); the **CLI** still takes one incident file at a time (no `--batch` flag)
 - Live Wazuh *pull* (`/api/queue`) requires network reach to the Indexer at `localhost:9200`, so it is VM-local only — the hosted demo uses the push model (POST the alert). The malware integration needs neither Wazuh credentials nor a VirusTotal key, because the alert carries Wazuh's own verdict
@@ -530,19 +564,20 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Alert correlation / case management — rolling-window entity correlation (IP/user), ATT&CK kill-chain detection, explainable case-level escalation, Cases view + `/api/cases` endpoints; per-alert verdicts untouched at the time (Phase 30 — superseded by the cluster-context signal below)
 - [x] Cluster-context 6th signal — correlated-case context (sibling volume + kill-chain) feeds the per-alert score as an additive signal, up to +15 on top of the 100-point core; solo alerts byte-identical, parity golden-pinned (Phase 31)
 - [x] File-reputation 7th signal + Wazuh malware-pipeline integration — ingests FIM/VirusTotal alerts (rule 554/87105/553), an additive malware verdict (up to +40) built from the embedded VT result or an ADTE `/files` hash lookup, file-hash campaign correlation across hosts, and recommend-only containment actions; ADTE never executes (Phase 32, see `docs/WAZUH_MALWARE_INTEGRATION.md`)
-- [ ] Real Sentinel REST API integration (live Azure ingestion)
+- [x] Live Microsoft Sentinel ingestion — OAuth2 client-credentials → Log Analytics Query API (`SecurityIncident` joined to `SecurityAlert`), strict GUID validation, least-privilege reader role, expiry-aware token cache; **first real incident fetched and triaged end-to-end 2026-08-18**, with the wire contract locked by a sanitized live-capture fixture (`adte/adapters/sentinel.py`, `tests/fixtures/sentinel_live_capture.json`)
 - [ ] Automated containment/response-execution layer (gated) — currently recommend-only
-- [ ] Batch processing mode
+- [x] Batch triage (API/UI) — `POST /api/triage/batch` with a 25-alert cap, per-alert error isolation, and frontend auto-routing of multi-alert pastes
+- [ ] CLI `--batch` flag (the CLI still takes one incident file at a time)
 - [ ] KQL rule pack for upstream detection
 - [ ] SOAR-ready JSON action output for open-source orchestration tools
 - [x] `use_llm=True` query param on `/api/triage` — activate Claude-powered narrative summaries when `ANTHROPIC_API_KEY` is set
 - [x] RBAC auth UX — `/api/auth-check` endpoint; Settings "Save & Verify" with immediate key validation and role feedback
 - [x] sessionStorage for ADTE bearer token — auto-clears on window close; no third-party key ever touches the browser
 - [x] Parallel threat intel API calls — AbuseIPDB, VirusTotal, OTX queried concurrently (ThreadPoolExecutor); module-level singleton preserves per-IP cache across requests
-- [x] High risk example scenario enriched — device novelty and login hour signals now fire correctly (score 55 → 79)
+- [x] High risk example scenario enriched — device novelty and login hour signals now fire correctly (score 55 → 79 at the time; later re-pinned at 99 under the synthetic intel feed — see the Test Coverage table)
 - [x] Queue triage cache — 300s server-side TTL cache by `incident_id`; eliminates redundant re-triage on 60s auto-refresh
 - [x] Mutually exclusive stat cards — Critical (≥75) / High (71–74) / Medium (30–70) / Low (<30) buckets; skeleton placeholders on first load
-- [x] Alert queue source banner — full-width WAZUH LIVE (green) vs WAZUH UNAVAILABLE (amber) banner replacing the old inline badge
+- [x] Alert queue source banner — full-width WAZUH LIVE (green) vs WAZUH UNAVAILABLE (amber) banner replacing the old inline badge (since superseded: the banner now reports WAZUH LIVE / SENTINEL LIVE / DEMO MODE — demo is the expected hosted state, not an outage)
 - [x] CRITICAL quick load tile — 4th scenario: CEO account takeover via Tor exit, all 5 core signals fire (expected solo score ~99)
 - [x] Cross-view IP navigation — clicking any IP in Queue, IP Rep, or Threat Intel history navigates to Threat Intel and auto-runs enrichment lookup
 - [x] Verdict History navigation — every cell redirects to the most relevant engine view (Signal Breakdown, MITRE / NIST, or Alert Input)
@@ -562,7 +597,7 @@ Every item below is implemented in this repository and covered by the test suite
 | **Risk scoring model design** — weighted signals with proportional redistribution for non-evaluable inputs; additive aggravators that provably never mitigate | `adte/engine.py`, `adte/decision_policy.py` |
 | **Threat-intel enrichment** — AbuseIPDB / VirusTotal / OTX aggregation, IP **and** file-hash reputation, bounded TTL cache, per-provider daily quotas | `adte/intel/` |
 | **False-positive management** — Sigma-style FP registry, analyst FP/TP feedback loop, FP auto-promotion | `adte/intel/sigma_fp_registry.py` |
-| **SIEM integration** — live Wazuh/OpenSearch ingestion, FIM + VirusTotal active-response pipeline, Sentinel incident format, multi-format auto-detection | `adte/adapters/wazuh.py`, `docs/WAZUH_MALWARE_INTEGRATION.md` |
+| **SIEM integration** — live Wazuh/OpenSearch ingestion; **live Microsoft Sentinel adapter** (OAuth2 client-credentials → Log Analytics Query API, least-privilege reader, KQL incident/alert join); FIM + VirusTotal active-response pipeline; multi-format auto-detection | `adte/adapters/wazuh.py`, `adte/adapters/sentinel.py`, `docs/WAZUH_MALWARE_INTEGRATION.md` |
 | **Log normalization** — OCSF-inspired source-agnostic schema; severity engine-derived and rejected on input | `adte/models.py` |
 
 ### Security Engineering (AppSec)
@@ -585,7 +620,7 @@ Every item below is implemented in this repository and covered by the test suite
 | Skill | Evidence |
 |-------|----------|
 | **Python 3.11** — full type hints, Google-style docstrings, Pydantic v2 models at every module boundary | entire `adte/` package |
-| **Testing** — 669 tests; unit, integration, adversarial, and **golden-parity** pins that fail CI on a 1-point scoring drift | `tests/` |
+| **Testing** — 766 tests; unit, integration, adversarial, and **golden-parity** pins that fail CI on a 1-point scoring drift | `tests/` |
 | **Change control under risk** — rollback tags, additive-only diffs, and sha256 output-parity proofs before/after every edit to scoring-critical code | `pre-file-signal`, `pre-cluster-signal` tags |
 | **Concurrency** — `ThreadPoolExecutor` fan-out, request deadlines, cross-worker SQLite state (gunicorn multi-worker correctness) | `adte/intel/aggregator.py`, `adte/store/` |
 | **Databases** — SQLite with `BEGIN IMMEDIATE` race-safe upserts, lazy schema migrations, indexing, retention pruning | `adte/store/case_store.py` |

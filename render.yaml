@@ -1,3 +1,7 @@
+# PARKED (2026-07-10): Render's GitHub auto-deploy link was severed by the
+# 2026-06-17 repo recreation and was never reconnected — the Render service is
+# stale. Railway (Dockerfile + railway.json) is the live deployment target.
+# This file remains as inert, reconnectable config.
 services:
   - type: web
     name: adte-detection-triage-engine
@@ -14,9 +18,9 @@ services:
         value: "false"
       - key: ADTE_KILL_SWITCH
         value: "false"
-      # Set to the Render service URL (e.g. https://adte-xxxx.onrender.com) in the
-      # dashboard. Without it, CORS denies every cross-origin request and the UI
-      # cannot reach the API from the deployed origin.
+      # Optional since ProxyFix (55c8d1f): leave UNSET for a same-origin deploy
+      # (the Flask app serves the UI itself). Set only to permit a separately
+      # hosted cross-origin frontend (exact scheme+host, no trailing slash).
       - key: ADTE_CORS_ORIGINS
         sync: false
       - key: ANTHROPIC_API_KEY

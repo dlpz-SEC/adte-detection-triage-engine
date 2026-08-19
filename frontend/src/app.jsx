@@ -4,7 +4,7 @@ import OverviewPage from './overview.jsx';
 
     // Same-origin: empty base means every fetch is relative ("/api/...", "/health"),
     // so the UI talks to whatever origin served it — localhost:5000/8080 in dev, or the
-    // Railway/Render URL in prod. Hardcoding a host (e.g. http://localhost:5000) breaks
+    // Railway URL in prod. Hardcoding a host (e.g. http://localhost:5000) breaks
     // the deployed app because the browser would call the user's own machine.
     const API_BASE = "";
 
@@ -164,7 +164,7 @@ import OverviewPage from './overview.jsx';
         example: "User typically logs in 08:00–18:00; authentication at 03:47 UTC is flagged.",
       },
       cluster_context: {
-        description: "Correlated-case context — the alert is part of an active case (same source IP or user within the 60-minute correlation window). Points ramp with sibling count (1 → 5, 2 → 8, 3+ → 10), plus +5 when an ascending ATT&CK kill-chain spans the siblings. Additive on top of the 100-point core score — context aggravates, never mitigates; solo alerts are unaffected.",
+        description: "Correlated-case context — the alert is part of an active case (same source IP, user, or file hash within the 60-minute correlation window). Points ramp with sibling count (1 → 5, 2 → 8, 3+ → 10), plus +5 when an ascending ATT&CK kill-chain spans the siblings. Additive on top of the 100-point core score — context aggravates, never mitigates; solo alerts are unaffected.",
         mitre: "— (meta-context; sibling alerts carry their own techniques)",
         nist: "DE.AE-3 — Event data are correlated",
         example: "2 related alerts in the last 60 min, kill-chain detected → +13 points.",
@@ -546,7 +546,7 @@ import OverviewPage from './overview.jsx';
             )}
             {result.safety?.human_review_required && (
               <div className="mono" style={{ color: 'var(--medium)', fontSize: '0.65rem', marginTop: 8 }}>
-                ⚠ HUMAN REVIEW REQUIRED — automated actions suppressed
+                ⚠ HUMAN REVIEW REQUIRED — analyst must review before acting on recommendations
               </div>
             )}
           </div>
@@ -1197,7 +1197,7 @@ import OverviewPage from './overview.jsx';
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
               — {rows ? rows.length : 8} sample alert{(!rows || rows.length !== 1) ? 's' : ''}: identity attacks plus a live Wazuh
               FIM → VirusTotal → active-response malware pipeline. Click any row to triage it.
-              Point <code style={{ fontSize: '0.7rem' }}>ADTE_WAZUH_HOST</code> at a Wazuh Indexer to stream real alerts.
+              Point <code style={{ fontSize: '0.7rem' }}>ADTE_WAZUH_HOST</code> at a Wazuh Indexer — or set the <code style={{ fontSize: '0.7rem' }}>ADTE_SENTINEL_*</code> credentials for a live Microsoft Sentinel workspace — to stream real alerts.
             </span>
           </div>
         );
@@ -1449,7 +1449,7 @@ import OverviewPage from './overview.jsx';
         <div style={{ padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-              CORRELATED CASES — alerts sharing a source IP or user inside the rolling window
+              CORRELATED CASES — alerts sharing a source IP, user, or file hash inside the rolling window
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {CASE_STATUS_FILTERS.map(s => (
@@ -1471,7 +1471,7 @@ import OverviewPage from './overview.jsx';
             <div style={{ paddingTop: 60, textAlign: 'center' }}>
               <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.7rem', letterSpacing: '0.15em' }}>NO CASES YET</div>
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8, opacity: 0.6 }}>
-                Run triage on related alerts — same source IP or user within the window — and they will group here.
+                Run triage on related alerts — same source IP, user, or file hash within the window — and they will group here.
               </div>
             </div>
           )}
@@ -1563,7 +1563,7 @@ import OverviewPage from './overview.jsx';
             </div>
           )}
           <div className="mono" style={{ marginTop: 10, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-            Cases group triaged alerts by shared source IP / user · Click a row to expand · Click an IP to enrich
+            Cases group triaged alerts by shared source IP / user / file hash · Click a row to expand · Click an IP to enrich
           </div>
         </div>
       );
@@ -2279,7 +2279,7 @@ import OverviewPage from './overview.jsx';
         <div style={{ padding: 24, maxWidth: 900 }}>
           <Breadcrumb view="weights" />
           <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>Signal Weight Model</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>Core signals sum to 100. When correlated case context exists, a sixth additive signal (Cluster Context) adds up to +15 — final score capped at 100. Solo alerts are unaffected.</p>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>Core signals sum to 100. Two additive signals sit on top — Cluster Context (up to +15 with correlated case context) and File Reputation (up to +40 on file evidence) — final score capped at 100. Alerts with neither are unaffected.</p>
 
           <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap' }}>
             <div style={{ width: 180, height: 180, flexShrink: 0 }}>
@@ -2341,10 +2341,10 @@ import OverviewPage from './overview.jsx';
 
           {/* Redistribution */}
           <div className="panel" style={{ marginBottom: 8 }}>
-            <div className="panel-header">Weight Redistribution (Wazuh Mode)</div>
+            <div className="panel-header">Weight Redistribution (Live-SIEM Mode)</div>
             <div className="panel-body">
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Wazuh alerts carry no geolocation or MFA data. The two skipped signals' combined
+                Wazuh and live Sentinel Query-API alerts carry no geolocation or MFA data. The two skipped signals' combined
                 weight ({skipped3.reduce((s,w) => s+w.weight, 0)} pts) is redistributed proportionally
                 across the {remaining3.length} evaluable core signals ({total3} pts → scaled to 100).
                 Additive signals (File Reputation, Cluster Context) are excluded — they never enter redistribution.
@@ -2388,7 +2388,8 @@ import OverviewPage from './overview.jsx';
 
     /* ------------------------------------------------------------------ */
     /* Lookup: ATT&CK technique ID → name, tactic, NIST CSF detect code.
-       Kept in sync with examples/mitre_technique_map.yaml. */
+       Curated subset of adte/data/mitre_technique_map.yaml (42 entries shipped)
+       — technique IDs without a frontend entry render as bare badges. */
     const MITRE_TECH_MAP = {
       'T1078.004': { name: 'Valid Accounts: Cloud Accounts',          tactic: 'Initial Access',       nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
       'T1621':     { name: 'Multi-Factor Authentication Request Gen.', tactic: 'Credential Access',   nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
@@ -3034,7 +3035,7 @@ import OverviewPage from './overview.jsx';
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: 500, lineHeight: 1.75, marginBottom: 32 }}>
             Natural language querying and autonomous alert investigation are under active development.
             This capability will allow analysts to ask questions about incidents, request deeper analysis,
-            and trigger guided response workflows directly from the query bar.
+            and generate guided response recommendations directly from the query bar.
           </p>
 
           {query && (
@@ -3359,7 +3360,7 @@ import OverviewPage from './overview.jsx';
                     <textarea
                       value={inputText}
                       onChange={e => { setInputText(e.target.value); setError(null); }}
-                      placeholder={"// Paste NormalizedIncident JSON here\n// or click Load Example\n{\n  \"incident_id\": \"INC-...\",\n  ...\n}"}
+                      placeholder={"// Paste alert JSON — NormalizedIncident, raw Wazuh or Sentinel,\n// or a multi-alert batch. Or click Load Example.\n{\n  \"incident_id\": \"INC-...\",\n  ...\n}"}
                       style={{ flex: 1, minHeight: 200, width: '100%' }}
                       spellCheck={false}
                     />

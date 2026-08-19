@@ -475,3 +475,25 @@ exactly this.
 The `.env` from the prior session held an 18-character fragment — flagged on length alone at
 session start, confirmed by `AADSTS7000215`, whose message literally warns about the
 Value/Secret-ID mix-up. Fixed by minting a new secret and copying the Value column.
+
+---
+
+### 2026-08-18 — Two identical failed UI actions mean switch strategy; for Azure config, Cloud Shell + `az rest` beats driving the portal
+
+**Rule:** When the same UI action fails twice the same way (click lands, page doesn't change;
+URL navigation bounces back), the third identical attempt is already a loop — stop and change
+layer, don't change coordinates. For Azure specifically, the reliable escape hatch is
+**shell.azure.com + `az rest`**: pre-authenticated as the signed-in user, no local install, no
+storage account in ephemeral mode, and one PUT with an explicit JSON body both creates the
+resource and **echoes back the server-stored state** — configuration and verification in a
+single step, immune to portal blade redirects, SPA click interception, and licensing-gated UI.
+
+Driving the Defender portal to Sentinel → Configuration → Analytics, the direct URL
+(`/sentinel/analytics`) redirected to Settings → SIEM workspaces every time, and clicking the
+nav item showed its tooltip but never navigated. Five-plus attempts (coordinates, refs, SPA
+click, full-load URL, re-expanding the collapsed tree) burned ~15 minutes; the user called out
+the loop — "you weren't going to figure it out" — and was right. The pivot took one paste: a
+scheduled analytics rule with incident creation, alert grouping, entity mappings, and ATT&CK
+tags landed via a single `az rest --method PUT`, and the echoed JSON proved every field. The
+incident fired five minutes later. Portal UI is for humans; the management plane is for
+automation — start at the API when the task is "create a resource with exact settings."

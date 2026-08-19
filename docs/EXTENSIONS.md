@@ -5,8 +5,9 @@ enrichment sources.
 
 > **Scope note:** ADTE is a triage engine — it ingests, scores, and recommends.
 > An automated-containment / response-execution layer (acting on verdicts in
-> Sentinel, Entra ID, etc.) is a roadmap item, not part of the current codebase.
-> The extension points below all sit on the triage side of the pipeline.
+> Sentinel, Entra ID, etc.) is a deliberate **non-goal** — reintroducing one
+> requires an explicit recorded decision, not an extension PR. The extension
+> points below all sit on the triage side of the pipeline.
 
 ## The adapter contract (adding an ingestion source)
 
@@ -65,7 +66,7 @@ SIGNAL_WEIGHTS: dict[str, int] = {
 }
 ```
 
-**Important:** All **core** weights must sum to 100 — redistribute existing core weights to accommodate a new core signal. Additive *context* signals (see "Additive / context signals" below) are exempt from this invariant: `cluster_context` is a 15-point additive entry, so `SIGNAL_WEIGHTS` totals 115 while the core five still sum to 100.
+**Important:** All **core** weights must sum to 100 — redistribute existing core weights to accommodate a new core signal. Additive signals (see "Additive / context signals" below) are exempt from this invariant: `cluster_context` (15) and `file_reputation` (40) are additive entries, so `SIGNAL_WEIGHTS` totals 155 while the core five still sum to 100.
 
 ### Step 2: Add the signal method to `engine.py`
 

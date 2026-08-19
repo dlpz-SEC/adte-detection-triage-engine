@@ -31,7 +31,7 @@ analyst or a downstream SOAR/ticketing workflow.
 
 **Input:** Security incident/alert payload (JSON) — from Sentinel, Wazuh, or other adapters
 
-The CLI reads a JSON file representing a security incident/alert with embedded entities and normalised events (OCSF-inspired: each event carries a `type`, `auth_status`, and `event_risk`; the incident carries a top-level `source`). In production, this would be replaced by a source-specific webhook or polling adapter (e.g. Sentinel, Wazuh Indexer).
+The CLI reads a JSON file representing a security incident/alert with embedded entities and normalised events (OCSF-inspired: each event carries a `type`, `auth_status`, and `event_risk`; the incident carries a top-level `source`). Live polling adapters exist for both named SIEMs: `adte/adapters/wazuh.py` polls the Wazuh Indexer (OpenSearch) and `adte/adapters/sentinel.py` queries a live Microsoft Sentinel workspace via the Log Analytics Query API (OAuth2 client-credentials); the mock JSON path remains for offline runs and pasted payloads.
 
 **Module:** `adte/cli.py` (`_load_incident`)
 
@@ -57,7 +57,7 @@ For every unique IP address in the incident:
 
 **Input:** Enrichment state + User profile → **Output:** Per-signal scores + aggregate risk score
 
-Evaluates six signal classes — five core signals plus one additive context signal — each returning a weighted score (0 to weight_max), a human-readable rationale string, and a per-signal confidence:
+Evaluates seven signal classes — five core signals plus two additive signals — each returning a weighted score (0 to weight_max), a human-readable rationale string, and a per-signal confidence:
 
 | Signal | Max Weight | Method |
 |--------|-----------|--------|
@@ -67,8 +67,9 @@ Evaluates six signal classes — five core signals plus one additive context sig
 | Device Novelty | 15 | Device ID comparison against user's known inventory |
 | Login Hour Anomaly | 10 | Timestamp vs. user's baseline login-hour window |
 | Cluster Context (additive) | +15 | Correlated-case sibling volume + kill-chain flag, from a read-only pre-scoring case-store peek |
+| File Reputation (additive) | +40 | Embedded Wazuh/VirusTotal verdict preferred; bounded VT `/files` hash lookup fallback — registered only when file evidence exists |
 
-The base risk score is `sum(core signal scores)` (with skipped-signal weight redistribution), clamped to [0, 100]. The additive `cluster_context` uplift (up to +15) is applied after that normalisation, with the final score capped at 100. When the incident has no correlated context the signal is **not applicable** — it never enters the signal set, and the output is byte-identical to the 5-signal engine.
+The base risk score is `sum(core signal scores)` (with skipped-signal weight redistribution), clamped to [0, 100]. The additive uplifts are applied after that normalisation — `cluster_context` (up to +15), then `file_reputation` (up to +40) — with the final score capped at 100. An additive signal with no evidence is **not applicable** — it never enters the signal set — so alerts with neither correlated context nor file evidence remain byte-identical to the 5-signal engine.
 
 **Modules:** `adte/engine.py` (signal methods), `adte/decision_policy.py` (weights, `ClusterContext`), `adte/utils/geo.py`, `adte/store/user_history.py`, `adte/store/case_store.py` (`peek_correlation_context` — the read-only correlated-context snapshot taken before scoring, server routes only)
 
@@ -104,7 +105,7 @@ Since Phase 31, correlation touches the pipeline at **two** points:
 **(a) Pre-scoring peek (read-only).** Before the engine scores, `/api/triage`, each
 `/api/triage/batch` element, and `/api/queue` call
 `case_store.peek_correlation_context(incident, db_path)` — a strictly read-only
-snapshot using the same join rules as ingest (shared source IP or user, 60-min
+snapshot using the same join rules as ingest (shared source IP, user, or file hash, 60-min
 ingestion-time window), excluding the incident's own `incident_id` (a re-triage never
 boosts itself; a singleton case yields no context). When siblings exist, the snapshot
 is passed to the engine as the optional `cluster_context` kwarg and feeds the additive
@@ -120,7 +121,7 @@ correlation, so batch order matters).
 
 After the verdict is audit-logged, `/api/triage` and `/api/triage/batch` call
 `case_store.ingest_alert()`, which joins the alert to an open **case** (or
-creates one) when it shares a source IP or user with recent alerts inside a
+creates one) when it shares a source IP, user, or file hash with recent alerts inside a
 rolling window (`CASE_WINDOW_MINUTES`, default 60). The case receives its own
 score and verdict via `adte/case_policy.py`: base = worst member, plus capped
 bonuses for alert volume, distinct-ATT&CK-tactic breadth, and a detected
@@ -175,7 +176,8 @@ cli.py
 │       └── geo.py (haversine, travel speed, impossible travel)
 ├── models.py (all Pydantic models)
 └── adapters/
-    └── wazuh.py (WazuhAdapter — live OpenSearch ingestion)
+    ├── wazuh.py (WazuhAdapter — live OpenSearch ingestion)
+    └── sentinel.py (SentinelAdapter — live Microsoft Sentinel / Log Analytics Query API ingestion)
 ```
 
 ## Data Flow
@@ -187,7 +189,7 @@ SentinelIncident (raw JSON)
 NormalizedIncident   (OCSF-inspired, source-agnostic; severity is engine-derived, NOT an input)
     │  - incident_id, user, source (azure_ad | wazuh | okta | generic)
     │  - events: list[SignInMetadata]
-    │    - timestamp, ip_address, type, location, device_id, auth_status, event_risk
+    │    - timestamp, ip_address, type, location, device_id, auth_status, event_risk, technique_ids, file
     │
     ▼  TriageEngine(incident, user_profile, fp_registry, cluster_context=…)
        (cluster_context: optional read-only ClusterContext snapshot from
@@ -228,8 +230,9 @@ TriageEngine
 > 1. **`incident.source`** — origin-platform enum on the input (`azure_ad` | `wazuh` | `okta` |
 >    `generic`); carried through to the verdict output and audit log. Defaults to `azure_ad` for
 >    Sentinel-format payloads (`from_sentinel`) and `generic` for a directly-POSTed `NormalizedIncident`.
-> 2. **`/api/queue` response `source`** — data provenance: `"wazuh"` (live adapter) vs `"mock"`
->    (bundled-example fallback). Means "where the queue got its rows", not the incident's platform.
+> 2. **`/api/queue` response `source`** — data provenance: `"wazuh"` | `"sentinel"` (live adapters,
+>    tried in that order) vs `"demo"` (bundled-example fallback — the expected hosted state, labeled
+>    DEMO MODE in the UI). Means "where the queue got its rows", not the incident's platform.
 > 3. **`evidence.threat_intel[ip].source`** — the threat-intel provider name(s) for an IP lookup.
 
 ## Security Controls
@@ -245,11 +248,13 @@ All API endpoints are protected by a role-based access control (RBAC) system:
 | `senior_analyst` | 2 | Configuration view |
 | `admin` | 3 | DELETE endpoints (clear verdicts/feedback) |
 
-Authentication is via `X-ADTE-Key` header matched against per-role environment variables (`ADTE_API_KEY_ADMIN`, `ADTE_API_KEY_SENIOR`, `ADTE_API_KEY_ANALYST`, `ADTE_API_KEY_READONLY`).
+Authentication is via `X-ADTE-Key` header matched against per-role environment variables (`ADTE_API_KEY_ADMIN`, `ADTE_API_KEY_SENIOR`, `ADTE_API_KEY_ANALYST`, `ADTE_API_KEY_READONLY`), plus the `ADTE_API_KEY_RECRUITER` alias (maps to the analyst role — the intentionally public demo credential). The browser flow exchanges a key once at `POST /api/auth/login` for an HttpOnly session cookie (SQLite-backed sessions, SHA-256-hashed tokens, 8-hour TTL, logout revocation) — the raw key is never persisted browser-side.
 
 ### Rate Limiting
 
 - `POST /api/triage`: 10 requests/minute per IP
+- `POST /api/triage/batch`: 5 requests/minute per IP (25-alert cap per request)
+- `GET /api/queue`: 20 requests/minute per IP
 - `POST /api/feedback`: 30 requests/minute per IP
 - `GET /api/verdicts/export`: 10 requests/minute per IP
 - `GET /api/config`: 10 requests/minute per IP

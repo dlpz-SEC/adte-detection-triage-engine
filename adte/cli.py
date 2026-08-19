@@ -37,14 +37,14 @@ from adte.store.user_history import get_user_profile
 
 app = typer.Typer(
     name="adte",
-    help="Automated Detection Triage Engine — source-agnostic security alert triage.",
+    help="Autonomous Detection & Triage Engine — source-agnostic security alert triage.",
     no_args_is_help=True,
 )
 
 
 @app.callback()
 def _main() -> None:
-    """Automated Detection Triage Engine — source-agnostic security alert triage."""
+    """Autonomous Detection & Triage Engine — source-agnostic security alert triage."""
 
 
 class OutputFormat(str, Enum):

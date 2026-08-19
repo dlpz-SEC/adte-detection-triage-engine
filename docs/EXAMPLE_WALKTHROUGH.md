@@ -1,7 +1,9 @@
 # Example Walkthrough
 
-Three end-to-end triage runs against the bundled mock incident files.
-Each scenario uses `--source mock` (no live SIEM connection required).
+Three of the four bundled examples walked end-to-end (the fourth — the CRITICAL
+account-takeover/Tor-exfiltration scenario — follows the same path and is
+golden-pinned at 99). Each scenario uses `--source mock` (no live SIEM
+connection required).
 
 > **Schema note (OCSF-inspired):** incidents use a source-agnostic schema — events live under
 > `events[]` (each with a `type`, `auth_status`, and `event_risk`) and the incident carries a
@@ -47,9 +49,9 @@ python -m adte triage \
 
   Incident:    INC-2025-0042
   User:        alice@contoso.com
-  Severity:    High
-  Risk Score:  79/100
-  Confidence:  83%
+  Severity:    Critical
+  Risk Score:  99/100
+  Confidence:  85%
   Action:      Immediately disable account, revoke sessions, escalate to Tier-2
 
   Recommended actions:
@@ -63,7 +65,7 @@ python -m adte triage \
   ------------------------ ------ ------ ------  ----------------------------------------
   impossible_travel          30.0     30  100%  Impossible travel detected — New York -> Moscow: 7510 km in 30 min ...
   mfa_fatigue                25.0     25  100%  11 MFA denials in 10-min window (12/14 total denied) — followed by ...
-  ip_reputation               0.0     20   80%  No malicious IPs detected
+  ip_reputation              20.0     20   95%  1 malicious IP(s): 198.51.100.23 [tags: c2, cobalt-strike]
   device_novelty             15.0     15   65%  1 unknown device(s): DESKTOP-UNKNOWN (dev-MOSCOW-UNKNOWN)
   login_hour_anomaly          8.6     10   66%  12/14 events outside baseline hours (08:00–18:00 America/New_York)
 
@@ -72,15 +74,18 @@ python -m adte triage \
 
 **Why the engine scored it this way:**
 
-Four of the five signals fired. `impossible_travel` (30/30) triggered because
+All five signals fired. `impossible_travel` (30/30) triggered because
 7 510 km in 30 minutes exceeds any plausible travel speed. `mfa_fatigue` (25/25)
 triggered because 11 pushes were denied before one was approved — the approval is
-what the engine treats as the capitulation event. `device_novelty` (15/15) fired
-on the unrecognised `DESKTOP-UNKNOWN` device from Moscow, and `login_hour_anomaly`
-(8.6/10) fired because 12 of 14 events fell outside Alice's baseline hours.
-`ip_reputation` contributed nothing (0/20) — no malicious IP is present in this
-incident, so that signal correctly produces no uplift. Combined score 79/100 with
-83% confidence → `HIGH_RISK`.
+what the engine treats as the capitulation event. `ip_reputation` (20/20) fired
+because the deterministic synthetic feed pins `198.51.100.23` as known C2
+infrastructure (with live threat-intel keys this signal reflects what the real
+feeds say — see the intel-mode note in the README's Test Coverage section).
+`device_novelty` (15/15) fired on the unrecognised `DESKTOP-UNKNOWN` device from
+Moscow, and `login_hour_anomaly` (8.6/10) fired because 12 of 14 events fell
+outside Alice's baseline hours. Combined score 99/100 with 85% confidence →
+`HIGH_RISK`, severity Critical. These values are golden-pinned in
+`tests/test_cluster_integration.py`.
 
 ---
 

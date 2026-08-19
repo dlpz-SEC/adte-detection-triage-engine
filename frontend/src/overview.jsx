@@ -9,9 +9,9 @@ import React from 'react';
 // references/current-claims.md (regenerated from the repos by collect_stats.py).
 // Bump here when the claims file changes.
 const STATS = [
-  { value: '669', label: 'Passing Tests' },
+  { value: '766', label: 'Passing Tests' },
   { value: '7', label: 'Scoring Signals' },
-  { value: '24', label: 'REST Route Handlers' },
+  { value: '2', label: 'Live SIEM Adapters' },
   { value: '42', label: 'ATT&CK Map Entries' },
 ];
 
@@ -45,6 +45,28 @@ const STAGE_DETAILS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Live SIEM integrations — the queue ladder, one card per source.
+// ---------------------------------------------------------------------------
+const LIVE_SOURCES = [
+  { name: 'Wazuh / OpenSearch', badge: 'FLAGSHIP SIEM', tone: 'var(--low)',
+    body: 'Live Indexer ingestion (lab-local), plus the FIM + VirusTotal active-response malware pipeline: Wazuh detects and executes on its own authority, ADTE triages and correlates. Raw Wazuh alert JSON also pastes straight into the console.' },
+  { name: 'Microsoft Sentinel', badge: 'LIVE ADAPTER', tone: 'var(--accent)',
+    body: 'OAuth2 client-credentials against a least-privilege reader app registration, strict GUID validation, and a KQL join of SecurityIncident to SecurityAlert over the Log Analytics Query API — entities mapped into the normalized schema. Proven against a real workspace: the first live incident was fetched and triaged end-to-end on 2026-08-18, and the wire contract is locked by a sanitized real-capture fixture in the test suite.' },
+  { name: 'Hosted demo mode', badge: 'THIS DEPLOYMENT', tone: 'var(--medium)',
+    body: 'This deployment ships zero SIEM or Azure credentials by design — the queue degrades to a deterministic 8-alert demo seed served through the same adapters and scoring path. Live pulls run where the credentials live: locally, against the lab.' },
+];
+
+// ---------------------------------------------------------------------------
+// Recruiter quick-start — the four clicks from landing to a scored verdict.
+// ---------------------------------------------------------------------------
+const HOW_TO_STEPS = [
+  { n: '1', title: 'Enter the console', body: 'No login needed to look around — every read view renders.' },
+  { n: '2', title: 'Log in with the recruiter passkey', body: 'Settings → Recruiter access → Fill → Log in. The analyst passkey is printed on the page — intentionally public, scoped to analyst.' },
+  { n: '3', title: 'Run a triage', body: 'Alert Input → Quick Load cycles four bundled scenarios (critical → benign) → Run Triage. Or paste any incident JSON, including raw Wazuh or Sentinel shapes.' },
+  { n: '4', title: 'Read the verdict', body: 'Score, per-signal rationale, MITRE badges, recommended actions — then follow the result into Signal Breakdown, Cases, and the Audit Log.' },
+];
+
+// ---------------------------------------------------------------------------
 // Console tour — icons are the exact NAV paths from app.jsx (duplicated by
 // design: this file must not import from app.jsx).
 // ---------------------------------------------------------------------------
@@ -54,7 +76,7 @@ const VIEW_CARDS = [
     desc: 'Paste any incident JSON — or Quick Load a bundled scenario — and run triage. Renders the score, verdict, and per-signal breakdown. The workspace is open; running triage requires an analyst login.' },
   { action: 'view:queue', label: 'Alert Queue', auth: 'ANALYST LOGIN',
     icon: 'M4 6h16M4 10h16M4 14h16M4 18h16',
-    desc: 'Live auto-refreshing alert table — a Wazuh Indexer when reachable, an 8-alert demo seed otherwise — with verdict distribution and hourly volume charts.' },
+    desc: 'Live auto-refreshing alert table fed by the source ladder — Wazuh Indexer, then Microsoft Sentinel, then an 8-alert demo seed — with verdict distribution and hourly volume charts.' },
   { action: 'view:cases', label: 'Cases', auth: 'ANALYST LOGIN',
     icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z',
     desc: 'Correlated incident cases: alerts grouped by shared IP, user, or file hash, with kill-chain progression across ATT&CK tactics.' },
@@ -297,9 +319,10 @@ function Hero({ onEnterConsole }) {
       </h1>
       <p style={{ fontSize: '1rem', lineHeight: 1.7, color: 'var(--text-secondary)', maxWidth: 680, margin: '0 0 16px' }}>
         ADTE is a source-agnostic triage engine for security alerts. It ingests incidents from
-        multiple SIEM formats, enriches them with threat intelligence and behavioral context,
-        scores them across seven weighted signals, and returns a deterministic verdict with a
-        per-signal rationale an analyst can argue with.
+        two live SIEM adapters — Wazuh/OpenSearch and Microsoft Sentinel&apos;s Log Analytics
+        Query API — or any pasted incident JSON, enriches them with threat intelligence and
+        behavioral context, scores them across seven weighted signals, and returns a
+        deterministic verdict with a per-signal rationale an analyst can argue with.
       </p>
       <div style={{ borderLeft: '3px solid #c0392b', padding: '10px 16px', maxWidth: 680, marginBottom: 28, background: 'var(--bg-surface)' }}>
         <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600 }}>
@@ -415,6 +438,51 @@ function BrainHandsSplit() {
   );
 }
 
+function SourcesSection() {
+  return (
+    <div style={{ paddingBottom: 44 }}>
+      <SectionHeading eyebrow="LIVE INTEGRATIONS" title="Two live SIEMs, one engine"
+        sub="The queue ladder tries each source in order — Wazuh Indexer, Microsoft Sentinel, demo seed — and every source lands in the same OCSF-inspired schema, the same scoring math, the same audit trail. Source-agnostic is an architectural property here, not an adjective." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
+        {LIVE_SOURCES.map(s => (
+          <div key={s.name} className="panel" style={{ borderTop: `2px solid ${s.tone}` }}>
+            <div className="panel-body">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <span className="mono" style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>{s.name}</span>
+                <span className="mono" style={{ fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.1em', color: s.tone, border: `1px solid ${s.tone}`, borderRadius: 3, padding: '2px 7px' }}>{s.badge}</span>
+              </div>
+              <div style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{s.body}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HowToStrip() {
+  return (
+    <div style={{ paddingBottom: 44 }}>
+      <SectionHeading eyebrow="HANDS ON" title="Drive it in 60 seconds"
+        sub="The whole loop — landing page to scored verdict — takes four clicks. No signup, no sandbox reset, no tour video." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12 }}>
+        {HOW_TO_STEPS.map(s => (
+          <div key={s.n} style={{ padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 6 }}>
+              <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#c0392b' }}>{s.n}</span>
+              <span className="mono" style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>{s.title}</span>
+            </div>
+            <div style={{ fontSize: '0.76rem', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{s.body}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 12, letterSpacing: '0.04em' }}>
+        PREFER A TERMINAL? git clone → pip install . → python -m adte triage --file examples/incident_account_takeover_tor_exfil.json — the CLI needs no key.
+      </div>
+    </div>
+  );
+}
+
 function ViewCardsGrid({ onNav }) {
   return (
     <div style={{ paddingBottom: 44 }}>
@@ -521,7 +589,9 @@ export default function OverviewPage({ onEnterConsole, onNav }) {
       <StatStrip />
       <IdentityPanels />
       <ArchitectureSection />
+      <SourcesSection />
       <BrainHandsSplit />
+      <HowToStrip />
       <ViewCardsGrid onNav={onNav} />
       <SecuritySection />
       <PatchedVulnsList />
