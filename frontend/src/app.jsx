@@ -65,14 +65,16 @@ import OverviewPage from './overview.jsx';
       high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low',
     };
 
-    const EXAMPLE_KEYS = ['high_risk', 'medium_risk', 'low_risk'];
-    const EXAMPLE_DISPLAY = { high_risk: 'HIGH RISK', medium_risk: 'MEDIUM RISK', low_risk: 'LOW RISK' };
+    // All four bundled scenarios /api/examples serves, severity-ordered.
+    const EXAMPLE_KEYS = ['critical', 'high_risk', 'medium_risk', 'low_risk'];
+    const EXAMPLE_DISPLAY = { critical: 'CRITICAL', high_risk: 'HIGH RISK', medium_risk: 'MEDIUM RISK', low_risk: 'LOW RISK' };
     const EXAMPLE_DESCRIPTIONS = {
-      high_risk:   'CEO account takeover — Tor exit + MFA fatigue + impossible travel',
+      critical:    'CEO account takeover — Tor exit + data exfiltration',
+      high_risk:   'Impossible travel + MFA fatigue',
       medium_risk: 'Ambiguous — needs human review',
       low_risk:    'Benign VPN travel',
     };
-    const EXAMPLE_BADGE_CLASS = { high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low' };
+    const EXAMPLE_BADGE_CLASS = { critical: 'badge-critical', high_risk: 'badge-high', medium_risk: 'badge-medium', low_risk: 'badge-low' };
 
     // Public demo passkey — deliberately embedded so a recruiter can try the live
     // deployment without being provisioned a key. It is its OWN credential
