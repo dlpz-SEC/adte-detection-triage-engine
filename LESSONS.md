@@ -530,3 +530,39 @@ Green light arrived one edit into the nav restructure: VIEW_LABELS had dropped k
 views still referenced — committing would have shipped undefined page titles to the
 recruiter-facing deploy. Shipped Phase 1 (foundation CSS, verified with old JSX) + the
 self-contained 4-tile fix; reverted the nav constants; 766 green; deployed clean.
+
+---
+
+### 2026-08-19 — A hidden Browser pane freezes transitions: computed styles lie, screenshots fail
+
+**Rule:** When the in-app Browser pane is not displayed, the page does not composite frames —
+screenshots time out ("not compositing frames") AND any CSS property with a `transition` on it
+reads a stale mid-animation value from `getComputedStyle` indefinitely (margins stuck at their
+start value, link colors from the previous theme), while non-transitioned properties read
+correctly. Before diagnosing a "broken layout" from computed-style reads in that state: either
+reload the page and read the fresh-load value, or toggle the class with `style.transition =
+'none'` applied and read synchronously in the same eval. Never mix the two signals — a value
+that disagrees with the stylesheet in a hidden pane is a measurement artifact until proven
+otherwise on a fresh load.
+
+Verifying the polish pass, `.content-area` margin read 0px at a 1280px viewport with the rule
+plainly present in the stylesheet dump — six calls chasing a phantom regression. A fresh reload
+read 240px; the transitions-disabled class toggle proved 56px collapsed / 240px expanded in one
+call. The pane had been hidden the whole session (every screenshot attempt failed).
+
+---
+
+### 2026-08-19 — A bare `|| echo OK` on grep turns command failure into a green checkmark
+
+**Rule:** Refinement of 2026-05-24 ("wrap pipe-to-filter commands so empty matches become exit
+0"): the wrap itself is a trap when the fallback message asserts success. grep exits 1 for
+no-match but 2 for errors (missing file, bad path) — a bare `|| echo "OK: pattern absent"`
+prints the same green line for both, so a cwd drift or typo'd path reads as a PASSED
+verification. Either verify the inputs exist first (anchored absolute paths — the same-day cwd
+lesson), or make the fallback distinguish: `grep pat file; case $? in 1) echo absent;; 2) echo
+GREP FAILED;; esac`, or at minimum read stderr above the fallback line before trusting it.
+
+The Phase-6 residue sweep printed three "OK: eliminated" lines while every grep had actually
+failed on relative paths from a drifted cwd — the only tell was the grep error text printed
+above the fake OKs. Re-run anchored: genuinely clean, but the first pass would have certified
+an unverified claim.
