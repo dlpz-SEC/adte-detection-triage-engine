@@ -62,8 +62,8 @@ const LIVE_SOURCES = [
 const HOW_TO_STEPS = [
   { n: '1', title: 'Enter the console', body: 'No login needed to look around — every read view renders.' },
   { n: '2', title: 'Log in with the recruiter passkey', body: 'Settings → Recruiter access → Fill → Log in. The analyst passkey is printed on the page — intentionally public, scoped to analyst.' },
-  { n: '3', title: 'Run a triage', body: 'Alert Input → Quick Load cycles four bundled scenarios (critical → benign) → Run Triage. Or paste any incident JSON, including raw Wazuh or Sentinel shapes.' },
-  { n: '4', title: 'Read the verdict', body: 'Score, per-signal rationale, MITRE badges, recommended actions — then follow the result into Signal Breakdown, Cases, and the Audit Log.' },
+  { n: '3', title: 'Run a triage', body: 'Triage → Quick Load cycles four bundled scenarios (critical → benign) → Run Triage. Or paste any incident JSON, including raw Wazuh or Sentinel shapes.' },
+  { n: '4', title: 'Read the verdict', body: 'Score, per-signal rationale, MITRE badges, recommended actions — then follow the result into Signals, Cases, and the Audit Log.' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ const HOW_TO_STEPS = [
 // design: this file must not import from app.jsx).
 // ---------------------------------------------------------------------------
 const VIEW_CARDS = [
-  { action: 'view:triage', label: 'Alert Input', auth: null,
+  { action: 'view:triage', label: 'Triage', auth: null,
     icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
     desc: 'Paste any incident JSON — or Quick Load a bundled scenario — and run triage. Renders the score, verdict, and per-signal breakdown. The workspace is open; running triage requires an analyst login.' },
   { action: 'view:queue', label: 'Alert Queue', auth: 'ANALYST LOGIN',
@@ -80,9 +80,9 @@ const VIEW_CARDS = [
   { action: 'view:cases', label: 'Cases', auth: 'ANALYST LOGIN',
     icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z',
     desc: 'Correlated incident cases: alerts grouped by shared IP, user, or file hash, with kill-chain progression across ATT&CK tactics.' },
-  { action: 'view:signals', label: 'Signal Breakdown', auth: null,
+  { action: 'view:signals', label: 'Signals', auth: null,
     icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-    desc: 'Reference for all 7 signals — weight, detection method, MITRE technique, NIST control — overlaid with live scores from your last triage run.' },
+    desc: 'Reference for all 7 signals — weight, detection method, MITRE technique, NIST control — overlaid with live scores from your last triage run, plus the weight-model doughnut showing how the signals compose the score.' },
   { action: 'view:mitre', label: 'MITRE / NIST', auth: null,
     icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
     desc: 'Maps triage results onto the ATT&CK tactic/technique matrix and the NIST 800-61 incident-response phases.' },
@@ -92,9 +92,6 @@ const VIEW_CARDS = [
   { action: 'view:safety', label: 'Safety Gates', auth: 'SENIOR LOGIN',
     icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
     desc: 'Read-only display of the six reserved execution gates — kill switch, dry run, allowlists. ADTE is triage-only today; the gates exist for a future that must be explicitly enabled.' },
-  { action: 'view:weights', label: 'Signal Weights', auth: null,
-    icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
-    desc: 'Visualizes how the signals compose the score — weight doughnut plus per-signal method cards.' },
   { action: 'view:audit', label: 'Audit Log', auth: 'ANALYST LOGIN',
     icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
     desc: 'Tabbed verdict and analyst-feedback history — the NIST 800-61 non-repudiation trail. Deletes are soft, preserving forensics.' },
@@ -158,7 +155,7 @@ const PATCHED_VULNS = [
 function SectionHeading({ eyebrow, title, sub }) {
   return (
     <div style={{ marginBottom: 20 }}>
-      <div className="mono" style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.18em', color: '#c0392b', marginBottom: 6 }}>
+      <div className="mono" style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.18em', color: 'var(--brand)', marginBottom: 6 }}>
         {eyebrow}
       </div>
       <h2 className="heading" style={{ fontSize: '1.7rem', fontWeight: 700, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: 0, textTransform: 'uppercase' }}>
@@ -173,7 +170,7 @@ function SectionHeading({ eyebrow, title, sub }) {
 function LogoMark({ size = 92 }) {
   return (
     <svg width={size} height={size * 0.52} viewBox="-44 -23 88 46" fill="none" aria-hidden="true">
-      <g fill="#c0392b">
+      <g fill="var(--brand)">
         <rect x="-12" y="-22" width="24" height="5" />
         <rect x="-23" y="-13" width="14" height="5" />
         <rect x="9" y="-13" width="14" height="5" />
@@ -324,7 +321,7 @@ function Hero({ onEnterConsole }) {
         behavioral context, scores them across seven weighted signals, and returns a
         deterministic verdict with a per-signal rationale an analyst can argue with.
       </p>
-      <div style={{ borderLeft: '3px solid #c0392b', padding: '10px 16px', maxWidth: 680, marginBottom: 28, background: 'var(--bg-surface)' }}>
+      <div style={{ borderLeft: '3px solid var(--brand)', padding: '10px 16px', maxWidth: 680, marginBottom: 28, background: 'var(--bg-surface)' }}>
         <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600 }}>
           ADTE recommends. It never executes.
         </span>
@@ -348,7 +345,7 @@ function Hero({ onEnterConsole }) {
 
 function StatStrip() {
   return (
-    <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12, padding: '28px 0', animationDelay: '0.08s' }}>
+    <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12, padding: '28px 0' }}>
       {STATS.map(s => (
         <div key={s.label} className="stat-card">
           <div className="stat-value" style={{ color: 'var(--text-primary)' }}>{s.value}</div>
@@ -366,7 +363,7 @@ function IdentityPanels() {
     { title: 'What it never does', body: 'Act. No account disables, no file deletion, no API calls into your infrastructure. High-risk verdicts arrive as recommendations with the evidence attached — the human, or a downstream SOAR of your choosing, stays in the loop.' },
   ];
   return (
-    <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12, paddingBottom: 40, animationDelay: '0.14s' }}>
+    <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12, paddingBottom: 40 }}>
       {panels.map(p => (
         <div key={p.title} className="panel">
           <div className="panel-header">{p.title}</div>
@@ -389,7 +386,7 @@ function ArchitectureSection() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 12 }}>
         {STAGE_DETAILS.map(d => (
           <div key={d.n} style={{ display: 'flex', gap: 14, padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <div className="mono" style={{ fontSize: '0.7rem', fontWeight: 700, color: '#c0392b', flexShrink: 0, paddingTop: 2 }}>{d.n}</div>
+            <div className="mono" style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--brand)', flexShrink: 0, paddingTop: 2 }}>{d.n}</div>
             <div>
               <div className="mono" style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-primary)', textTransform: 'uppercase', marginBottom: 5 }}>{d.title}</div>
               <div style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{d.body}</div>
@@ -469,7 +466,7 @@ function HowToStrip() {
         {HOW_TO_STEPS.map(s => (
           <div key={s.n} style={{ padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 6 }}>
-              <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#c0392b' }}>{s.n}</span>
+              <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--brand)' }}>{s.n}</span>
               <span className="mono" style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>{s.title}</span>
             </div>
             <div style={{ fontSize: '0.76rem', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{s.body}</div>
@@ -486,7 +483,7 @@ function HowToStrip() {
 function ViewCardsGrid({ onNav }) {
   return (
     <div style={{ paddingBottom: 44 }}>
-      <SectionHeading eyebrow="CONSOLE TOUR" title="Ten views, one investigation"
+      <SectionHeading eyebrow="CONSOLE TOUR" title="Nine views, one investigation"
         sub="Everything below is live in this deployment — click any card to open the view. Read views work without a login; chips mark the ones whose data needs a passkey in secured mode (recruiters: the analyst passkey is in Settings)." />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
         {VIEW_CARDS.map(v => (

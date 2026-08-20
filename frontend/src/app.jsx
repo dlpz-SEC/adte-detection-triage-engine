@@ -13,18 +13,36 @@ import OverviewPage from './overview.jsx';
     // storage is used and no header needs to be constructed manually.
     const authHeaders = () => ({});
 
-    // First-visit flag for the Overview landing page. This is the ONLY thing the
-    // app ever puts in localStorage — a '1' marker, nothing sensitive (the auth
-    // promise above still holds). window.localStorage PROPERTY ACCESS itself can
-    // throw in blocked-storage modes (e.g. Chrome with cookies disabled), so the
-    // whole expression sits inside try/catch, not just getItem. When storage is
-    // unavailable every visit looks like a first visit and lands on the Overview
-    // — the right degradation for a portfolio site.
+    // localStorage holds exactly two non-sensitive markers — the first-visit
+    // flag below and the theme choice ('adte_theme') — never anything secret
+    // (the auth promise above still holds). window.localStorage PROPERTY ACCESS
+    // itself can throw in blocked-storage modes (e.g. Chrome with cookies
+    // disabled), so every access sits inside try/catch, not just getItem. When
+    // storage is unavailable every visit looks like a first visit and lands on
+    // the Overview — the right degradation for a portfolio site.
     const SEEN_OVERVIEW_KEY = 'adte_seen_overview';
     const hasSeenOverview = () => {
       try { return window.localStorage.getItem(SEEN_OVERVIEW_KEY) === '1'; }
       catch { return false; }
     };
+
+    // Theme: persisted choice first, OS preference on first visit, dark as the
+    // final fallback (the console's native identity). Runs at bundle evaluation
+    // — before the first React render — so the page never paints in the wrong
+    // theme. The CSP forbids inline <script>, so the bundle is the earliest
+    // point this can run.
+    const THEME_KEY = 'adte_theme';
+    const initialTheme = (() => {
+      try {
+        const stored = window.localStorage.getItem(THEME_KEY);
+        if (stored === 'light' || stored === 'dark') return stored;
+      } catch { /* blocked storage → fall through to OS preference */ }
+      try {
+        if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+      } catch { /* no matchMedia → dark */ }
+      return 'dark';
+    })();
+    document.documentElement.setAttribute('data-theme', initialTheme);
 
     /* ------------------------------------------------------------------ */
     /* Constants                                                            */
@@ -87,50 +105,39 @@ import OverviewPage from './overview.jsx';
 
     const VIEW_LABELS = {
       overview: 'Overview',
-      triage: 'Alert Input', queue: 'Alert Queue', cases: 'Cases',
-      signals: 'Signal Breakdown', mitre: 'MITRE / NIST',
-      intel: 'Threat Intel',
-      safety: 'Safety Gates', weights: 'Signal Weights',
-      history: 'Verdict History', feedbackhist: 'Feedback History',
-      audit: 'Audit Log',
-      settings: 'Settings', agent: 'Agentic Analysis',
+      triage: 'Triage', queue: 'Alert Queue', cases: 'Cases',
+      signals: 'Signals', mitre: 'MITRE / NIST',
+      intel: 'Threat Intel', agent: 'Agentic Analysis',
+      safety: 'Safety Gates', audit: 'Audit Log', settings: 'Settings',
     };
 
     const VIEW_TO_KEY = {
       overview: 'overview',
-      triage: 'alert-input', queue: 'alert-queue', cases: 'cases',
-      signals: 'signal-breakdown', mitre: 'mitre-nist',
-      intel: 'threat-intel',
-      safety: 'safety-gates', weights: 'signal-weights',
-      audit: 'audit-log',
-      settings: 'settings', agent: 'agent-view',
+      triage: 'triage', queue: 'alert-queue', cases: 'cases',
+      signals: 'signals', mitre: 'mitre-nist',
+      intel: 'threat-intel', agent: 'agent-view',
+      safety: 'safety-gates', audit: 'audit-log', settings: 'settings',
     };
 
+    // Three sections: where alerts arrive (CONSOLE), how a verdict is
+    // understood (ANALYSIS), how the deployment is governed (SYSTEM).
     const NAV = [
-      { section: 'START', items: [
+      { section: 'CONSOLE', items: [
         { key: 'overview', label: 'Overview', action: 'view:overview', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-      ]},
-      { section: 'TRIAGE', items: [
-        { key: 'alert-input', label: 'Alert Input', action: 'view:triage', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+        { key: 'triage', label: 'Triage', action: 'view:triage', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
         { key: 'alert-queue', label: 'Alert Queue', action: 'view:queue', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
         { key: 'cases', label: 'Cases', action: 'view:cases', icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' },
       ]},
-      { section: 'ANALYZE', items: [
-        { key: 'signal-breakdown', label: 'Signal Breakdown', action: 'view:signals', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+      { section: 'ANALYSIS', items: [
+        { key: 'signals', label: 'Signals', action: 'view:signals', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
         { key: 'mitre-nist', label: 'MITRE / NIST', action: 'view:mitre', icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' },
-      ]},
-      { section: 'INTEL', items: [
         { key: 'threat-intel', label: 'Threat Intel', action: 'view:intel', icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' },
-      ]},
-      { section: 'CONFIGURE', items: [
-        { key: 'safety-gates', label: 'Safety Gates', action: 'view:safety', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
-        { key: 'signal-weights', label: 'Signal Weights', action: 'view:weights', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
-      ]},
-      { section: 'AUDIT', items: [
-        { key: 'audit-log', label: 'Audit Log', action: 'view:audit', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-      ]},
-      { section: 'AGENT', items: [
         { key: 'agent-view', label: 'Agentic Analysis', action: 'view:agent', badge: 'IN PROGRESS', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
+      ]},
+      { section: 'SYSTEM', items: [
+        { key: 'safety-gates', label: 'Safety Gates', action: 'view:safety', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
+        { key: 'audit-log', label: 'Audit Log', action: 'view:audit', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+        { key: 'settings', label: 'Settings', action: 'view:settings', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z' },
       ]},
     ];
 
@@ -296,15 +303,15 @@ import OverviewPage from './overview.jsx';
     /* Sidebar                                                              */
     /* ------------------------------------------------------------------ */
 
-    function Sidebar({ activeView, onNav, triageCount, serverOnline, collapsed, onToggleCollapse }) {
+    function Sidebar({ activeView, onNav, triageCount, serverOnline, collapsed, onToggleCollapse, mobileOpen }) {
       const activeKey = VIEW_TO_KEY[activeView] || null;
       return (
-        <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+        <div className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
           {/* Brand */}
           <div style={{ padding: collapsed ? '14px 0' : '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 12, minHeight: 56, transition: 'padding 0.25s ease' }}>
             {/* Bar-constructed eye mark */}
             <svg width="46" height="24" viewBox="-44 -23 88 46" fill="none" style={{ flexShrink: 0 }}>
-              <g fill="#c0392b">
+              <g fill="var(--brand)">
                 <rect x="-12" y="-22" width="24" height="5"/>
                 <rect x="-23" y="-13" width="14" height="5"/>
                 <rect x="9"   y="-13" width="14" height="5"/>
@@ -321,7 +328,7 @@ import OverviewPage from './overview.jsx';
             {/* Wordmark — hidden in collapsed mode via sidebar-brand-text class */}
             <div className="sidebar-brand-text" style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
               <span className="mono" style={{ fontSize: 17, fontWeight: 700, letterSpacing: 3, color: 'var(--text-primary)', lineHeight: 1 }}>ADTE</span>
-              <span className="mono" style={{ fontSize: 7, letterSpacing: 2, color: '#c0392b', lineHeight: 1 }}>DETECTION ENGINE</span>
+              <span className="mono" style={{ fontSize: 7, letterSpacing: 2, color: 'var(--brand)', lineHeight: 1 }}>DETECTION ENGINE</span>
             </div>
           </div>
 
@@ -337,8 +344,9 @@ import OverviewPage from './overview.jsx';
                   {group.section}
                 </div>
                 {group.items.map(item => (
-                  <div
+                  <button
                     key={item.key}
+                    type="button"
                     className={`nav-item ${activeKey === item.key ? 'active' : ''}`}
                     onClick={() => onNav(item.action)}
                     title={collapsed ? item.label : ''}
@@ -350,7 +358,7 @@ import OverviewPage from './overview.jsx';
                         {item.badge}
                       </span>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             ))}
@@ -410,14 +418,145 @@ import OverviewPage from './overview.jsx';
     /* Shared Components                                                    */
     /* ------------------------------------------------------------------ */
 
-    function Breadcrumb({ view }) {
+    // One-line view opener: a description and optional action buttons. The
+    // view's TITLE lives in the app header (VIEW_LABELS) and nowhere else —
+    // this component deliberately renders no heading.
+    function ViewIntro({ description, actions }) {
+      if (!description && !actions) return null;
       return (
-        <div style={{ marginBottom: 20, fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600 }}>ADTE</span>
-          <span style={{ color: 'var(--border-accent)' }}>/</span>
-          <span>{VIEW_LABELS[view] || view}</span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
+          {description && (
+            <p style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 720, margin: 0 }}>
+              {description}
+            </p>
+          )}
+          {actions && <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>{actions}</div>}
         </div>
       );
+    }
+
+    // Live view of the data-theme attribute. Charts paint onto <canvas> with
+    // concrete color values (Chart.js cannot read CSS vars), so they must
+    // re-draw when the theme flips — adding this hook's value to a chart
+    // effect's deps is the stale-chart-theme fix. The MutationObserver keys
+    // off the attribute itself, so it works no matter who toggles it.
+    function useTheme() {
+      const read = () => document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      const [themeValue, setThemeValue] = useState(read);
+      useEffect(() => {
+        const obs = new MutationObserver(() => setThemeValue(read()));
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+        return () => obs.disconnect();
+      }, []);
+      return themeValue;
+    }
+
+    // Resolve a design token to its computed value — the bridge between the
+    // index.html token block and canvas/Chart.js code that needs literals.
+    const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+    // Canonical clickable-text treatment (index.html .link). A real <button>
+    // so it is keyboard-focusable; `muted` for secondary actions ("show less",
+    // "clear filter"), `mono` when it sits in monospace context (IPs, IDs).
+    function InlineLink({ onClick, title, muted, mono, style, children }) {
+      const cls = `link${muted ? ' link--muted' : ''}${mono ? ' mono' : ''}`;
+      return (
+        <button type="button" className={cls} title={title} style={style}
+          onClick={onClick ? (e) => { e.stopPropagation(); onClick(e); } : undefined}>
+          {children}
+        </button>
+      );
+    }
+
+    // One empty-state layout for every view (queue/cases/history/feedback/triage).
+    function EmptyState({ icon, title, hint, actionLabel, onAction }) {
+      return (
+        <div style={{ textAlign: 'center', paddingTop: 60, paddingBottom: 24 }}>
+          {icon}
+          <div className="mono" style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-caption)', letterSpacing: '0.15em', marginTop: icon ? 16 : 0, textTransform: 'uppercase' }}>
+            {title}
+          </div>
+          {hint && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-body)', marginTop: 8, opacity: 0.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
+              {hint}
+            </div>
+          )}
+          {actionLabel && (
+            <button className="btn btn-primary" onClick={onAction} style={{ marginTop: 16 }}>{actionLabel}</button>
+          )}
+        </div>
+      );
+    }
+
+    // Status strip (index.html .banner) — live/demo/auth/error surfaces.
+    // tone: 'info' (accent) | 'success' | 'warn' | 'error' | 'neutral'.
+    function Banner({ tone = 'info', label, style, children }) {
+      const cls = tone === 'info' ? 'banner' : `banner banner--${tone}`;
+      return (
+        <div className={cls} style={style}>
+          {label && <span className="banner-label">{label}</span>}
+          <span>{children}</span>
+        </div>
+      );
+    }
+
+    // The three skeleton geometries every loading state maps to.
+    function TableSkeleton({ rows = 3, rowHeight = 44 }) {
+      return (
+        <div>
+          {Array.from({ length: rows }, (_, i) => (
+            <div key={i} className="skeleton" style={{ height: rowHeight, marginBottom: 4 }} />
+          ))}
+        </div>
+      );
+    }
+
+    function CardGridSkeleton({ cards = 6, columns = 2, height = 140 }) {
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
+          {Array.from({ length: cards }, (_, i) => (
+            <div key={i} className="skeleton" style={{ height }} />
+          ))}
+        </div>
+      );
+    }
+
+    // Right-aligned mono legend line under a table — at most two hints so the
+    // footer reads as a hint, not a manual.
+    function LegendFooter({ hints }) {
+      const shown = (hints || []).slice(0, 2);
+      if (!shown.length) return null;
+      return (
+        <div className="mono" style={{ marginTop: 10, fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', display: 'flex', gap: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {shown.map(h => <span key={h}>{h}</span>)}
+        </div>
+      );
+    }
+
+    // Mini risk bar + number trio used in queue/batch/cases rows.
+    function RiskCell({ score, color }) {
+      const c = color || 'var(--text-muted)';
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.max(0, Math.min(100, score))}%`, height: '100%', background: c, borderRadius: 2 }} />
+          </div>
+          <span className="mono" style={{ fontSize: 'var(--fs-small)', color: c, fontWeight: 600 }}>{score}</span>
+        </div>
+      );
+    }
+
+    // Header clock in its own component so the 1-second tick re-renders one
+    // <span>, not the entire App tree.
+    function UtcClock() {
+      const [utcTime, setUtcTime] = useState('--:--:-- UTC');
+      useEffect(() => {
+        const tick = () => setUtcTime(new Date().toISOString().slice(11, 19) + ' UTC');
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+      }, []);
+      return <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{utcTime}</span>;
     }
 
     function NoResultBanner({ onGoTriage }) {
@@ -427,18 +566,23 @@ import OverviewPage from './overview.jsx';
             Run a triage first — load an example and click <strong>Run Triage</strong>
           </span>
           <button className="btn btn-primary" onClick={onGoTriage} style={{ flexShrink: 0 }}>
-            Go to Alert Input
+            Go to Triage
           </button>
         </div>
       );
     }
 
-    function VerdictBadge({ verdict, riskScore }) {
+    // size="sm" drops the " RISK" suffix so the badge survives narrow table
+    // columns (110px verdict cells clipped "MEDIUM RISK").
+    function VerdictBadge({ verdict, riskScore, size }) {
       const display = getDisplayVerdict(verdict);
       const cls = VERDICT_BADGE_CLASS[display] || 'badge-low';
+      const full = VERDICT_LABEL[display] || display;
       return (
-        <span className={`badge ${cls}`} style={{ fontSize: '0.7rem', padding: '4px 12px' }}>
-          {VERDICT_LABEL[display] || display}
+        <span className={`badge ${cls}`}
+          style={size === 'sm' ? { fontSize: '0.65rem', padding: '3px 8px' } : { fontSize: '0.7rem', padding: '4px 12px' }}
+          title={size === 'sm' ? full : undefined}>
+          {size === 'sm' ? full.replace(' RISK', '') : full}
         </span>
       );
     }
@@ -497,6 +641,15 @@ import OverviewPage from './overview.jsx';
       const barColor = !isSkipped && signal.score > 0
         ? (barPct >= 100 ? 'var(--critical)' : barPct >= 50 ? 'var(--high)' : 'var(--success)')
         : 'var(--border)';
+      // Long rationale text used to hard-clamp at 3 lines with no way to read
+      // the rest. Now: clamp, detect actual overflow, and offer show more.
+      const [expanded, setExpanded] = useState(false);
+      const [overflowing, setOverflowing] = useState(false);
+      const detailRef = useRef(null);
+      useEffect(() => {
+        const el = detailRef.current;
+        if (el && !expanded) setOverflowing(el.scrollHeight > el.clientHeight + 1);
+      }, [signal.detail, expanded]);
       return (
         <div className="panel" style={{
           borderLeft: isSkipped
@@ -519,9 +672,19 @@ import OverviewPage from './overview.jsx';
                 <div style={{ width: `${barPct}%`, height: '100%', background: barColor, borderRadius: 2 }} />
               </div>
             )}
-            <div style={{ fontSize: '0.75rem', color: isSkipped ? 'var(--text-muted)' : 'var(--text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            <div ref={detailRef} style={{
+              fontSize: '0.75rem', color: isSkipped ? 'var(--text-muted)' : 'var(--text-secondary)', lineHeight: 1.5,
+              ...(expanded ? {} : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
+            }}>
               {signal.detail}
             </div>
+            {(overflowing || expanded) && (
+              <button type="button" className="link link--muted" aria-expanded={expanded}
+                style={{ fontSize: '0.68rem', marginTop: 4 }}
+                onClick={() => setExpanded(e => !e)}>
+                {expanded ? 'show less' : 'show more'}
+              </button>
+            )}
             {!isSkipped && (
               <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right', marginTop: 6 }}>conf {confPct}%</div>
             )}
@@ -607,14 +770,15 @@ import OverviewPage from './overview.jsx';
               style={{ flex: '1 1 140px', minWidth: 120, maxWidth: 200, fontSize: '0.75rem' }}
             />
             <button className="btn btn-danger" onClick={() => submit('fp')} disabled={busy}>FALSE POSITIVE</button>
-            <button className="btn" onClick={() => submit('tp')} disabled={busy} style={{ borderColor: 'var(--success)', color: 'var(--success)' }}>TRUE POSITIVE</button>
+            <button className="btn btn-success" onClick={() => submit('tp')} disabled={busy}>TRUE POSITIVE</button>
             {failed && <span className="mono" style={{ fontSize: '0.65rem', color: 'var(--critical)' }}>submission failed</span>}
           </div>
         </div>
       );
     }
 
-    function LoadingSkeleton() {
+    // Skeleton shaped like a triage result (badge, score bar, signal grid).
+    function ResultSkeleton() {
       return (
         <div>
           <div className="skeleton" style={{ height: 56, marginBottom: 12 }} />
@@ -645,7 +809,7 @@ import OverviewPage from './overview.jsx';
       return (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
           {cards.map((card, i) => (
-            <div key={card.label} className="stat-card animate-in" style={{ animationDelay: `${i * 0.08}s`, borderLeft: `4px solid ${card.color}` }}>
+            <div key={card.label} className="stat-card animate-in" style={{ borderLeft: `4px solid ${card.color}` }}>
               <div className="stat-label">{card.label}</div>
               {loading && rows === null
                 ? <div className="skeleton" style={{ height: 32, width: '60%', margin: '4px 0' }} />
@@ -664,6 +828,7 @@ import OverviewPage from './overview.jsx';
     function VerdictDonut({ rows, loading }) {
       const canvasRef = useRef(null);
       const chartRef = useRef(null);
+      const theme = useTheme();
 
       const counts = useMemo(() => {
         if (!rows) return { high: 0, medium: 0, low: 0 };
@@ -674,12 +839,13 @@ import OverviewPage from './overview.jsx';
         };
       }, [rows]);
 
+      // `theme` in the deps re-draws the canvas on toggle — cssVar() resolves
+      // to the OTHER palette's literals only after the attribute flips.
       useEffect(() => {
         if (!canvasRef.current) return;
         if (chartRef.current) chartRef.current.destroy();
 
         const ctx = canvasRef.current.getContext('2d');
-        const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
 
         chartRef.current = new Chart(ctx, {
           type: 'doughnut',
@@ -687,8 +853,8 @@ import OverviewPage from './overview.jsx';
             labels: ['High Risk', 'Medium Risk', 'Low Risk'],
             datasets: [{
               data: [counts.high, counts.medium, counts.low],
-              backgroundColor: ['#f97316', '#eab308', '#6b7280'],
-              borderColor: isDark ? '#111111' : '#ffffff',
+              backgroundColor: [cssVar('--high'), cssVar('--medium'), cssVar('--low')],
+              borderColor: cssVar('--bg-surface'),
               borderWidth: 2,
             }],
           },
@@ -699,10 +865,10 @@ import OverviewPage from './overview.jsx';
             plugins: {
               legend: { display: false },
               tooltip: {
-                backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
-                titleColor: isDark ? '#f0f0f0' : '#171717',
-                bodyColor: isDark ? '#a0a0a0' : '#525252',
-                borderColor: isDark ? '#2a2a2a' : '#e5e5e5',
+                backgroundColor: cssVar('--bg-elevated'),
+                titleColor: cssVar('--text-primary'),
+                bodyColor: cssVar('--text-secondary'),
+                borderColor: cssVar('--border'),
                 borderWidth: 1,
               },
             },
@@ -710,10 +876,10 @@ import OverviewPage from './overview.jsx';
         });
 
         return () => { if (chartRef.current) chartRef.current.destroy(); };
-      }, [counts]);
+      }, [counts, theme]);
 
       return (
-        <div className="panel animate-in" style={{ animationDelay: '0.2s' }}>
+        <div className="panel animate-in">
           <div className="panel-header">Verdict Distribution</div>
           <div className="panel-body" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             {loading && rows === null ? (
@@ -732,9 +898,9 @@ import OverviewPage from './overview.jsx';
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {[
-                    { label: 'High Risk',   sublabel: 'high_risk',   color: '#f97316', count: counts.high },
-                    { label: 'Medium Risk', sublabel: 'medium_risk', color: '#eab308', count: counts.medium },
-                    { label: 'Low Risk',    sublabel: 'low_risk',    color: '#6b7280', count: counts.low },
+                    { label: 'High Risk',   sublabel: 'high_risk',   color: 'var(--high)',   count: counts.high },
+                    { label: 'Medium Risk', sublabel: 'medium_risk', color: 'var(--medium)', count: counts.medium },
+                    { label: 'Low Risk',    sublabel: 'low_risk',    color: 'var(--low)',    count: counts.low },
                   ].map(item => (
                     <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0 }} />
@@ -757,6 +923,7 @@ import OverviewPage from './overview.jsx';
     function Sparkline({ rows }) {
       const canvasRef = useRef(null);
       const chartRef = useRef(null);
+      const theme = useTheme();
 
       useEffect(() => {
         if (!canvasRef.current || !rows || rows.length === 0) return;
@@ -770,8 +937,9 @@ import OverviewPage from './overview.jsx';
         const labels = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
         const data = labels.map(l => hourBuckets[l] || 0);
 
-        const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
         const ctx = canvasRef.current.getContext('2d');
+        const gridColor = cssVar('--border');
+        const tickColor = cssVar('--text-muted');
 
         chartRef.current = new Chart(ctx, {
           type: 'line',
@@ -779,8 +947,8 @@ import OverviewPage from './overview.jsx';
             labels,
             datasets: [{
               data,
-              borderColor: '#3b82f6',
-              backgroundColor: 'rgba(59,130,246,0.1)',
+              borderColor: cssVar('--accent'),
+              backgroundColor: cssVar('--accent-dim'),
               borderWidth: 2,
               fill: true,
               tension: 0.4,
@@ -793,30 +961,30 @@ import OverviewPage from './overview.jsx';
             maintainAspectRatio: false,
             scales: {
               x: {
-                grid: { color: isDark ? '#1a1a1a' : '#f0f0f0' },
-                ticks: { color: isDark ? '#666' : '#a3a3a3', font: { size: 9, family: 'JetBrains Mono' }, maxRotation: 0 },
+                grid: { color: gridColor },
+                ticks: { color: tickColor, font: { size: 9, family: 'JetBrains Mono' }, maxRotation: 0 },
               },
               y: {
-                grid: { color: isDark ? '#1a1a1a' : '#f0f0f0' },
-                ticks: { color: isDark ? '#666' : '#a3a3a3', font: { size: 9, family: 'JetBrains Mono' } },
+                grid: { color: gridColor },
+                ticks: { color: tickColor, font: { size: 9, family: 'JetBrains Mono' } },
                 beginAtZero: true,
               },
             },
             plugins: { legend: { display: false }, tooltip: {
-              backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
-              titleColor: isDark ? '#f0f0f0' : '#171717',
-              bodyColor: isDark ? '#a0a0a0' : '#525252',
-              borderColor: isDark ? '#2a2a2a' : '#e5e5e5',
+              backgroundColor: cssVar('--bg-elevated'),
+              titleColor: cssVar('--text-primary'),
+              bodyColor: cssVar('--text-secondary'),
+              borderColor: cssVar('--border'),
               borderWidth: 1,
             }},
           },
         });
 
         return () => { if (chartRef.current) chartRef.current.destroy(); };
-      }, [rows]);
+      }, [rows, theme]);
 
       return (
-        <div className="panel animate-in" style={{ animationDelay: '0.3s' }}>
+        <div className="panel animate-in">
           <div className="panel-header">Alert Volume (by hour)</div>
           <div className="panel-body" style={{ height: 120 }}>
             <canvas ref={canvasRef} />
@@ -850,10 +1018,10 @@ import OverviewPage from './overview.jsx';
       if (!files || files.length === 0) return null;
       const lookups = result.evidence?.file_reputation || {};
       return (
-        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid #eab308' }}>
+        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--medium)' }}>
           <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Malware Evidence</span>
-            <span className="badge" style={{ fontSize: '0.55rem', background: '#eab3081f', color: '#eab308', border: '1px solid #eab308' }}>FILE REPUTATION</span>
+            <span className="badge" style={{ fontSize: '0.55rem', background: 'var(--medium-dim)', color: 'var(--medium)', border: '1px solid var(--medium)' }}>FILE REPUTATION</span>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {files.map((f, i) => {
@@ -863,6 +1031,9 @@ import OverviewPage from './overview.jsx';
               const ratio = hasEmbedded ? f.vt_positives / f.vt_total : null;
               const malicious = ratio != null ? ratio >= 0.5 : (lookup ? lookup.is_malicious : false);
               const ratioColor = malicious ? 'var(--high)' : 'var(--text-secondary)';
+              // NB: a hex-alpha suffix cannot be appended to a var() — use the
+              // -dim token for the tint instead.
+              const ratioBg = malicious ? 'var(--high-dim)' : 'var(--bg-elevated)';
               return (
                 <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {f.path && (
@@ -870,12 +1041,12 @@ import OverviewPage from './overview.jsx';
                   )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     {hasEmbedded && (
-                      <span className="badge" style={{ fontSize: '0.6rem', background: `${ratioColor}1f`, color: ratioColor, border: `1px solid ${ratioColor}` }}>
+                      <span className="badge" style={{ fontSize: '0.6rem', background: ratioBg, color: ratioColor, border: `1px solid ${ratioColor}` }}>
                         VirusTotal {f.vt_positives}/{f.vt_total} engines
                       </span>
                     )}
                     {!hasEmbedded && lookup && (
-                      <span className="badge" style={{ fontSize: '0.6rem', background: `${ratioColor}1f`, color: ratioColor, border: `1px solid ${ratioColor}` }}>
+                      <span className="badge" style={{ fontSize: '0.6rem', background: ratioBg, color: ratioColor, border: `1px solid ${ratioColor}` }}>
                         {lookup.is_malicious ? 'MALICIOUS' : 'CLEAN'} · {lookup.source}
                         {lookup.positives != null && lookup.total != null ? ` ${lookup.positives}/${lookup.total}` : ''}
                       </span>
@@ -1121,18 +1292,8 @@ import OverviewPage from './overview.jsx';
       // adapter (splunk, elastic, ...) is one entry here — any source not
       // in this map falls through to the DEMO MODE banner.
       const LIVE_SOURCE_BANNERS = {
-        wazuh: {
-          label: 'WAZUH LIVE',
-          color: 'var(--success)',
-          background: 'var(--success-dim)',
-          noun: 'alert',
-        },
-        sentinel: {
-          label: 'SENTINEL LIVE',
-          color: 'var(--accent)',
-          background: 'rgba(59,130,246,0.08)',
-          noun: 'incident',
-        },
+        wazuh:    { label: 'WAZUH LIVE',    tone: 'success', noun: 'alert' },
+        sentinel: { label: 'SENTINEL LIVE', tone: 'info',    noun: 'incident' },
       };
 
       // IIFE used here because the banner has three possible outcomes
@@ -1143,41 +1304,19 @@ import OverviewPage from './overview.jsx';
         // outage.  Sessions are cleared by every redeploy (ephemeral disk).
         if (authError) {
           return (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 16px', borderRadius: 6, marginBottom: 16,
-              background: 'rgba(59,130,246,0.08)',
-              border: '1px solid var(--accent)',
-            }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-              <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
-                {authError === 403 ? 'INSUFFICIENT ROLE' : 'AUTHENTICATION REQUIRED'}
-              </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                {authError === 403
-                  ? '— This passkey lacks the analyst role needed to read the queue.'
-                  : '— Open Settings and log in to load the queue. Recruiters: grab the recruiter passkey there. Sessions are cleared on every redeploy.'}
-              </span>
-            </div>
+            <Banner label={authError === 403 ? 'INSUFFICIENT ROLE' : 'AUTHENTICATION REQUIRED'} style={{ marginBottom: 16 }}>
+              {authError === 403
+                ? 'This passkey lacks the analyst role needed to read the queue.'
+                : 'Open Settings and log in to load the queue. Recruiters: grab the recruiter passkey there. Sessions are cleared on every redeploy.'}
+            </Banner>
           );
         }
         const liveBanner = LIVE_SOURCE_BANNERS[dataSource];
         if (liveBanner) {
           return (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 16px', borderRadius: 6, marginBottom: 16,
-              background: liveBanner.background,
-              border: `1px solid ${liveBanner.color}`,
-            }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: liveBanner.color, flexShrink: 0 }} />
-              <span className="mono" style={{ fontSize: '0.75rem', color: liveBanner.color, fontWeight: 600 }}>
-                {liveBanner.label}
-              </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                — {rows ? rows.length : 0} {liveBanner.noun}{rows && rows.length !== 1 ? 's' : ''} retrieved (last {hours}h)
-              </span>
-            </div>
+            <Banner tone={liveBanner.tone} label={liveBanner.label} style={{ marginBottom: 16 }}>
+              {rows ? rows.length : 0} {liveBanner.noun}{rows && rows.length !== 1 ? 's' : ''} retrieved (last {hours}h)
+            </Banner>
           );
         }
         // Demo mode is the EXPECTED state for the hosted deployment (the Wazuh
@@ -1186,28 +1325,16 @@ import OverviewPage from './overview.jsx';
         // and told visitors to configure an env var — an operator message on a
         // showcase, which made a healthy deploy look broken.
         return (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '10px 16px', borderRadius: 6, marginBottom: 16,
-            background: 'rgba(59,130,246,0.08)',
-            border: '1px solid var(--accent)',
-          }}>
-            <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>▶</span>
-            <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>
-              DEMO MODE
-            </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              — {rows ? rows.length : 8} sample alert{(!rows || rows.length !== 1) ? 's' : ''}: identity attacks plus a live Wazuh
-              FIM → VirusTotal → active-response malware pipeline. Click any row to triage it.
-              Point <code style={{ fontSize: '0.7rem' }}>ADTE_WAZUH_HOST</code> at a Wazuh Indexer — or set the <code style={{ fontSize: '0.7rem' }}>ADTE_SENTINEL_*</code> credentials for a live Microsoft Sentinel workspace — to stream real alerts.
-            </span>
-          </div>
+          <Banner label="DEMO MODE" style={{ marginBottom: 16 }}>
+            {rows ? rows.length : 8} sample alert{(!rows || rows.length !== 1) ? 's' : ''}: identity attacks plus a live Wazuh
+            FIM → VirusTotal → active-response malware pipeline. Click any row to triage it.
+            Point <code>ADTE_WAZUH_HOST</code> at a Wazuh Indexer — or set the <code>ADTE_SENTINEL_*</code> credentials for a live Microsoft Sentinel workspace — to stream real alerts.
+          </Banner>
         );
       })();
 
       return (
-        <div style={{ padding: 24 }}>
-          <Breadcrumb view="queue" />
+        <div className="view">
           {sourceBanner}
           <StatCards rows={rows} loading={loading} />
 
@@ -1245,12 +1372,11 @@ import OverviewPage from './overview.jsx';
           </div>
 
           {/* Table */}
-          {loading && <div>{[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 44, marginBottom: 4 }} />)}</div>}
+          {loading && <TableSkeleton />}
 
           {!loading && (!rows || rows.length === 0) && (
-            <div style={{ textAlign: 'center', paddingTop: 60, color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              No alerts in queue
-            </div>
+            <EmptyState title="No alerts in queue"
+              hint="Live sources are polled every 60 seconds — or lower the LEVEL filter to include informational alerts." />
           )}
 
           {!loading && rows && rows.length > 0 && (
@@ -1273,18 +1399,15 @@ import OverviewPage from './overview.jsx';
                       </span>
                       <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{row.incident_id}</span>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.user}</span>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: row.source_ip ? 'var(--info, #60a5fa)' : 'var(--text-muted)', cursor: row.source_ip ? 'pointer' : 'default', textDecoration: row.source_ip ? 'underline dotted' : 'none' }}
-                        onClick={row.source_ip ? e => { e.stopPropagation(); onGoIntel && onGoIntel(row.source_ip); } : undefined}
-                        title={row.source_ip ? `Look up ${row.source_ip} in Threat Intel` : undefined}>
-                        {row.source_ip || '—'}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ width: `${row.risk_score}%`, height: '100%', background: VERDICT_COLOR[getDisplayVerdict(row.verdict, row.risk_score)], borderRadius: 2 }} />
-                        </div>
-                        <span className="mono" style={{ fontSize: '0.75rem', color: VERDICT_COLOR[getDisplayVerdict(row.verdict, row.risk_score)], fontWeight: 600 }}>{row.risk_score}</span>
-                      </div>
-                      <VerdictBadge verdict={row.verdict} riskScore={row.risk_score} />
+                      {row.source_ip
+                        ? <InlineLink mono style={{ fontSize: '0.75rem' }}
+                            onClick={() => onGoIntel && onGoIntel(row.source_ip)}
+                            title={`Look up ${row.source_ip} in Threat Intel`}>
+                            {row.source_ip}
+                          </InlineLink>
+                        : <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>—</span>}
+                      <RiskCell score={row.risk_score} color={VERDICT_COLOR[getDisplayVerdict(row.verdict, row.risk_score)]} />
+                      <VerdictBadge verdict={row.verdict} riskScore={row.risk_score} size="sm" />
                       <span className="badge badge-low">OPEN</span>
                     </div>
                     {(qTechs.length > 0 || row.nist_phase) && (
@@ -1297,9 +1420,7 @@ import OverviewPage from './overview.jsx';
               })}
             </div>
           )}
-          <div className="mono" style={{ marginTop: 10, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-            Auto-refreshes every 60s · Click row to triage · Click IP to enrich · Click headers to sort
-          </div>
+          <LegendFooter hints={['Auto-refreshes every 60s', 'Click a row to triage it']} />
         </div>
       );
     }
@@ -1318,7 +1439,9 @@ import OverviewPage from './overview.jsx';
             {meta.failed > 0 && <> · <span style={{ color: 'var(--medium)' }}>{meta.failed} failed</span></>}
           </div>
           {caseSummaries.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+            <div style={{ marginBottom: 12 }}>
+              <div className="micro-label" style={{ marginBottom: 6 }}>CORRELATED CASES</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {caseSummaries.map(c => (
                 <div key={c.case_id} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: onOpenCase ? 'pointer' : 'default', borderLeft: `3px solid ${c.escalated ? 'var(--high)' : 'var(--accent)'}` }}
                   onClick={onOpenCase ? () => onOpenCase(c.case_id) : undefined}
@@ -1330,6 +1453,7 @@ import OverviewPage from './overview.jsx';
                   {c.kill_chain?.detected && <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--high)' }} title={c.kill_chain.tactics_in_order.join(' → ')}>⛓</span>}
                 </div>
               ))}
+              </div>
             </div>
           )}
           <div className="data-table">
@@ -1354,13 +1478,8 @@ import OverviewPage from './overview.jsx';
                     <span className="mono" style={{ fontSize: '0.75rem', color: focused ? 'var(--accent)' : 'var(--text-muted)' }}>{r.index + 1}</span>
                     <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.incident_id || '—'}</span>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.user || '—'}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ width: `${r.risk_score}%`, height: '100%', background: VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)], borderRadius: 2 }} />
-                      </div>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)], fontWeight: 600 }}>{r.risk_score}</span>
-                    </div>
-                    <VerdictBadge verdict={r.verdict} riskScore={r.risk_score} />
+                    <RiskCell score={r.risk_score} color={VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)]} />
+                    <VerdictBadge verdict={r.verdict} riskScore={r.risk_score} size="sm" />
                     <span className="mono" style={{ fontSize: '0.68rem', color: r.case ? (r.case.escalated ? 'var(--high)' : 'var(--accent)') : 'var(--text-muted)' }}
                       title={r.case ? r.case.case_id : 'Not correlated'}>
                       {r.case ? r.case.case_id.slice(-6) : '—'}
@@ -1375,9 +1494,7 @@ import OverviewPage from './overview.jsx';
               );
             })}
           </div>
-          <div className="mono" style={{ marginTop: 8, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-            Click a row for the full result · Signals / MITRE views follow the focused alert
-          </div>
+          <LegendFooter hints={['Click a row for the full result', 'Signals / MITRE views follow the focused alert']} />
         </div>
       );
     }
@@ -1448,34 +1565,20 @@ import OverviewPage from './overview.jsx';
 
       const colTemplate = '1.3fr 60px 1.4fr 90px 110px 56px 120px';
       return (
-        <div style={{ padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-              CORRELATED CASES — alerts sharing a source IP, user, or file hash inside the rolling window
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {CASE_STATUS_FILTERS.map(s => (
-                <button key={s} className="btn" onClick={() => setStatusFilter(s)}
-                  style={{ fontSize: '0.65rem', padding: '4px 10px',
-                    borderColor: statusFilter === s ? 'var(--accent)' : undefined,
-                    background: statusFilter === s ? 'var(--accent-dim)' : undefined }}>
-                  {s.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="view">
+          <ViewIntro
+            description="Correlated cases — alerts sharing a source IP, user, or file hash inside the rolling window."
+            actions={CASE_STATUS_FILTERS.map(s => (
+              <button key={s} className={`pill ${statusFilter === s ? 'active' : ''}`} onClick={() => setStatusFilter(s)}>
+                {s.toUpperCase()}
+              </button>
+            ))} />
           {error && (
-            <div className="panel" style={{ borderLeft: '3px solid var(--medium)', marginBottom: 12 }}>
-              <div className="panel-body mono" style={{ fontSize: '0.75rem', color: 'var(--medium)' }}>⚠ {error}</div>
-            </div>
+            <Banner tone="warn" label="ERROR" style={{ marginBottom: 12 }}>{error}</Banner>
           )}
           {!error && rows && rows.length === 0 && (
-            <div style={{ paddingTop: 60, textAlign: 'center' }}>
-              <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.7rem', letterSpacing: '0.15em' }}>NO CASES YET</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8, opacity: 0.6 }}>
-                Run triage on related alerts — same source IP, user, or file hash within the window — and they will group here.
-              </div>
-            </div>
+            <EmptyState title="No cases yet"
+              hint="Run triage on related alerts — same source IP, user, or file hash within the window — and they will group here." />
           )}
           {!error && rows && rows.length > 0 && (
             <div className="data-table">
@@ -1515,46 +1618,52 @@ import OverviewPage from './overview.jsx';
                     </div>
                     {expanded && !detail && (
                       <div className="mono" style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', fontSize: '0.7rem', color: detailError ? 'var(--medium)' : 'var(--text-muted)' }}>
-                        {detailError ? `⚠ ${detailError}` : 'Loading case detail…'}
+                        {detailError ? `⚠ ${detailError}` : 'Loading…'}
                       </div>
                     )}
+                    {/* Expanded detail renders as a NESTED inset panel with its
+                        own header — its member grid makes no pretense of
+                        aligning with the outer table's 7 columns. */}
                     {expanded && detail && detail.case_id === c.case_id && (
-                      <div style={{ padding: '10px 16px 14px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {detail.kill_chain?.detected && <TacticChips tactics={detail.kill_chain.tactics_in_order} />}
-                        <div>
-                          <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 6 }}>ESCALATION RATIONALE</div>
-                          {(detail.escalation_rationale || []).map((r, i) => (
-                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '2px 0' }}>
-                              <span>{r.detail}</span>
-                              <span className="mono" style={{ color: r.points >= 0 ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
-                                {r.points >= 0 ? `+${r.points}` : r.points}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        <div>
-                          <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 6 }}>
-                            MEMBER ALERTS ({(detail.members || []).length})
+                      <div style={{ padding: '10px 16px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <div className="inset-panel" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <div className="micro-label">{c.case_id} · DETAIL</div>
+                          {detail.kill_chain?.detected && <TacticChips tactics={detail.kill_chain.tactics_in_order} />}
+                          <div>
+                            <div className="micro-label" style={{ marginBottom: 6 }}>ESCALATION RATIONALE</div>
+                            {(detail.escalation_rationale || []).map((r, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '2px 0' }}>
+                                <span>{r.detail}</span>
+                                <span className="mono" style={{ color: r.points >= 0 ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
+                                  {r.points >= 0 ? `+${r.points}` : r.points}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                          {(detail.members || []).map((m, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 90px 110px', gap: 8, alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', padding: '3px 0' }}>
-                              <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.incident_id}</span>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.user || '—'}</span>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.rule_name || ''}>
-                                {(m.ips || []).map((ip, k) => (
-                                  <span key={ip} className="mono" style={{ color: 'var(--info, #60a5fa)', cursor: 'pointer', textDecoration: 'underline dotted', marginRight: 6 }}
-                                    onClick={e => { e.stopPropagation(); onGoIntel && onGoIntel(ip); }} title={`Look up ${ip} in Threat Intel`}>
-                                    {ip}
-                                  </span>
-                                ))}
-                                {m.rule_name || ''}
-                              </span>
-                              <span className="mono" style={{ color: VERDICT_COLOR[m.verdict], fontWeight: 600 }}>{Math.round(m.risk_score)}</span>
-                              <VerdictBadge verdict={m.verdict} riskScore={m.risk_score} />
+                          <div>
+                            <div className="micro-label" style={{ marginBottom: 6 }}>
+                              MEMBER ALERTS ({(detail.members || []).length})
                             </div>
-                          ))}
-                          <div className="mono" style={{ marginTop: 6, fontSize: '0.6rem', color: 'var(--text-muted)' }}>
-                            Members are stored summaries — re-run an incident through Alert Input for the full signal breakdown.
+                            {(detail.members || []).map((m, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 60px 90px', gap: 8, alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', padding: '3px 0' }}>
+                                <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.incident_id}</span>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.user || '—'}</span>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.rule_name || ''}>
+                                  {(m.ips || []).map(ip => (
+                                    <InlineLink key={ip} mono style={{ marginRight: 6 }}
+                                      onClick={() => onGoIntel && onGoIntel(ip)} title={`Look up ${ip} in Threat Intel`}>
+                                      {ip}
+                                    </InlineLink>
+                                  ))}
+                                  {m.rule_name || ''}
+                                </span>
+                                <span className="mono" style={{ color: VERDICT_COLOR[m.verdict], fontWeight: 600 }}>{Math.round(m.risk_score)}</span>
+                                <VerdictBadge verdict={m.verdict} riskScore={m.risk_score} size="sm" />
+                              </div>
+                            ))}
+                            <div className="mono" style={{ marginTop: 6, fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                              Members are stored summaries — re-run an incident through Triage for the full signal breakdown.
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1564,30 +1673,25 @@ import OverviewPage from './overview.jsx';
               })}
             </div>
           )}
-          <div className="mono" style={{ marginTop: 10, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-            Cases group triaged alerts by shared source IP / user / file hash · Click a row to expand · Click an IP to enrich
-          </div>
+          <LegendFooter hints={['Click a row to expand its detail', 'Click an IP to enrich it']} />
         </div>
       );
     }
 
     /* ------------------------------------------------------------------ */
-    /* VIEW: SignalsView                                                    */
+    /* VIEW: SignalsView — LAST TRIAGE | WEIGHT MODEL tabs                  */
+    /* (merges the former Signal Breakdown and Signal Weights views)        */
     /* ------------------------------------------------------------------ */
 
-    function SignalsView({ result, onGoTriage }) {
+    function SignalsLastTriageTab({ result, onGoTriage }) {
       const summary = result?.report?.signal_summary || {};
       const rationale = result?.rationale || [];
 
       return (
-        <div style={{ padding: 24, maxWidth: 900 }}>
-          <Breadcrumb view="signals" />
-          <div style={{ marginBottom: 20 }}>
-            <h2 className="heading" style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 4 }}>Signal Breakdown</h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {result ? 'Live scores from last triage run.' : 'No triage run yet — showing signal reference data.'}
-            </p>
-          </div>
+        <div className="view">
+          <ViewIntro description={result
+            ? 'Live scores from the last triage run, over the full signal reference.'
+            : 'No triage run yet — showing signal reference data.'} />
           {!result && <NoResultBanner onGoTriage={onGoTriage} />}
 
           {SIGNAL_ORDER.map((name, idx) => {
@@ -1603,7 +1707,7 @@ import OverviewPage from './overview.jsx';
             const sigColor = WEIGHTS_DATA.find(w => w.name === name)?.color || '#666';
 
             return (
-              <div key={name} className="panel animate-in" style={{ marginBottom: 12, borderLeft: `3px solid ${sigColor}`, animationDelay: `${idx * 0.06}s` }}>
+              <div key={name} className="panel animate-in" style={{ marginBottom: 12, borderLeft: `3px solid ${sigColor}` }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="mono" style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                     {SIGNAL_LABELS[name]}
@@ -1629,7 +1733,7 @@ import OverviewPage from './overview.jsx';
                       </div>
                       {!isSkipped && (
                         <div className="score-bar-track" style={{ height: 5, marginBottom: 10 }}>
-                          <div style={{ width: `${barPct}%`, height: '100%', background: barColor, borderRadius: 3, transition: 'width 0.6s ease' }} />
+                          <div style={{ width: `${barPct}%`, height: '100%', background: barColor, borderRadius: 3, transition: 'width 0.25s var(--ease)' }} />
                         </div>
                       )}
                       {(s?.detail || rat?.detail) && (
@@ -1709,15 +1813,16 @@ import OverviewPage from './overview.jsx';
         // navigation to the same element wouldn't re-trigger the CSS animation.
         void el.offsetWidth;
         el.classList.add('mitre-highlight-flash');
-        const t = setTimeout(() => el.classList.remove('mitre-highlight-flash'), 1600);
+        // Matches the 300ms CSS pulse (+50ms slack) — the old 1.6s flash was
+        // the single slowest-feeling interaction in the app.
+        const t = setTimeout(() => el.classList.remove('mitre-highlight-flash'), 350);
         return () => clearTimeout(t);
       }, [highlight]);
 
       return (
-        <div style={{ padding: 24 }}>
-          <Breadcrumb view="mitre" />
+        <div className="view">
           {!result && !focusTechs && !focusNistPhases && <NoResultBanner onGoTriage={onGoTriage} />}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 20 }}>
 
             {/* LEFT — MITRE ATT&CK */}
             <div>
@@ -1939,9 +2044,7 @@ import OverviewPage from './overview.jsx';
         : 'var(--text-muted)';
 
       return (
-        <div style={{ padding: 24, maxWidth: 760 }}>
-          <Breadcrumb view="intel" />
-
+        <div className="view view--narrow">
           {/* IP Reputation Signal — from last triage */}
           {result && (
             <>
@@ -1968,7 +2071,10 @@ import OverviewPage from './overview.jsx';
                       <div key={ip} className="data-table-row" style={{ gridTemplateColumns: '1fr 80px 1fr', cursor: 'pointer' }}
                         onClick={() => { setIntelIp(ip); setIntelError(null); setIntelResult(null); }}
                         title={`Populate lookup for ${ip}`}>
-                        <span className="mono" style={{ fontSize: '0.8rem', color: repIsMalicious ? 'var(--critical)' : 'var(--text-primary)', textDecoration: 'underline dotted' }}>{ip}</span>
+                        <InlineLink mono style={{ fontSize: '0.8rem', color: repIsMalicious ? 'var(--critical)' : undefined }}
+                          onClick={() => { setIntelIp(ip); setIntelError(null); setIntelResult(null); }}>
+                          {ip}
+                        </InlineLink>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                           <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                             <div style={{ width: `${Math.round(repConf * 100)}%`, height: '100%', background: repColor, borderRadius: 2 }} />
@@ -1993,7 +2099,7 @@ import OverviewPage from './overview.jsx';
             </>
           )}
 
-          <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 16 }}>IP Threat Intelligence</h2>
+          <div className="micro-label" style={{ marginBottom: 12 }}>IP LOOKUP</div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
             <input
@@ -2003,14 +2109,12 @@ import OverviewPage from './overview.jsx';
               className="mono" style={{ flex: 1, fontSize: '0.85rem' }}
             />
             <button className="btn btn-primary" onClick={handleLookup} disabled={intelLoading || !intelIp.trim()}>
-              {intelLoading ? 'Looking up…' : 'Enrich'}
+              {intelLoading ? 'Loading…' : 'Enrich'}
             </button>
           </div>
 
           {intelError && (
-            <div className="panel" style={{ borderLeft: '3px solid var(--medium)', marginBottom: 16 }}>
-              <div className="panel-body mono" style={{ fontSize: '0.75rem', color: 'var(--medium)' }}>⚠ {intelError}</div>
-            </div>
+            <Banner tone="warn" label="ERROR" style={{ marginBottom: 16 }}>{intelError}</Banner>
           )}
 
           {intelResult && (
@@ -2055,16 +2159,14 @@ import OverviewPage from './overview.jsx';
                         <span key={tag} className={`badge ${badgeCls}`}>{tag}</span>
                       ))}
                       {hasMore && !tagsExpanded && (
-                        <span style={{ fontSize: '0.68rem', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline dotted', whiteSpace: 'nowrap' }}
-                          onClick={() => setTagsExpanded(true)}>
+                        <InlineLink style={{ fontSize: '0.68rem', whiteSpace: 'nowrap' }} onClick={() => setTagsExpanded(true)}>
                           +{tags.length - TAGS_VISIBLE_DEFAULT} more — see all
-                        </span>
+                        </InlineLink>
                       )}
                       {tagsExpanded && (
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline dotted', whiteSpace: 'nowrap' }}
-                          onClick={() => setTagsExpanded(false)}>
+                        <InlineLink muted style={{ fontSize: '0.68rem', whiteSpace: 'nowrap' }} onClick={() => setTagsExpanded(false)}>
                           show less
-                        </span>
+                        </InlineLink>
                       )}
                     </div>
                   </div>
@@ -2077,10 +2179,8 @@ import OverviewPage from './overview.jsx';
             <div className="panel">
               <div className="panel-header">Recent Lookups</div>
               {intelHistory.map((h, i) => (
-                <div key={h.ip} onClick={() => { setIntelIp(h.ip); setIntelResult(h); setIntelError(null); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < intelHistory.length - 1 ? '1px solid var(--border)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <div key={h.ip} className="hover-row" onClick={() => { setIntelIp(h.ip); setIntelResult(h); setIntelError(null); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < intelHistory.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <span className="mono" style={{ fontSize: '0.8rem', flex: 1, color: h.is_malicious ? 'var(--critical)' : 'var(--text-primary)' }}>{h.ip}</span>
                   <span className={`badge ${h.is_malicious ? 'badge-critical' : 'badge-success'}`}>
                     {h.is_malicious ? 'MALICIOUS' : 'CLEAN'}
@@ -2089,84 +2189,6 @@ import OverviewPage from './overview.jsx';
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>›</span>
                 </div>
               ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    /* ------------------------------------------------------------------ */
-    /* VIEW: IpRepView                                                      */
-    /* ------------------------------------------------------------------ */
-
-    function IpRepView({ result, onGoTriage, onGoIntel }) {
-      if (!result) {
-        return (
-          <div style={{ padding: 24, maxWidth: 760 }}>
-            <Breadcrumb view="iprep" />
-            <NoResultBanner onGoTriage={onGoTriage} />
-          </div>
-        );
-      }
-
-      const IP_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
-      const ipRepSignal = result?.report?.signal_summary?.ip_reputation;
-      const detail = ipRepSignal?.detail || result?.rationale?.find(r => r.signal === 'ip_reputation')?.detail || '';
-      const ips = detail.match(IP_REGEX) || [];
-      const uniqueIps = [...new Set(ips)];
-      const score = ipRepSignal?.score ?? 0;
-      const maxPts = SIGNAL_WEIGHTS.ip_reputation;
-      const conf = ipRepSignal?.confidence ?? 0;
-      const isMalicious = score > 0;
-      const repColor = isMalicious ? 'var(--critical)' : 'var(--success)';
-
-      return (
-        <div style={{ padding: 24, maxWidth: 760 }}>
-          <Breadcrumb view="iprep" />
-          <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 16 }}>IP Reputation — Last Triage</h2>
-
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="panel-body">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>SIGNAL SCORE</span>
-                <span className="mono" style={{ fontSize: '0.8rem', color: repColor, fontWeight: 600 }}>{score}/{maxPts} pts · conf {Math.round(conf * 100)}%</span>
-              </div>
-              <div className="score-bar-track" style={{ height: 5, marginBottom: 10 }}>
-                <div style={{ width: `${Math.min(100, (score / maxPts) * 100)}%`, height: '100%', background: repColor, borderRadius: 3 }} />
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{detail || 'No detail available.'}</div>
-            </div>
-          </div>
-
-          {uniqueIps.length > 0 && (
-            <div className="data-table">
-              <div className="data-table-header" style={{ gridTemplateColumns: '1fr 80px 1fr' }}>
-                <span>IP Address</span><span>Score</span><span>Tags</span>
-              </div>
-              {uniqueIps.map(ip => (
-                <div key={ip} className="data-table-row" style={{ gridTemplateColumns: '1fr 80px 1fr', cursor: onGoIntel ? 'pointer' : 'default' }}
-                  onClick={() => onGoIntel && onGoIntel(ip)}
-                  title={onGoIntel ? `Look up ${ip} in Threat Intel` : undefined}>
-                  <span className="mono" style={{ fontSize: '0.8rem', color: isMalicious ? 'var(--critical)' : 'var(--text-primary)', textDecoration: onGoIntel ? 'underline dotted' : 'none' }}>{ip}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.round(conf * 100)}%`, height: '100%', background: repColor, borderRadius: 2 }} />
-                    </div>
-                    <span className="mono" style={{ fontSize: '0.7rem', color: repColor }}>{Math.round(conf * 100)}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {isMalicious
-                      ? ['c2', 'malicious'].map(t => <span key={t} className="badge badge-critical">{t}</span>)
-                      : <span className="badge badge-success">clean</span>
-                    }
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {uniqueIps.length > 0 && onGoIntel && (
-            <div className="mono" style={{ marginTop: 8, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-              Click any IP to look it up in Threat Intel
             </div>
           )}
         </div>
@@ -2189,18 +2211,10 @@ import OverviewPage from './overview.jsx';
       }, []);
 
       return (
-        <div style={{ padding: 24 }}>
-          <Breadcrumb view="safety" />
-          <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>Safety Gates</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>
-            Reserved configuration for a future execution layer — ADTE is triage-only and executes no automated actions today. These gate values are read-only from /api/config.
-          </p>
+        <div className="view">
+          <ViewIntro description="Reserved configuration for a future execution layer — ADTE is triage-only and executes no automated actions today. These gate values are read-only from /api/config." />
 
-          {loading && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-              {[1,2,3,4,5,6].map(i => <div key={i} className="skeleton" style={{ height: 140 }} />)}
-            </div>
-          )}
+          {loading && <CardGridSkeleton />}
 
           {!loading && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
@@ -2208,7 +2222,7 @@ import OverviewPage from './overview.jsx';
                 const val = cfg?.[gate.cfgKey];
                 const [statusLabel, statusColor] = gate.activeLabel(val);
                 return (
-                  <div key={gate.id} className="panel animate-in" style={{ animationDelay: `${idx * 0.05}s` }}>
+                  <div key={gate.id} className="panel animate-in">
                     <div style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2240,18 +2254,18 @@ import OverviewPage from './overview.jsx';
     }
 
     /* ------------------------------------------------------------------ */
-    /* VIEW: WeightsView                                                    */
+    /* Signals — WEIGHT MODEL tab (the former Signal Weights view)          */
     /* ------------------------------------------------------------------ */
 
-    function WeightsView() {
+    function SignalsWeightModelTab() {
       const donutRef = useRef(null);
       const chartRef = useRef(null);
+      const theme = useTheme();
 
       useEffect(() => {
         if (!donutRef.current) return;
         if (chartRef.current) chartRef.current.destroy();
         const ctx = donutRef.current.getContext('2d');
-        const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
 
         chartRef.current = new Chart(ctx, {
           type: 'doughnut',
@@ -2260,7 +2274,7 @@ import OverviewPage from './overview.jsx';
             datasets: [{
               data: CORE_WEIGHTS_DATA.map(w => w.weight),
               backgroundColor: CORE_WEIGHTS_DATA.map(w => w.color),
-              borderColor: isDark ? '#0a0a0a' : '#ffffff',
+              borderColor: cssVar('--bg-base'),
               borderWidth: 3,
             }],
           },
@@ -2270,7 +2284,7 @@ import OverviewPage from './overview.jsx';
           },
         });
         return () => { if (chartRef.current) chartRef.current.destroy(); };
-      }, []);
+      }, [theme]);
 
       const WAZUH_SKIPPED = ['impossible_travel', 'mfa_fatigue'];
       const remaining3 = CORE_WEIGHTS_DATA.filter(w => !WAZUH_SKIPPED.includes(w.name));
@@ -2278,10 +2292,8 @@ import OverviewPage from './overview.jsx';
       const total3 = remaining3.reduce((s, w) => s + w.weight, 0);
 
       return (
-        <div style={{ padding: 24, maxWidth: 900 }}>
-          <Breadcrumb view="weights" />
-          <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>Signal Weight Model</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>Core signals sum to 100. Two additive signals sit on top — Cluster Context (up to +15 with correlated case context) and File Reputation (up to +40 on file evidence) — final score capped at 100. Alerts with neither are unaffected.</p>
+        <div className="view">
+          <ViewIntro description="Core signals sum to 100. Two additive signals sit on top — Cluster Context (up to +15 with correlated case context) and File Reputation (up to +40 on file evidence) — final score capped at 100. Alerts with neither are unaffected." />
 
           <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap' }}>
             <div style={{ width: 180, height: 180, flexShrink: 0 }}>
@@ -2388,6 +2400,21 @@ import OverviewPage from './overview.jsx';
       );
     }
 
+    // The merged Signals view. `tab` is owned by App so the legacy
+    // 'view:weights' nav alias can land directly on the WEIGHT MODEL tab.
+    function SignalsView({ result, onGoTriage, tab, onTabChange }) {
+      return (
+        <div>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', paddingLeft: 24 }}>
+            <button className={`tab ${tab === 'last' ? 'active' : ''}`} onClick={() => onTabChange('last')}>LAST TRIAGE</button>
+            <button className={`tab ${tab === 'weights' ? 'active' : ''}`} onClick={() => onTabChange('weights')}>WEIGHT MODEL</button>
+          </div>
+          {tab === 'last' && <SignalsLastTriageTab result={result} onGoTriage={onGoTriage} />}
+          {tab === 'weights' && <SignalsWeightModelTab />}
+        </div>
+      );
+    }
+
     /* ------------------------------------------------------------------ */
     /* Lookup: ATT&CK technique ID → name, tactic, NIST CSF detect code.
        Curated subset of adte/data/mitre_technique_map.yaml (42 entries shipped)
@@ -2417,12 +2444,16 @@ import OverviewPage from './overview.jsx';
     /* VIEW: VerdictHistoryView                                             */
     /* ------------------------------------------------------------------ */
 
+    // Coverage badge clouds cap at this many before the "+n more" expander.
+    const TECH_CLOUD_CAP = 8;
+
     function VerdictHistoryView({ result, onNav }) {
       const [rows, setRows] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [filter, setFilter] = useState('');
       const [dateRange, setDateRange] = useState('all');
+      const [techsExpanded, setTechsExpanded] = useState(false);
       const activeId = result?.incident_id;
 
       const sinceParam = (range) => {
@@ -2446,7 +2477,6 @@ import OverviewPage from './overview.jsx';
 
       useEffect(() => { load('', 'all'); }, [load]);
 
-      const handleFilterChange = (e) => { const v = e.target.value; setFilter(v); load(v || null, dateRange); };
       const handleDateRangeChange = (e) => { const v = e.target.value; setDateRange(v); load(filter || null, v); };
 
       const handleClear = () => {
@@ -2457,7 +2487,7 @@ import OverviewPage from './overview.jsx';
           .catch(() => setError('Clear failed'));
       };
 
-      const colTemplate = '220px 170px 1fr 160px';
+      const colTemplate = '220px 170px 1fr minmax(150px, 200px)';
 
       // Deduplicate by incident_id (rows are newest-first; keep the latest run per ID).
       const _dedupSeen = new Set();
@@ -2468,16 +2498,8 @@ import OverviewPage from './overview.jsx';
       const allPhases = [...new Set(dedupedRows.map(r => r.nist_phase).filter(Boolean))];
 
       return (
-        <div style={{ padding: 24 }}>
-          <Breadcrumb view="history" />
+        <div className="view">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Verdict History</h2>
-            <select value={filter} onChange={handleFilterChange} className="mono" style={{ fontSize: '0.75rem', marginLeft: 16 }}>
-              <option value="">All verdicts</option>
-              <option value="high_risk">High Risk</option>
-              <option value="medium_risk">Medium Risk</option>
-              <option value="low_risk">Low Risk</option>
-            </select>
             <select value={dateRange} onChange={handleDateRangeChange} className="mono" style={{ fontSize: '0.75rem' }}>
               <option value="all">All time</option>
               <option value="24h">Last 24 h</option>
@@ -2488,132 +2510,134 @@ import OverviewPage from './overview.jsx';
             </button>
           </div>
 
-          {loading && <div>{[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 48, marginBottom: 4 }} />)}</div>}
+          {loading && <TableSkeleton rowHeight={48} />}
           {error && !loading && (
-            <div className="panel" style={{ borderLeft: '3px solid var(--medium)' }}>
-              <div className="panel-body mono" style={{ fontSize: '0.75rem', color: 'var(--medium)' }}>⚠ {error}</div>
-            </div>
+            <Banner tone="warn" label="ERROR">{error}</Banner>
           )}
           {!loading && !error && rows && rows.length === 0 && (
-            <div style={{ textAlign: 'center', paddingTop: 60, color: 'var(--text-muted)', fontSize: '0.8rem' }}>No verdicts logged yet.</div>
+            <EmptyState title={filter ? 'No matching verdicts' : 'No verdicts logged yet'}
+              hint={filter ? 'No incidents carry this verdict in the selected range.' : 'Run a triage — every verdict is logged here automatically.'}
+              actionLabel={filter ? 'Show all verdicts' : undefined}
+              onAction={filter ? () => { setFilter(''); load('', dateRange); } : undefined} />
           )}
-          {!loading && !error && rows && rows.length > 0 && (() => {
+          {!loading && !error && rows && (rows.length > 0 || filter) && (() => {
             const verdictCounts = dedupedRows.reduce((acc, r) => { acc[r.verdict] = (acc[r.verdict] || 0) + 1; return acc; }, {});
+            const visibleTechs = techsExpanded ? allTechs : allTechs.slice(0, TECH_CLOUD_CAP);
             return (
-              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-accent)', borderRadius: 6, marginBottom: 10, display: 'grid', gridTemplateColumns: colTemplate, padding: '12px 16px', gap: 0, alignItems: 'start' }}>
-                <div>
-                  <div className="mono" style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginBottom: 7, letterSpacing: '0.07em' }}>INCIDENTS</div>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{dedupedRows.length}</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 5 }}>{rows.length > dedupedRows.length ? `unique · ${rows.length} total runs` : 'logged'}</span>
-                </div>
-                <div>
-                  <div className="mono badge-clickable" style={{ fontSize: '0.55rem', color: 'var(--accent)', marginBottom: 7, letterSpacing: '0.07em', cursor: 'pointer', textDecoration: 'underline dotted', display: 'inline-block' }}
-                    onClick={() => onNav('view:signals')} title="View signal breakdown">
-                    VERDICTS ↗
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 16 }}>
+                {/* Block 1 — stat row: the count plus verdict pills that ARE the filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div>
+                    <div className="micro-label" style={{ marginBottom: 4 }}>INCIDENTS</div>
+                    <span style={{ fontSize: 'var(--fs-title)', fontWeight: 700, color: 'var(--text-primary)' }}>{dedupedRows.length}</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>
+                      {rows.length > dedupedRows.length ? `unique · ${rows.length} total runs` : 'logged'}
+                    </span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {Object.entries(verdictCounts).map(([v, count]) => {
-                      const isActive = filter === v;
-                      return (
-                        <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', opacity: isActive ? 1 : 0.85 }}
-                          onClick={() => { setFilter(v); load(v); }}
-                          title={`Filter table to ${VERDICT_LABEL[v] || v} verdicts${isActive ? ' (active — click to clear)' : ''}`}>
-                          <VerdictBadge verdict={v} />
-                          <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>×{count}</span>
-                          {isActive && <span style={{ fontSize: '0.55rem', color: 'var(--accent)', marginLeft: 2 }}>●</span>}
-                        </div>
-                      );
-                    })}
-                    {filter && (
-                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline dotted', marginTop: 2 }}
-                        onClick={() => { setFilter(''); load(''); }}>
-                        clear filter
-                      </span>
-                    )}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginLeft: 'auto' }}>
+                    <button className={`pill ${filter === '' ? 'active' : ''}`}
+                      onClick={() => { setFilter(''); load('', dateRange); }}>
+                      ALL
+                    </button>
+                    {['high_risk', 'medium_risk', 'low_risk'].map(v => (
+                      <button key={v} className={`pill ${filter === v ? 'active' : ''}`}
+                        onClick={() => { const next = filter === v ? '' : v; setFilter(next); load(next, dateRange); }}
+                        title={`Filter to ${VERDICT_LABEL[v]} verdicts${filter === v ? ' (active — click to clear)' : ''}`}>
+                        {VERDICT_LABEL[v].replace(' RISK', '')}
+                        {verdictCounts[v] != null && <span className="pill-count">{verdictCounts[v]}</span>}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <div>
-                  <div className="mono badge-clickable" style={{ fontSize: '0.55rem', color: 'var(--accent)', marginBottom: 7, letterSpacing: '0.07em', cursor: 'pointer', textDecoration: 'underline dotted', display: 'inline-block' }}
-                    onClick={() => onNav('view:mitre', { techs: allTechs })}
-                    title="View all techniques in MITRE view">
-                    ALL TECHNIQUES ↗
+                {/* Block 2 — coverage: technique / phase badge clouds, capped */}
+                {(allTechs.length > 0 || allPhases.length > 0) && (
+                  <div className="inset-panel" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                        <span className="micro-label">TECHNIQUES ({allTechs.length})</span>
+                        {allTechs.length > 0 && (
+                          <InlineLink style={{ fontSize: '0.68rem' }} title="View all techniques in MITRE view"
+                            onClick={() => onNav('view:mitre', { techs: allTechs })}>
+                            open in MITRE →
+                          </InlineLink>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        {visibleTechs.length ? visibleTechs.map(t => {
+                          const meta = MITRE_TECH_MAP[t] || {};
+                          return (
+                            <span key={t} className="badge badge-accent badge-clickable"
+                              onClick={() => onNav('view:mitre', { tech: t })}
+                              title={meta.name ? `${t} — ${meta.name}\nTactic: ${meta.tactic}\nNIST CSF: ${meta.nist}\n\nClick to view this technique` : t}
+                              style={{ fontSize: '0.65rem' }}>{t}</span>
+                          );
+                        }) : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>}
+                        {allTechs.length > TECH_CLOUD_CAP && (
+                          <InlineLink muted style={{ fontSize: '0.68rem' }} onClick={() => setTechsExpanded(e => !e)}>
+                            {techsExpanded ? 'show less' : `+${allTechs.length - TECH_CLOUD_CAP} more`}
+                          </InlineLink>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                        <span className="micro-label">NIST PHASES ({allPhases.length})</span>
+                        {allPhases.length > 0 && (
+                          <InlineLink style={{ fontSize: '0.68rem' }} title="View all phases in MITRE view"
+                            onClick={() => onNav('view:mitre', { section: 'nist', nistPhases: allPhases })}>
+                            open in MITRE →
+                          </InlineLink>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {allPhases.length ? allPhases.map(phase => (
+                          <span key={phase} className="badge badge-medium badge-clickable"
+                            onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: phase })}
+                            title={`${NIST_PHASE_LABEL[phase] || phase}\n\nClick to view this phase`}
+                            style={{ fontSize: '0.65rem' }}>{phase}</span>
+                        )) : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {allTechs.length ? allTechs.map(t => {
-                      const meta = MITRE_TECH_MAP[t] || {};
-                      return (
-                        <span key={t} className="badge badge-accent badge-clickable"
-                          onClick={() => onNav('view:mitre', { tech: t })}
-                          title={meta.name ? `${t} — ${meta.name}\nTactic: ${meta.tactic}\nNIST CSF: ${meta.nist}\n\nClick to view this technique` : t}
-                          style={{ fontSize: '0.65rem' }}>{t}</span>
-                      );
-                    }) : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>}
-                  </div>
-                </div>
-                <div>
-                  <div className="mono badge-clickable" style={{ fontSize: '0.55rem', color: 'var(--accent)', marginBottom: 7, letterSpacing: '0.07em', cursor: 'pointer', textDecoration: 'underline dotted', display: 'inline-block' }}
-                    onClick={() => onNav('view:mitre', { section: 'nist', nistPhases: allPhases })}
-                    title="View all NIST phases in MITRE view">
-                    ALL PHASES ↗
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-start' }}>
-                    {allPhases.length ? allPhases.map(phase => (
-                      <span key={phase} className="badge badge-medium badge-clickable"
-                        onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: phase })}
-                        title={`${NIST_PHASE_LABEL[phase] || phase}\n\nClick to view this phase`}
-                        style={{ fontSize: '0.65rem', whiteSpace: 'nowrap' }}>{phase}</span>
-                    )) : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>}
-                  </div>
-                </div>
+                )}
               </div>
             );
           })()}
 
           {!loading && !error && rows && rows.length > 0 && (
             <div className="data-table">
+              {/* Headers are labels, not links — deep links live in the strip
+                  above and in the badges below. */}
               <div className="data-table-header" style={{ gridTemplateColumns: colTemplate }}>
-                <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-                  onClick={() => onNav('view:signals')} title="Signal Breakdown">
-                  Incident · Timestamp
-                </span>
-                <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-                  onClick={() => onNav('view:signals')} title="Signal Breakdown">
-                  Verdict · Risk
-                </span>
-                <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-                  onClick={() => onNav('view:mitre', { techs: allTechs })} title="View all techniques in MITRE view">
-                  MITRE Techniques
-                </span>
-                <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-                  onClick={() => onNav('view:mitre', { section: 'nist', nistPhases: allPhases })} title="View all NIST phases">
-                  NIST Phase
-                </span>
+                <span>Incident · Timestamp</span>
+                <span>Verdict · Risk</span>
+                <span>MITRE Techniques</span>
+                <span>NIST Phase</span>
               </div>
               {dedupedRows.map(row => {
                 let techs = [];
                 try { techs = row.mitre_techniques ? JSON.parse(row.mitre_techniques) : []; } catch {}
                 const isLoaded = activeId === row.incident_id;
                 const signalDest = isLoaded ? 'view:signals' : 'view:triage';
-                const signalTip  = isLoaded ? 'View signal breakdown' : 'Load in Alert Input to re-run';
+                const signalTip  = isLoaded ? 'View signal breakdown' : 'Load in Triage to re-run';
                 return (
                   <div key={row.id} className="data-table-row" style={{ gridTemplateColumns: colTemplate, cursor: 'default', alignItems: 'start', paddingTop: 10, paddingBottom: 10 }}>
 
-                    {/* Incident ID + Timestamp — both clickable to signals/triage */}
-                    <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4 }}
-                      onClick={() => onNav(signalDest)} title={signalTip}>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'underline dotted' }}>
+                    {/* Incident ID — the single row-level link */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      <InlineLink mono style={{ fontSize: '0.75rem' }}
+                        onClick={() => onNav(signalDest)} title={signalTip}>
                         {row.incident_id}
                         {!isLoaded && <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: 4 }}>↩</span>}
-                      </span>
+                      </InlineLink>
                       <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                         {row.logged_at ? row.logged_at.slice(0,19).replace('T',' ') : '—'}
                       </span>
                     </div>
 
-                    {/* Verdict badge + Risk score — both clickable to signals/triage */}
-                    <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5 }}
-                      onClick={() => onNav(signalDest)} title={signalTip}>
-                      <VerdictBadge verdict={row.verdict} riskScore={row.risk_score} />
+                    {/* Verdict badge + Risk score — data, not a duplicate link */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <VerdictBadge verdict={row.verdict} riskScore={row.risk_score} size="sm" />
                       <span className="mono" style={{ fontSize: '0.8rem', color: VERDICT_COLOR[row.verdict] || 'var(--text-muted)', fontWeight: 700 }}>
                         {row.risk_score}
                         <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: 2 }}>/ 100</span>
@@ -2647,12 +2671,12 @@ import OverviewPage from './overview.jsx';
                       }
                     </div>
 
-                    {/* NIST phase badge — deep-links to NIST section in MITRE view */}
+                    {/* NIST phase badge — deep-links to NIST section; text may wrap */}
                     {row.nist_phase ? (
                       <span className="badge badge-medium badge-clickable"
                         onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: row.nist_phase })}
                         title={`${NIST_PHASE_LABEL[row.nist_phase] || 'NIST SP 800-61 Rev. 2 — ' + row.nist_phase}\n\nClick to jump to NIST section in MITRE view`}
-                        style={{ fontSize: '0.65rem', whiteSpace: 'nowrap' }}>
+                        style={{ fontSize: '0.65rem', justifySelf: 'start' }}>
                         {row.nist_phase}
                       </span>
                     ) : (
@@ -2665,9 +2689,7 @@ import OverviewPage from './overview.jsx';
             </div>
           )}
           {!loading && !error && rows && rows.length > 0 && (
-            <div className="mono" style={{ marginTop: 8, fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-              Incident / Timestamp → Signal Breakdown &nbsp;·&nbsp; Verdict / Risk → Signal Breakdown &nbsp;·&nbsp; Blue [T-ID] → MITRE view (jumps to technique) &nbsp;·&nbsp; Yellow phase → NIST section &nbsp;·&nbsp; ↩ loads in Alert Input
-            </div>
+            <LegendFooter hints={['Incident ID → Signals (↩ re-runs in Triage)', 'Badges → MITRE / NIST detail']} />
           )}
         </div>
       );
@@ -2727,13 +2749,10 @@ import OverviewPage from './overview.jsx';
       const inputStyle = { fontSize: '0.75rem', fontFamily: 'JetBrains Mono, monospace', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)', padding: '4px 8px' };
 
       return (
-        <div style={{ padding: 24 }}>
-          <Breadcrumb view="feedbackhist" />
+        <div className="view">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-            <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Feedback History</h2>
-
             {/* Label filter — server-side */}
-            <select value={labelFilter} onChange={handleLabelChange} style={{ ...inputStyle, marginLeft: 16 }}>
+            <select value={labelFilter} onChange={handleLabelChange} style={inputStyle}>
               <option value="all">All Labels</option>
               <option value="fp">False Positive</option>
               <option value="tp">True Positive</option>
@@ -2763,16 +2782,15 @@ import OverviewPage from './overview.jsx';
             </button>
           </div>
 
-          {loading && <div>{[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 40, marginBottom: 4 }} />)}</div>}
+          {loading && <TableSkeleton rowHeight={40} />}
           {error && !loading && (
-            <div className="panel" style={{ borderLeft: '3px solid var(--medium)' }}>
-              <div className="panel-body mono" style={{ fontSize: '0.75rem', color: 'var(--medium)' }}>⚠ {error}</div>
-            </div>
+            <Banner tone="warn" label="ERROR">{error}</Banner>
           )}
           {!loading && !error && visibleRows && visibleRows.length === 0 && (
-            <div style={{ textAlign: 'center', paddingTop: 60, color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              {rows && rows.length > 0 ? 'No rows match your search.' : 'No feedback submitted yet.'}
-            </div>
+            <EmptyState title={rows && rows.length > 0 ? 'No matching rows' : 'No feedback yet'}
+              hint={rows && rows.length > 0
+                ? 'Nothing matches your search — clear it to see every entry.'
+                : 'Label a triage result TRUE or FALSE POSITIVE and it lands here.'} />
           )}
           {!loading && !error && visibleRows && visibleRows.length > 0 && (
             <div className="data-table">
@@ -2803,17 +2821,11 @@ import OverviewPage from './overview.jsx';
 
     function AuditView({ result, onNav }) {
       const [tab, setTab] = useState('verdicts');
-      const tabStyle = (key) => ({
-        background: 'none', border: 'none', borderBottom: tab === key ? '2px solid var(--accent)' : '2px solid transparent',
-        color: tab === key ? 'var(--accent)' : 'var(--text-muted)',
-        fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem', fontWeight: tab === key ? 600 : 400,
-        padding: '8px 16px', cursor: 'pointer', letterSpacing: '0.04em',
-      });
       return (
         <div>
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', paddingLeft: 24 }}>
-            <button style={tabStyle('verdicts')} onClick={() => setTab('verdicts')}>VERDICTS</button>
-            <button style={tabStyle('feedback')} onClick={() => setTab('feedback')}>FEEDBACK</button>
+            <button className={`tab ${tab === 'verdicts' ? 'active' : ''}`} onClick={() => setTab('verdicts')}>VERDICTS</button>
+            <button className={`tab ${tab === 'feedback' ? 'active' : ''}`} onClick={() => setTab('feedback')}>FEEDBACK</button>
           </div>
           {tab === 'verdicts' && <VerdictHistoryView result={result} onNav={onNav} />}
           {tab === 'feedback' && <FeedbackHistoryView />}
@@ -2888,12 +2900,8 @@ import OverviewPage from './overview.jsx';
         : '3px solid var(--border)';
 
       return (
-        <div style={{ padding: 24, maxWidth: 600 }}>
-          <Breadcrumb view="settings" />
-          <h2 className="heading" style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>Settings</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>
-            All API keys are stored server-side as environment variables. The browser session uses an HttpOnly cookie — the key is never stored in JS-accessible storage.
-          </p>
+        <div className="view view--narrow">
+          <ViewIntro description="All API keys are stored server-side as environment variables. The browser session uses an HttpOnly cookie — the key is never stored in JS-accessible storage." />
 
           <div className="panel" style={{ marginBottom: 16, borderLeft: panelBorder }}>
             <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2968,55 +2976,6 @@ import OverviewPage from './overview.jsx';
     }
 
     /* ------------------------------------------------------------------ */
-    /* NL Query Bar                                                         */
-    /* ------------------------------------------------------------------ */
-
-    function QueryBar({ onQuery, provider }) {
-      const [query, setQuery] = useState('');
-      const [response, setResponse] = useState(null);
-      const [loading, setLoading] = useState(false);
-
-      const handleSubmit = () => {
-        if (!query.trim() || loading) return;
-        setLoading(true); setResponse(null);
-        fetch(`${API_BASE}/api/triage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify({ query: query.trim() }),
-        })
-          .then(r => r.json())
-          .then(d => setResponse(d.report?.one_paragraph_summary || d.error || 'No summary available'))
-          .catch(() => setResponse('Query failed — check server connection'))
-          .finally(() => setLoading(false));
-      };
-
-      return (
-        <div className="query-bar">
-          <span className={`badge ${provider === 'anthropic' ? 'badge-accent' : 'badge-success'}`} style={{ flexShrink: 0 }}>
-            {provider === 'anthropic' ? 'Claude' : 'GPT'}
-          </span>
-          <input
-            className="query-input" type="text"
-            value={query} onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            placeholder="Ask ADTE... (natural language query)"
-          />
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading || !query.trim()}
-            style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <IconSend size={14} />
-          </button>
-          {response && (
-            <div style={{ position: 'absolute', bottom: '100%', left: 24, right: 24, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px 8px 0 0', padding: '12px 16px', maxHeight: 200, overflowY: 'auto' }}>
-              <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--accent)', marginBottom: 4 }}>SUMMARY</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{response}</div>
-              <button onClick={() => setResponse(null)} style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    /* ------------------------------------------------------------------ */
     /* Agent View — in-progress placeholder                                 */
     /* ------------------------------------------------------------------ */
 
@@ -3072,7 +3031,6 @@ import OverviewPage from './overview.jsx';
       const [error, setError] = useState(null);
       const [triageCount, setTriageCount] = useState(0);
       const [scoreBarPct, setScoreBarPct] = useState(0);
-      const [utcTime, setUtcTime] = useState('--:--:-- UTC');
       // First visit lands on the Overview; once the visitor enters the console
       // (by any route) the flag is set and later visits open the queue as before.
       // The #overview fragment ALWAYS forces the Overview regardless of the flag —
@@ -3091,7 +3049,9 @@ import OverviewPage from './overview.jsx';
       const [intelError, setIntelError] = useState(null);
       const [intelAutoLookupTrigger, setIntelAutoLookupTrigger] = useState(0);
       const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-      const [theme, setTheme] = useState('dark');
+      // initialTheme already set the data-theme attribute at bundle evaluation;
+      // this state just mirrors it for the toggle button.
+      const [theme, setTheme] = useState(initialTheme);
       const [llmAvailable, setLlmAvailable] = useState(false);
       const [queryBarInput, setQueryBarInput] = useState('');
       const [agentQuery, setAgentQuery] = useState('');
@@ -3099,7 +3059,8 @@ import OverviewPage from './overview.jsx';
       const [mitreFocusTechs, setMitreFocusTechs] = useState(null);
       const [mitreNistPhases2, setMitreNistPhases2] = useState(null);
       const [focusCaseId, setFocusCaseId] = useState(null);   // case pre-expanded when opening the Cases view
-      const llmProvider = 'anthropic';
+      const [signalsTab, setSignalsTab] = useState('last');   // 'last' | 'weights' — inner tab of the merged Signals view
+      const [mobileNavOpen, setMobileNavOpen] = useState(false); // ≤900px off-canvas drawer state
 
       useEffect(() => {
         fetch(`${API_BASE}/api/examples`, { headers: authHeaders() }).then(r => r.json()).then(setExamples).catch(() => {});
@@ -3116,11 +3077,6 @@ import OverviewPage from './overview.jsx';
       }, [activeView]);
 
       useEffect(() => {
-        const tick = () => setUtcTime(new Date().toISOString().slice(11,19) + ' UTC');
-        tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
-      }, []);
-
-      useEffect(() => {
         const check = () => fetch(`${API_BASE}/health`, { headers: authHeaders() }).then(r => setServerOnline(r.ok)).catch(() => setServerOnline(false));
         check(); const id = setInterval(check, 30000); return () => clearInterval(id);
       }, []);
@@ -3135,17 +3091,22 @@ import OverviewPage from './overview.jsx';
       useEffect(() => {
         if (!result) return;
         // Reset to 0 first so the CSS width transition always plays from zero.
-        // The 80 ms delay gives the browser one frame to paint the reset before
-        // animating to the target score — without it the bar jumps immediately.
+        // Double rAF: the first frame paints the reset, the second sets the
+        // target — frame-accurate, unlike the old arbitrary 80ms timeout.
         setScoreBarPct(0);
-        const t = setTimeout(() => setScoreBarPct(result.risk_score), 80);
-        return () => clearTimeout(t);
+        let raf2 = 0;
+        const raf1 = requestAnimationFrame(() => {
+          raf2 = requestAnimationFrame(() => setScoreBarPct(result.risk_score));
+        });
+        return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
       }, [result]);
 
       const toggleTheme = () => {
         const next = theme === 'dark' ? 'light' : 'dark';
         setTheme(next);
         document.documentElement.setAttribute('data-theme', next);
+        try { window.localStorage.setItem(THEME_KEY, next); }
+        catch { /* blocked storage: toggle still works, just not persisted */ }
       };
 
       const isLive = lastTriageTime && (Date.now() - lastTriageTime) < 60000;
@@ -3156,10 +3117,21 @@ import OverviewPage from './overview.jsx';
       //   { techs }      — "All techniques" from summary strip → highlight set
       //   { section: 'nist', nistPhase? / nistPhases? } → scroll to NIST section
       const handleNav = useCallback((action, ctx) => {
-        setActiveView(action.replace('view:', ''));
+        const view = action.replace('view:', '');
+        // 'view:weights' survives as a compat alias (overview cards and any
+        // old link emit it): it lands on Signals with the WEIGHT MODEL tab up.
+        if (view === 'weights') {
+          setActiveView('signals');
+          setSignalsTab('weights');
+        } else {
+          setActiveView(view);
+          if (view === 'signals') setSignalsTab('last');
+        }
         // Sidebar navigation shows the fresh case list; only openCase()
         // (which bypasses handleNav) pre-expands a specific case.
         setFocusCaseId(null);
+        // Any navigation closes the mobile drawer (no-op on desktop).
+        setMobileNavOpen(false);
         if (ctx?.tech) {
           setMitreHighlight(ctx.tech);
           setMitreFocusTechs([ctx.tech]);
@@ -3297,7 +3269,7 @@ import OverviewPage from './overview.jsx';
         setInputText(JSON.stringify(json, null, 2));
         setLoadedKey(null);
         setActiveView('triage');
-        setTimeout(() => runTriage(json), 80);
+        runTriage(json);
       }, [runTriage]);
 
       const canRun = !loading && inputText.trim().length > 0;
@@ -3308,12 +3280,26 @@ import OverviewPage from './overview.jsx';
             activeView={activeView} onNav={handleNav}
             triageCount={triageCount} serverOnline={serverOnline}
             collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+            mobileOpen={mobileNavOpen}
           />
+          {/* Click-to-close backdrop behind the mobile drawer (display:none ≥901px) */}
+          {mobileNavOpen && <div className="sidebar-backdrop" onClick={() => setMobileNavOpen(false)} />}
 
-          <div className="content-area" style={{ marginLeft: sidebarCollapsed ? 56 : 240 }}>
+          {/* margin-left comes from the .sidebar.collapsed ~ .content-area CSS
+              sibling rule — an inline duplicate here would shadow it. */}
+          <div className="content-area">
             {/* Header */}
             <header className="app-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {/* Hamburger — only rendered ≤900px, where the sidebar is an
+                    off-canvas drawer (it used to simply vanish with NO nav). */}
+                <button className="mobile-only" onClick={() => setMobileNavOpen(o => !o)}
+                  title="Menu" aria-label="Open navigation" aria-expanded={mobileNavOpen}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 4, alignItems: 'center' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                   {VIEW_LABELS[activeView] || activeView}
                 </span>
@@ -3321,9 +3307,12 @@ import OverviewPage from './overview.jsx';
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 {isLive && <span className="mono badge badge-success" style={{ fontSize: '0.6rem' }}>● LIVE</span>}
                 <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TRG/{String(triageCount).padStart(3,'0')}</span>
-                <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{utcTime}</span>
+                <UtcClock />
                 <button onClick={toggleTheme} className="theme-toggle" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} />
-                <button onClick={() => setActiveView('settings')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
+                {/* Gear = shortcut to the Settings view (also a nav item now);
+                    it lights up when Settings is the active view. */}
+                <button onClick={() => setActiveView('settings')} title="Settings"
+                  style={{ background: 'none', border: 'none', color: activeView === 'settings' ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
                   <IconSettings size={18} />
                 </button>
               </div>
@@ -3331,13 +3320,13 @@ import OverviewPage from './overview.jsx';
 
             {/* Content */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 64, minHeight: 0 }}>
-              {/* Enter Console lands on Alert Input (a full workspace for an
+              {/* Enter Console lands on Triage (a full workspace for an
                   anonymous visitor) rather than the auth-gated queue — the cold
                   first impression the Overview exists to fix. */}
               {activeView === 'overview' && <OverviewPage onEnterConsole={() => setActiveView('triage')} onNav={handleNav} />}
               {activeView === 'queue' && <QueueView onLoadIncident={handleLoadIncident} onGoIntel={navigateToIntel} />}
               {activeView === 'cases' && <CasesView focusCaseId={focusCaseId} onGoIntel={navigateToIntel} />}
-              {activeView === 'signals' && <SignalsView result={result} onGoTriage={() => setActiveView('triage')} />}
+              {activeView === 'signals' && <SignalsView result={result} onGoTriage={() => setActiveView('triage')} tab={signalsTab} onTabChange={setSignalsTab} />}
               {activeView === 'mitre' && <MitreView result={result} onGoTriage={() => setActiveView('triage')} highlight={mitreHighlight} focusTechs={mitreFocusTechs} focusNistPhases={mitreNistPhases2} />}
               {activeView === 'intel' && (
                 <IntelView intelIp={intelIp} setIntelIp={setIntelIp}
@@ -3349,15 +3338,15 @@ import OverviewPage from './overview.jsx';
                   result={result} />
               )}
               {activeView === 'safety' && <SafetyView />}
-              {activeView === 'weights' && <WeightsView />}
               {activeView === 'audit' && <AuditView result={result} onNav={handleNav} />}
               {activeView === 'settings' && <SettingsView llmAvailable={llmAvailable} />}
               {activeView === 'agent' && <AgentView query={agentQuery} />}
 
               {activeView === 'triage' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 440px) 1fr', height: '100%' }}>
-                  {/* Left: Input */}
-                  <div style={{ borderRight: '1px solid var(--border)', padding: 24, paddingBottom: 64, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="triage-layout">
+                  {/* Left: Input — bottom clearance for the query bar comes from
+                      the outer scroll container's paddingBottom, not repeated here */}
+                  <div style={{ borderRight: '1px solid var(--border)', padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>ALERT INPUT</div>
                     <textarea
                       value={inputText}
@@ -3384,31 +3373,26 @@ import OverviewPage from './overview.jsx';
                     </div>
 
                     <button className="btn btn-primary" onClick={handleRunTriage} disabled={!canRun} style={{ width: '100%' }}>
-                      {loading ? 'Processing…' : '▶ Run Triage'}
+                      {loading ? 'Loading…' : '▶ Run Triage'}
                     </button>
                     {error && (
-                      <div className="panel" style={{ borderLeft: '3px solid var(--medium)' }}>
-                        <div className="panel-body mono" style={{ fontSize: '0.75rem', color: 'var(--medium)' }}>⚠ {error}</div>
-                      </div>
+                      <Banner tone="warn" label="ERROR">{error}</Banner>
                     )}
                   </div>
 
                   {/* Right: Results */}
-                  <div style={{ padding: 24, paddingBottom: 64, overflowY: 'auto' }}>
+                  <div style={{ padding: 24, overflowY: 'auto' }}>
                     <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 12 }}>TRIAGE RESULTS</div>
-                    {loading && <LoadingSkeleton />}
+                    {loading && <ResultSkeleton />}
                     {!loading && !result && !batchResults && (
-                      <div style={{ paddingTop: 80, textAlign: 'center' }}>
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                        <div className="mono" style={{ color: 'var(--text-muted)', marginTop: 16, fontSize: '0.7rem', letterSpacing: '0.15em' }}>
-                          AWAITING INPUT
-                        </div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8, opacity: 0.6 }}>
-                          Paste alert JSON or load an example
-                        </div>
-                      </div>
+                      <EmptyState
+                        icon={
+                          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block' }}>
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                          </svg>
+                        }
+                        title="Awaiting input"
+                        hint="Paste alert JSON or load an example" />
                     )}
                     {!loading && batchResults && (
                       <BatchResultsTable
@@ -3425,8 +3409,8 @@ import OverviewPage from './overview.jsx';
             </div>
           </div>
 
-          {/* Query Bar */}
-          <div className="query-bar" style={{ left: sidebarCollapsed ? 56 : 240 }}>
+          {/* Query Bar — its `left` tracks the sidebar via the same CSS sibling rules */}
+          <div className="query-bar">
             <span className="badge badge-accent" style={{ flexShrink: 0, fontSize: '0.55rem' }}>Claude</span>
             <span className="badge badge-medium" style={{ flexShrink: 0, fontSize: '0.5rem', letterSpacing: '0.08em' }}>COMING SOON</span>
             <input
