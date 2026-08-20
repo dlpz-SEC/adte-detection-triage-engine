@@ -566,3 +566,56 @@ The Phase-6 residue sweep printed three "OK: eliminated" lines while every grep 
 failed on relative paths from a drifted cwd — the only tell was the grep error text printed
 above the fake OKs. Re-run anchored: genuinely clean, but the first pass would have certified
 an unverified claim.
+
+---
+
+### 2026-08-20 — A quoted heredoc collapses `\\` to `\`, and the damage is a SILENT no-op
+
+**Rule:** Do not put backslashes in a script passed through a `<<'EOF'` heredoc to the Bash
+tool — they arrive halved. In Python that is not a syntax error you notice: a `\`
+before a newline inside a triple-quoted string becomes a **line continuation**, so a
+multi-line search pattern silently folds into one line and can never match. `str.replace`
+returns the string unchanged and reports nothing, so the script prints its success message
+having done nothing. Build any needed backslash at runtime — `BS = chr(92)` — or use the
+Write/Edit tools instead of a heredoc.
+
+Fixing two `--template-file` lines in a README, the replacement "succeeded" and the lines were
+still there. Only an explicit post-check (`grep` for the thing that should be gone) caught it;
+the second attempt failed loudly with `SyntaxError: unterminated string literal`, showing
+`\` where `\\` had been written — which is what finally explained the first failure.
+**Always verify a scripted edit by grepping for the pattern that should now be absent, never
+by trusting the script's own success output.**
+
+---
+
+### 2026-08-20 — A glob one level too shallow returns zero hits for EVERY search term
+
+**Rule:** Before believing a zero-hit search, confirm the pattern matched any **files** at all.
+`rules\*\*.yml` looks recursive and is not — it matches exactly one directory level, so against
+a tree that is three deep it matches nothing, and every term searched comes back "0 hits."
+That is indistinguishable from "the term is genuinely absent." Use `-Recurse`/`**` and print
+the file count alongside the hit count.
+
+Checking whether a DCR collected event IDs no detection consumed, a shallow glob reported 0
+hits for all six IDs — including the two that drive live rules. Taken at face value it would
+have contradicted a correct audit finding and justified deleting collection the rules depend
+on. Third instance of this failure shape (2026-05-24 hash-vs-content, 2026-08-02
+grep-negative-is-not-absence): **a negative result bounds only the search you actually ran.**
+
+---
+
+### 2026-08-20 — A clean compile proves syntax, and only for the bytes you compiled
+
+**Rule:** Two separate traps. (1) A green build says nothing about whether the code is
+*correct* — comments, cost claims, and doc commands all pass the compiler while being false.
+Anything shipping publicly needs a semantic review against authoritative docs, not just a
+build. (2) The proof covers the exact bytes verified: **edit after verifying and the proof is
+void.** Re-verify before merging, and never carry a "verified" claim across an edit.
+
+Bicep templates for the Sentinel lab compiled clean in Cloud Shell. An adversarial review
+against Microsoft's ARM reference then raised 17 findings, 12 surviving independent
+refutation — including a documented deploy command the CLI rejects outright, a retention
+value discarding 60 free days, an access-control comment that stated the inverse of what the
+flag does, and a DCR collecting an entire event channel against its own stated cost doctrine.
+None of it was visible to the compiler. Fixing them invalidated the original compile proof,
+so the merge waits on a fresh one.
