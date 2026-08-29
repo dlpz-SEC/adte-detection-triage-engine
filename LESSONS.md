@@ -716,3 +716,56 @@ never mutated and there is nothing to restore.
 **Skill impact:** `adversarial-audit` needs an explicit isolation rule — verifiers that
 mutate code must do it in a worktree or a copy, and the orchestrator must diff the tree
 after the run and before believing any measurement.
+
+---
+
+### 2026-08-28 — Date a record from the clock, never from the artifacts you are reading
+
+**Rule:** When stamping a date into anything durable — a waiver record, a decision log, a dated
+lesson — take it from the **system clock**, not from the newest date you happen to have read.
+Handoff stamps, commit dates, and file mtimes tell you when *that artifact* was written; they are
+evidence about the past, not about now. Check the clock once at the start of any session that will
+write dated records, and again if the session runs long enough to cross midnight.
+
+Nine date stamps went into ADTE's change-control records reading **2026-08-22** for work done on
+**2026-08-28** — the waiver entry in CLAUDE.md, the `docs/DECISIONS.md` section heading, four
+LESSONS entries, and a `decision_policy.py` docstring. The session had opened by reading a handoff
+stamped 8/20 and sibling-repo files with 8/22 mtimes, and I anchored on those instead of the date
+the environment had already given me. It surfaced only because an unrelated task made me run
+`date`. In a repo whose waiver history *is* the change-control audit trail, a six-day error is not
+cosmetic.
+
+Two related traps in the same family. A long session can **cross midnight** — this one ran from
+8/28 evening into 8/29, so "today" changed underneath the work. And scripts that stamp dates may
+report **UTC while you are reasoning in local time**: `cert-roadmap`'s `deadline_check.py` printed
+2026-08-29 while the local clock still read 2026-08-28. Neither is hard to handle; both are easy to
+never think about.
+
+---
+
+### 2026-08-29 — A diagnosis recorded in your own planning docs is still a hypothesis
+
+**Rule:** Treat a conclusion written in your own roadmap, handoff, or decision log the way you'd
+treat a claim from anywhere else: as evidence that *someone once believed it*, not that it is true.
+Before it becomes the premise for spending money, starting a clock, or telling someone what to do,
+go read the primary source. Diagnoses are the most dangerous entries in a planning doc, because
+they get restated as fact by every session that inherits them — including yours.
+
+The 12-week roadmap had carried "security tables stay 0 because they're license-gated under O365 E5
+/ Entra Free" since 2026-08-18. I repeated it to David as settled fact and built a recommendation on
+it. Checking Microsoft Learn took four minutes and refuted it: *Integrate Microsoft Entra logs with
+Azure Monitor* lists **no license-tier prerequisite**, and sign-ins are a **Free-tier report**. The
+likelier cause of the empty tables was mundane — the Entra diagnostic setting was probably never
+created (it is separate from the Windows-events DCR that *was* built), and a one-admin lab tenant
+barely generates sign-ins.
+
+The cost of not checking would have been real: it was about to justify starting a paid-conversion
+trial clock to buy access to data that is free. **When a documented blocker is the reason you are
+about to spend something, that is exactly the claim to verify first** — the ones that cost money are
+the ones worth four minutes.
+
+Corollary found the same session: the same doc-check overturned a *second* inherited belief, that
+the Microsoft 365 Developer Program is open free signup. It is now restricted to Visual Studio
+Professional/Enterprise subscribers, partner-program companies, and Premier/Unified Support
+customers. Vendor program terms drift; anything a plan asserts about a third party's free tier has a
+shelf life.
