@@ -95,7 +95,14 @@ When the incident carries no file evidence the signal is not applicable —
 it never enters the signal set, so non-file alerts score byte-identically
 to the five-signal engine.  Malware reputation is an aggravator, never a
 mitigator: a clean scan registers 0 points (negative evidence) but never
-lowers the core score."""
+lowers the core score.
+
+Scoring is best-evidence, not an exclusive ladder (Waiver #2, 2026-08-28):
+the embedded verdict, the ADTE hash lookup, and the confirmed-FIM floor are
+scored independently per event and the strongest wins.  A clean scan
+therefore cannot suppress the 15-point floor on an event the source marked
+``event_risk="confirmed"`` — absence of a VirusTotal record is not
+exoneration, it is what a novel binary looks like."""
 
 # Compile into a lookup for iteration.  The five CORE signals sum to 100;
 # cluster_context (15) and file_reputation (40) are additive on top and

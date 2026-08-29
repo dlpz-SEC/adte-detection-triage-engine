@@ -179,7 +179,7 @@ import OverviewPage from './overview.jsx';
         example: "2 related alerts in the last 60 min, kill-chain detected → +13 points.",
       },
       file_reputation: {
-        description: "Multi-engine file-hash malware verdict. Prefers the verdict embedded in the source alert (Wazuh's VirusTotal integration) over an ADTE VirusTotal /files lookup. Confirmed malware adds the full weight; a partial detection ratio adds 20; a clean scan registers 0 (negative evidence). Additive on top of the 100-point core score — malware aggravates, never mitigates; non-file alerts are unaffected.",
+        description: "Multi-engine file-hash malware verdict. The embedded source verdict (Wazuh's VirusTotal integration), an ADTE VirusTotal /files lookup, and a confirmed-malware floor are scored independently — the strongest evidence wins. A detection ratio at or above 0.5 adds the full weight; a partial ratio adds 20; a source-confirmed file keeps a 15-point floor even when the scan comes back clean, because absence of a VirusTotal record is what a novel binary looks like. A clean scan registers 0 (negative evidence). Additive on top of the 100-point core score — malware aggravates, never mitigates; non-file alerts are unaffected.",
         mitre: "T1204 — User Execution / T1105 — Ingress Tool Transfer",
         nist: "DE.CM-4 — Malicious code is detected",
         example: "VirusTotal 58/72 engines flag /tmp/malware/eicar.com → +40 points → high risk.",

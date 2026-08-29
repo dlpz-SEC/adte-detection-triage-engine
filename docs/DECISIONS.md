@@ -231,3 +231,140 @@ triage.
 A correlated alert computes coverage over 6 applicable signals (e.g. 4/6) versus 3/5
 for the same alert solo — slightly different confidence with more evidence. This is
 intended: more applicable evidence legitimately changes how certain the engine is.
+
+---
+
+## Waiver #2 (2026-08-28) — Best-evidence file reputation (F1b/F2)
+
+Two defects in the Phase 32 `file_reputation` signal, fixed together under
+change-control Waiver #2. `engine.py` only; `models.py` and `adapters/` untouched.
+
+### F2: the tiers are ratio-driven; `vt_malicious` carries no weight
+
+The embedded-verdict branch read `if artifact.vt_malicious or ratio >= 0.5`. The flag
+is an **unvalidated, caller-supplied boolean** that reaches the engine unmodified from
+three separate entry points (the Wazuh adapter, `from_sentinel`, and a canonical
+`/api/triage` body), so whenever it was truthy the graduated `0 < ratio < 0.5 → 20`
+tier was unreachable: a 1/72 false positive scored identically to a 58/72 conviction.
+That row was pinned as intended behaviour in `tests/test_file_signal.py` with the
+comment `# flag wins`; it has been consciously re-pinned to 20.0.
+
+Only the ratio decides now. The hash-lookup branch already derived `is_malicious` from
+`confidence >= 0.5`, so this brings the embedded branch **into line with** the doctrine
+the lookup branch already implemented — it does not invent a new one.
+
+A `0 <= positives <= total` (and `total > 0`) sanity guard was added. A malformed
+verdict is **ignored, never raised on** — this runs on the `/api/triage` request thread
+over caller-controlled JSON, and the whole enrichment path is written never to raise.
+The event then falls through to the floor — but NOT to a hash lookup: `enrich()`
+skips that call for any non-`None` `vt_positives`, so a malformed verdict suppresses
+that candidate too. Fail-closed, and pinned by
+`test_malformed_verdict_also_suppresses_the_hash_lookup`. The guard also removes a
+negative-confidence path: `vt_positives=-70, vt_total=70, vt_malicious=True` (the flag
+is required — without it a negative ratio fell to the clean tier) previously yielded
+`min(1.0, 0.5 + -1.0) = -0.5`, violating the 0.0–1.0 `SignalResult` contract and
+rendering in the UI as `-50%`.
+
+**Deliberately NOT claimed:** that Wazuh's VirusTotal integration sets `malicious=1`
+for any positive detection. Nothing on disk establishes it — the integration script
+lives on the lab VM, and all six VT samples in this repo are the same ratio-0.806
+conviction, consistent with either hypothesis. The code-level rationale above stands
+without it.
+
+### F1b: the confirmed-malware floor is a floor, not an else-branch
+
+The three evidence sources sat in an exclusive `if/elif` ladder, so **any** embedded
+verdict — including a clean `0/72` — consumed the branch and the 15-point
+confirmed-FIM floor at the end of the ladder was unreachable. A genuine
+`event_risk="confirmed"` FIM alert carrying a clean scan scored **0**.
+
+Scoring is now best-evidence: the embedded verdict, the hash lookup, and the floor are
+each scored independently per event and the highest wins. Absence of a VirusTotal
+record is not exoneration — it is what a novel binary looks like.
+
+Measured effect on the canonical confirmed-FIM profile:
+
+| | before | after |
+|---|---|---|
+| `file_reputation` points | 0.0 | 15.0 |
+| incident `risk_score` | 33 | 48 |
+| incident `confidence` | 43 | 35 |
+
+`max()` returns the first maximum, which preserves the pre-existing precedence on a
+tie: embedded > lookup > floor.
+
+### Accepted: risk rises while confidence falls
+
+The table above is not a typo. The floor fires at 0.4 confidence, and a fired signal
+is *included* in the confidence mean where a 0-point non-fired one was excluded — so
+adding weak evidence raises the score and lowers the certainty. This is the honest
+reading ("we have evidence, and it is weak"), and picking a higher floor confidence to
+make the two numbers move together would be inventing a number to improve optics.
+
+### Floor rationale wording
+
+The floor can now win *while* a scan verdict exists, so its old string
+`"source flagged confirmed malware (no hash to verify)"` would be a lie in that case.
+It is emitted verbatim only when the floor is the sole candidate; when it wins over a
+scored verdict it reads `"...; 15-point floor applied — scan evidence did not
+corroborate: <the scan's own note>"`. Arithmetically the floor only ever beats a
+candidate that scored 0, so "did not corroborate" is exact, not hedging.
+
+### Parity
+
+All four non-file golden pins (99/83, 99/85, 5/55, 43/57) are byte-identical, proven
+by `scripts/parity_probe.py` over the full serialized output. The four Wazuh malware
+demo seeds are byte-identical too — none of them exercises either defect, which is
+precisely why both survived Phase 32's review. Any movement in a malware hash would be
+an unintended regression, not a by-design change.
+
+The golden pins are protected from the floor by **one conjunct**: `event.type == "file"`.
+Two of the four pinned examples carry `event_risk="confirmed"` on *authentication*
+events. `test_auth_event_marked_confirmed_never_reaches_the_floor` pins that trap
+explicitly.
+
+### Deferred findings — surfaced by this review, deliberately NOT fixed here
+
+Waiver #2 is scoped to F1b/F2. The pre-implementation analysis surfaced eleven further
+issues in the same neighbourhood; folding them in would have made the parity argument
+unfalsifiable. Each is real and each is logged here rather than silently dropped.
+
+| # | Finding | Why deferred |
+|---|---|---|
+| D3 | `FileArtifact` has no `Field(ge=0)` on `vt_positives`/`vt_total` and no cross-field validator, so malformed counts are only caught engine-side | The durable fix is in `models.py`, which is change-controlled and explicitly out of this waiver's scope. The engine guard is the fail-closed stopgap |
+| D4 | `vt_malicious` alone is never sufficient to enter the embedded branch — a provider conviction arriving as a bare flag with no engine counts scores **0** | Pre-existing and unchanged by this fix. Fixing it means deciding what a bare flag is worth (a 20-point floor?), which is new doctrine, not a defect repair |
+| D5 | **A VirusTotal outage is scored as a clean scan.** `intel/aggregator.py` falls back to the mock on a `*-error` source, which returns `synthetic-no-match` at confidence 0.0 → 0 points. The IP path enforces abstention (a neutral result is excluded from the average); the hash path does not | Real doctrine violation, but it lives in the intel layer, not the engine. F1b partially mitigates it — a `confirmed` event now keeps its floor through an outage; a non-confirmed one still scores 0 |
+| D6 | Tie-break between two candidates that tie on points is decided by `events[]` array order, which is attacker-influenceable | `max()` preserves today's precedence exactly. Adding a confidence-aware tie-break would move file-path confidence for reasons unrelated to F1b/F2 and no existing test would catch it |
+| D7 | `malicious_labels` counts *events*, not distinct files — one file emitting both a 554 and an 87105 reports "2 malicious file(s) total" | Pre-existing, cosmetic, and untested. Note the F2 fix narrows the label set: a flagged low-ratio event no longer qualifies, which is now correct |
+| D8 | `_MAX_HASH_LOOKUPS` bounds hashes *examined*, not lookups *performed* — five embedded-VT files (zero API calls) exhaust the budget, and the loop `break`s rather than continuing | Lives in `enrich()`, and its current counting is test-pinned |
+| D9 | An attacker-controlled file path renders a 40-point conviction as "skipped" in the UI — the frontend classifies via a regex over the rationale free text, so a file at `/tmp/unavailable/payload.exe` matches | Display-only, no score impact, no XSS (no `dangerouslySetInnerHTML`). The durable fix is a structural `skipped` boolean on the rationale entry instead of a regex over prose |
+| D10 | Per-incident hash dedupe makes evidence order-dependent: for two events sharing a hash, whether the lookup ran at all depends on which appears first | Pre-existing in `enrich()` |
+| D11 | The signal's new guard is stricter than `enrich()`'s skip guard, so a malformed embedded verdict yields neither an embedded candidate nor a lookup | **Accepted, not deferred** — fail-closed and correct. Tightening `enrich()` to match would change lookup call counts and redden two existing tests |
+
+D5 and D9 are the two worth scheduling; the rest are cosmetic or need their own waiver.
+
+### What the adversarial pass changed
+
+The review was run before merge and did not come back clean. Its own tally flagged itself
+untrustworthy — 52 of 80 agents died on a session limit, and findings whose verifiers all
+died were bucketed as "refuted" rather than "unverified", the exact failure the methodology
+exists to prevent. Re-reading the raw findings instead of the tally surfaced this:
+
+- **A live defect in the fix itself.** The `vt_total > 0` conjunct was absent from the
+  shipped guard, so `{"vt_positives":0,"vt_total":0}` passed the `0 <= positives <= total`
+  range check and divided by zero — a 500 on the request thread from caller-controlled JSON.
+  784 tests were green over it, because nothing covered `0/0`.
+- **Two factual errors in this document's first draft**: the claim that a malformed verdict
+  "falls through to the remaining evidence" (it does not reach a hash lookup — `enrich()`
+  already skipped it), and a miscount of how many new tests fail against the pre-fix engine.
+- **A falsified lesson.** The first write-up blamed the F2 defect on the `0 < ratio < 0.5`
+  tier never being exercised. It *was* exercised; what protected the bug was the assertion
+  above it pinning `# flag wins` as intended behaviour.
+- **Five test gaps** in the new code, now closed: the ratio-exactly-0.5 boundary, the
+  `vt_total > 0` conjunct, the malformed-suppresses-lookup asymmetry, the floor's 0.4
+  confidence, and the embedded > lookup tie-break.
+
+The review agents also mutated `adte/engine.py` in place to test those gaps and left the
+mutants behind. `engine.py` was restored from `pre-f1f2-fix` and the fix re-applied onto
+clean bytes; the final diff removes only the docstring tier list and the old if/elif ladder.
+See `LESSONS.md` 2026-08-28.

@@ -129,7 +129,12 @@ class TestPointsCurve:
         ("kwargs", "expected_points"),
         [
             (dict(vt_positives=58, vt_total=72), 40.0),          # ratio 0.8 ≥ .5
-            (dict(vt_positives=1, vt_total=72, vt_malicious=True), 40.0),  # flag wins
+            # Re-pinned by the F2 fix (Waiver #2).  This row used to assert
+            # 40.0 with the comment "flag wins" — that WAS the defect: an
+            # unvalidated caller-supplied boolean short-circuited the
+            # graduated tiers, so a 1/72 false positive scored identically to
+            # a 58/72 conviction.  Tiers are now ratio-driven: 1/72 = 0.014.
+            (dict(vt_positives=1, vt_total=72, vt_malicious=True), 20.0),
             (dict(vt_positives=10, vt_total=72), 20.0),          # 0 < ratio < .5
             (dict(vt_positives=0, vt_total=72), 0.0),            # clean, registered
             (dict(sha256=_EICAR_SHA256), 40.0),                  # lookup malicious
@@ -162,6 +167,282 @@ class TestPointsCurve:
             _incident([_file_event(vt_positives=72, vt_total=72)]), fp_registry
         )
         assert _entry(output, "file_reputation")["score"] == 40.0
+
+
+class TestConfirmedFloorBestEvidence:
+    """F1b regression: the confirmed-FIM floor must survive a clean scan.
+
+    Before the Waiver #2 fix the three evidence sources sat in an exclusive
+    if/elif ladder, so any embedded verdict — including a clean 0/N — consumed
+    the branch and the 15-point floor was unreachable.  A genuine
+    ``event_risk="confirmed"`` FIM alert therefore scored 0.
+    """
+
+    def test_confirmed_with_clean_embedded_scan_hits_floor(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """N1: confirmed + embedded 0/72 → 15, not 0 (the F1b defect)."""
+        output = _run(
+            _incident([_file_event(event_risk="confirmed", vt_positives=0, vt_total=72)]),
+            fp_registry,
+        )
+        entry = _entry(output, "file_reputation")
+        assert entry is not None
+        assert entry["score"] == 15.0
+        # The floor now wins over a scan verdict, so its rationale must say so
+        # rather than claiming there was "no hash to verify".
+        assert "did not corroborate" in entry["detail"]
+        assert "0/72" in entry["detail"]
+
+    def test_confirmed_with_clean_lookup_hits_floor(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """N2: confirmed + a clean hash lookup → 15.
+
+        The zero-day shape: a novel binary is precisely what VirusTotal has no
+        record of, so scoring the absence of a record as exoneration is wrong.
+        """
+        output = _run(
+            _incident([_file_event(event_risk="confirmed", sha256=_CLEAN_SHA256)]),
+            fp_registry,
+        )
+        entry = _entry(output, "file_reputation")
+        assert entry is not None
+        assert entry["score"] == 15.0
+        assert "did not corroborate" in entry["detail"]
+
+    def test_floor_is_a_floor_not_an_addend(self, fp_registry: FPRegistry) -> None:
+        """N3: confirmed + embedded 10/72 → 20, never 20+15."""
+        output = _run(
+            _incident([_file_event(event_risk="confirmed", vt_positives=10, vt_total=72)]),
+            fp_registry,
+        )
+        assert _entry(output, "file_reputation")["score"] == 20.0
+
+    def test_floor_keeps_legacy_wording_when_it_is_the_only_evidence(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """With no scan to contradict, the original rationale is still true."""
+        output = _run(
+            _incident([_file_event(event_risk="confirmed")]), fp_registry
+        )
+        entry = _entry(output, "file_reputation")
+        assert entry["detail"].endswith("(no hash to verify)")
+        assert "did not corroborate" not in entry["detail"]
+
+    def test_floor_confidence_is_pinned_at_zero_point_four(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """The floor's 0.4 confidence is load-bearing, so pin it.
+
+        It is why a confirmed-FIM alert's incident confidence FALLS (43 -> 35)
+        while its risk RISES (33 -> 48): the floor enters the fired-signal
+        mean where a 0-point non-fired candidate did not. DECISIONS.md defends
+        that number; without this test it could drift silently and take the
+        documented behaviour with it.
+        """
+        output = _run(
+            _incident([_file_event(event_risk="confirmed")]), fp_registry
+        )
+        summary = output["report"]["signal_summary"]["file_reputation"]
+        assert summary["confidence"] == 0.4
+
+    def test_tie_on_points_keeps_embedded_precedence_over_lookup(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """Best-evidence must not silently reorder precedence on a tie.
+
+        The old exclusive ladder could never have both candidates at once, so
+        nothing pinned the ordering. `max()` returns the FIRST maximum, which
+        preserves embedded > lookup > floor. The lookup result is injected
+        directly because enrich() deliberately skips the call whenever an
+        embedded verdict is present.
+        """
+        from adte.models import FileReputationResult
+
+        incident = _incident(
+            [_file_event(sha256=_EICAR_SHA256, vt_positives=58, vt_total=72)]
+        )
+        engine = TriageEngine(
+            incident, get_user_profile(incident.user), fp_registry
+        )
+        engine.enrich()
+        # Both candidates now score the full 40; only the tie-break decides
+        # which confidence and rationale get reported.
+        engine._file_reputation_results[_EICAR_SHA256] = FileReputationResult(
+            file_hash=_EICAR_SHA256,
+            hash_type="sha256",
+            source="virustotal",
+            is_malicious=True,
+            confidence=0.55,
+            tags=["injected-for-tie-break"],
+        )
+        output = engine.score().decide().to_output()
+        entry = _entry(output, "file_reputation")
+        assert entry["score"] == 40.0
+        assert "VirusTotal 58/72" in entry["detail"], "embedded must win the tie"
+        assert "injected-for-tie-break" not in entry["detail"]
+        assert output["report"]["signal_summary"]["file_reputation"]["confidence"] == 1.0
+
+    def test_auth_event_marked_confirmed_never_reaches_the_floor(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """N7: the golden-pin trap, made explicit.
+
+        Two of the four pinned example incidents carry
+        ``event_risk="confirmed"`` on AUTHENTICATION events.  Only the
+        ``event.type == "file"`` conjunct keeps them out of this signal — drop
+        it and 99/99/5/43 all move.
+        """
+        confirmed_auth = SignInMetadata(
+            user_principal_name="wazuh-host@test.local",
+            ip_address="198.51.100.23",
+            type="authentication",
+            location=None,
+            device_id="unknown-wazuh-device-xyz",
+            auth_status=None,
+            event_risk="confirmed",
+            timestamp=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+        )
+        output = _run(_incident([confirmed_auth]), fp_registry)
+        assert _entry(output, "file_reputation") is None
+        assert len(output["rationale"]) == 5
+
+
+class TestMalformedEmbeddedVerdict:
+    """F2 regression: the tiers are ratio-driven and the counts are sanity-checked.
+
+    ``vt_malicious`` is an unvalidated, caller-supplied boolean that reaches
+    the engine unmodified from three entry points, and honouring it made the
+    graduated ``0 < ratio < 0.5 → 20`` tier unreachable.
+    """
+
+    def test_flag_cannot_promote_a_low_ratio(self, fp_registry: FPRegistry) -> None:
+        """N4: a flagged 1/72 scores the graduated tier, not a conviction."""
+        output = _run(
+            _incident(
+                [_file_event(vt_positives=1, vt_total=72, vt_malicious=True)]
+            ),
+            fp_registry,
+        )
+        assert _entry(output, "file_reputation")["score"] == 20.0
+
+    def test_flag_cannot_veto_a_high_ratio(self, fp_registry: FPRegistry) -> None:
+        """The flag is ignored in BOTH directions — the ratio decides."""
+        output = _run(
+            _incident(
+                [_file_event(vt_positives=58, vt_total=72, vt_malicious=False)]
+            ),
+            fp_registry,
+        )
+        assert _entry(output, "file_reputation")["score"] == 40.0
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            dict(vt_positives=100, vt_total=72),                    # N5: > total
+            dict(vt_positives=-70, vt_total=70, vt_malicious=True),  # N6: negative
+            dict(vt_positives=5, vt_total=0),                        # zero total
+            dict(vt_positives=5, vt_total=-72),                      # negative total
+        ],
+    )
+    def test_malformed_counts_are_ignored_not_scored(
+        self, fp_registry: FPRegistry, kwargs: dict
+    ) -> None:
+        """N5/N6: a malformed embedded verdict yields no candidate at all.
+
+        Ignore-and-fall-through, never raise: this runs on the /api/triage
+        request thread over caller-controlled JSON.  With no hash and no
+        confirmed flag there is nothing else to score, so the signal is N/A.
+
+        Before the fix, ``vt_positives=-70, vt_total=70, vt_malicious=True``
+        scored the full 40 at a confidence of **-0.5**, which violates the
+        SignalResult 0.0–1.0 contract and rendered in the UI as "-50%".
+        """
+        output = _run(_incident([_file_event(**kwargs)]), fp_registry)
+        assert _entry(output, "file_reputation") is None
+
+    def test_malformed_counts_never_yield_out_of_range_confidence(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """A malformed verdict must not poison confidence via another candidate."""
+        output = _run(
+            _incident(
+                [
+                    _file_event(
+                        vt_positives=-70,
+                        vt_total=70,
+                        vt_malicious=True,
+                        event_risk="confirmed",
+                    )
+                ]
+            ),
+            fp_registry,
+        )
+        entry = _entry(output, "file_reputation")
+        assert entry is not None, "the confirmed floor still applies"
+        assert entry["score"] == 15.0
+        assert 0.0 <= output["confidence"] / 100 <= 1.0
+
+    def test_ratio_boundary_exactly_half_is_a_conviction(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """Pins the `>=` in the tier check the F2 fix rewrote.
+
+        Ratio exactly 0.5 is the boundary the whole fix turns on; with `>`
+        instead of `>=` this is the only input in the suite that would notice.
+        """
+        output = _run(
+            _incident([_file_event(vt_positives=36, vt_total=72)]), fp_registry
+        )
+        assert _entry(output, "file_reputation")["score"] == 40.0
+
+    def test_zero_total_does_not_divide_by_zero(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """Pins the `vt_total > 0` conjunct of the guard.
+
+        Without it, `0/0` reaches the ratio expression and raises
+        ZeroDivisionError on the /api/triage request thread — a 500 from
+        caller-controlled JSON.
+        """
+        output = _run(
+            _incident([_file_event(vt_positives=0, vt_total=0)]), fp_registry
+        )
+        assert _entry(output, "file_reputation") is None
+
+    def test_malformed_verdict_also_suppresses_the_hash_lookup(
+        self, fp_registry: FPRegistry
+    ) -> None:
+        """The documented guard asymmetry, pinned.
+
+        `enrich()` skips the hash lookup for ANY non-None `vt_positives`, so a
+        malformed verdict on an event that also carries a perfectly good hash
+        yields neither an embedded candidate nor a lookup one. Fail-closed and
+        deliberate — but it means "ignored" does not mean "falls through to the
+        lookup", and the docs must not say otherwise.
+
+        Pre-fix this same input scored the full 40 off the malformed counts.
+        """
+        output = _run(
+            _incident(
+                [_file_event(sha256=_EICAR_SHA256, vt_positives=100, vt_total=72)]
+            ),
+            fp_registry,
+        )
+        assert _entry(output, "file_reputation") is None
+
+    def test_flag_alone_is_not_evidence(self, fp_registry: FPRegistry) -> None:
+        """N8: ``vt_malicious`` with no engine counts scores nothing.
+
+        Documents a pre-existing gap this fix deliberately does NOT change:
+        the embedded branch requires ``vt_positives``/``vt_total``, so a
+        provider conviction arriving as a bare flag is invisible to scoring.
+        """
+        output = _run(
+            _incident([_file_event(vt_malicious=True)]), fp_registry
+        )
+        assert _entry(output, "file_reputation") is None
 
 
 class TestAdditiveUplift:

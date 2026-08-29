@@ -306,7 +306,7 @@ The admin key is the only credential that can delete data. Keep it out of any sh
 | Device Novelty | 15 pts | Device ID compared against user's known inventory |
 | Login Hour Anomaly | 10 pts | Sign-in timestamp vs. user's baseline login-hour window |
 | Cluster Context | +15 pts (additive) | Correlated-case context (shared source IP/user, 60-min window): sibling volume (1 → +5, 2 → +8, 3+ → +10) + kill-chain progression (+5), capped at 15 — applied on top of the 0–100 core score, final capped at 100. Only present when the alert actually correlates; solo alerts score byte-identically to the 5-core-signal engine. |
-| File Reputation | +40 pts (additive) | File-hash verdicts from Wazuh FIM/VirusTotal alerts — the embedded VT verdict is preferred (zero API cost), with a bounded live hash lookup as fallback: malicious ratio ≥ 0.5 → +40, partial detections → +20, confirmed-no-hash → +15, clean → 0. Registered only when file evidence exists; non-file alerts score byte-identically. Aggravator only, never a mitigator. |
+| File Reputation | +40 pts (additive) | File-hash verdicts from Wazuh FIM/VirusTotal alerts — the embedded VT verdict wins ties (zero API cost), with a bounded live hash lookup as fallback. Best-evidence, not an exclusive ladder: malicious ratio ≥ 0.5 → +40, partial detections → +20, a `confirmed` file event keeps a +15 floor even when a scan came back clean, clean → 0. Registered only when file evidence exists; non-file alerts score byte-identically. Aggravator only, never a mitigator. |
 
 **Verdict thresholds:**
 - `risk_score < 30` → `low_risk` — auto-close

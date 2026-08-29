@@ -779,16 +779,30 @@ class TriageEngine:
         VirusTotal integration) over ADTE's own hash lookup (populated in
         ``enrich()``) — the embedded verdict costs zero API calls.
 
-        Evidence tiers, best-across-events, capped at the 40-point weight
-        (an aggravator — a clean scan registers 0, never a reduction):
+        Scoring is **best-evidence**: the embedded verdict, the ADTE hash
+        lookup, and the confirmed-FIM floor are evaluated independently for
+        each event and the highest-scoring candidate wins; the best event
+        then represents the incident.  Capped at the 40-point weight (an
+        aggravator — a clean scan registers 0, never a reduction):
 
-        - embedded VT ratio ≥ 0.5 (or ``vt_malicious``) → full 40
+        - embedded VT ratio ≥ 0.5 → full 40
         - embedded VT 0 < ratio < 0.5 → 20
+        - embedded verdict ignored when malformed (``vt_total`` ≤ 0, or
+          ``vt_positives`` outside ``0..vt_total``).  NOTE this does NOT fall
+          through to a hash lookup: ``enrich()`` skips the lookup for any
+          non-``None`` ``vt_positives``, so a malformed verdict suppresses
+          that candidate too and only the floor can still apply.
         - ADTE hash lookup malicious → full 40; 0 < confidence < 0.5 → 20
-        - a ``file`` event marked ``event_risk == "confirmed"`` with no hash
-          to verify → 15 ("unverified malware claim")
+        - a ``file`` event marked ``event_risk == "confirmed"`` → a 15-point
+          floor ("unverified malware claim"), applied even when a scan
+          verdict is present but came back clean
         - clean scan / clean lookup → 0 points, but the signal still fires
           (negative evidence is applicable)
+
+        ``vt_malicious`` deliberately carries **no** weight: it is an
+        unvalidated, caller-supplied boolean, and honouring it made the
+        graduated ratio tier unreachable (a 1/72 false positive scored
+        identically to a 58/72 conviction).
 
         Returns:
             ``(score, rationale, confidence)`` when the incident carries any
@@ -812,27 +826,52 @@ class TriageEngine:
                 label = artifact.path or (file_hash[:12] if file_hash else "")
             label = label or "unknown file"
 
-            points: float | None = None
-            confidence = 0.0
-            note = ""
+            # Best-evidence scoring: every source of malware evidence is
+            # scored independently and the strongest wins.  An exclusive
+            # if/elif ladder made the confirmed-FIM floor unreachable behind
+            # a clean embedded scan, so a genuine confirmed alert carrying an
+            # embedded 0/N verdict scored 0.
+            candidates: list[tuple[float, float, str]] = []  # (points, confidence, note)
 
+            # 1. Embedded VirusTotal verdict (Wazuh rule 87105) — ratio-driven.
+            #    A malformed count is IGNORED rather than raised on: this runs
+            #    on the /api/triage request thread over caller-controlled JSON,
+            #    and the whole enrichment path is written never to raise.
+            #    `vt_total > 0` is load-bearing: without it a caller-supplied
+            #    0/0 passes the range check and divides by zero.
             if (
                 artifact is not None
                 and artifact.vt_positives is not None
-                and artifact.vt_total
+                and artifact.vt_total is not None
+                and artifact.vt_total > 0
+                and 0 <= artifact.vt_positives <= artifact.vt_total
             ):
                 ratio = artifact.vt_positives / artifact.vt_total
                 note = (
                     f"VirusTotal {artifact.vt_positives}/{artifact.vt_total} "
                     f"engines flagged it malicious (embedded verdict)"
                 )
-                if artifact.vt_malicious or ratio >= 0.5:
-                    points, confidence = float(weight), min(1.0, 0.5 + ratio)
+                if ratio >= 0.5:
+                    candidates.append((float(weight), min(1.0, 0.5 + ratio), note))
                 elif ratio > 0:
-                    points, confidence = 20.0, 0.4 + ratio
+                    candidates.append((20.0, min(1.0, 0.4 + ratio), note))
                 else:
-                    points, confidence = 0.0, 0.8
-            elif file_hash and file_hash in self._file_reputation_results:
+                    # "0/72 engines flagged it malicious" is self-contradictory
+                    # prose, and it now surfaces most often nested inside the
+                    # floor's non-corroboration note.  Only the zero-detection
+                    # wording changes — the ratio > 0 string above is left
+                    # byte-identical so the pinned examples keep their parity.
+                    candidates.append((
+                        0.0,
+                        0.8,
+                        f"VirusTotal scan clean — 0/{artifact.vt_total} "
+                        f"engines flagged it (embedded verdict)",
+                    ))
+
+            # 2. ADTE's own hash lookup (populated in enrich(), which skips
+            #    the call entirely when an embedded verdict is present — so
+            #    this candidate is rarely co-present with candidate 1).
+            if file_hash and file_hash in self._file_reputation_results:
                 result = self._file_reputation_results[file_hash]
                 tag_str = ", ".join(result.tags) if result.tags else "no tags"
                 note = (
@@ -840,17 +879,38 @@ class TriageEngine:
                     f"(confidence {result.confidence:.2f}; {tag_str})"
                 )
                 if result.is_malicious:
-                    points, confidence = float(weight), result.confidence
+                    candidates.append((float(weight), result.confidence, note))
                 elif result.confidence > 0:
-                    points, confidence = 20.0, result.confidence
+                    candidates.append((20.0, result.confidence, note))
                 else:
-                    points, confidence = 0.0, 0.7
-            elif event.type == "file" and event.event_risk == "confirmed":
-                points, confidence = 15.0, 0.4
-                note = "source flagged confirmed malware (no hash to verify)"
+                    candidates.append((0.0, 0.7, note))
 
-            if points is None:
+            # 3. Confirmed-FIM floor.  BOTH conjuncts are load-bearing: two of
+            #    the four golden-pin examples carry event_risk="confirmed" on
+            #    AUTHENTICATION events, and only the type check keeps them out
+            #    of this signal.  The 0.4 confidence is also load-bearing — it
+            #    is why a lifted alert's risk rises while its confidence falls.
+            if event.type == "file" and event.event_risk == "confirmed":
+                if candidates:
+                    # The floor can only ever win over a candidate that scored
+                    # 0 (15 beats nothing else), so the scan demonstrably
+                    # failed to corroborate what the source confirmed.
+                    prior = max(candidates, key=lambda c: c[0])
+                    floor_note = (
+                        "source flagged confirmed malware; 15-point floor applied — "
+                        f"scan evidence did not corroborate: {prior[2]}"
+                    )
+                else:
+                    floor_note = "source flagged confirmed malware (no hash to verify)"
+                candidates.append((15.0, 0.4, floor_note))
+
+            if not candidates:
                 continue  # this event carried no scoreable file evidence
+            # max() returns the FIRST maximum, preserving the pre-existing
+            # precedence on a tie: embedded > lookup > floor.
+            points, confidence, note = max(candidates, key=lambda c: c[0])
+            points = min(float(weight), points)
+
             if points >= float(weight):
                 malicious_labels.append(label)
             if best_points is None or points > best_points:

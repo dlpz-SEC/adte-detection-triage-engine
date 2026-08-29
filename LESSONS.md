@@ -619,3 +619,100 @@ value discarding 60 free days, an access-control comment that stated the inverse
 flag does, and a DCR collecting an entire event channel against its own stated cost doctrine.
 None of it was visible to the compiler. Fixing them invalidated the original compile proof,
 so the merge waits on a fresh one.
+
+---
+
+### 2026-08-28 — A regression test that passes before the fix is not a regression test
+
+**Rule:** After writing tests for a defect, **put the pre-change file back and run them.**
+Every test that claims to pin the defect must FAIL against the old code. One that passes both
+ways is a guard (still worth keeping) or a tautology (worth deleting) — but it is not evidence
+the bug is fixed, and a green suite full of them reads exactly like a proven fix.
+
+Eighteen tests were written for the Waiver #2 engine fix. Running them against a pristine
+pre-fix `engine.py` showed **8 failed and 10 passed**. The 10 were guards — that the floor is
+a floor and not an addend, that an auth event marked `confirmed` never reaches the file
+signal — and they stayed. But before running it, all 18 looked equally like proof. The check
+costs two commands and is the only thing separating "the tests pass" from "the defect is
+gone."
+
+Count carefully, too: the first write-up of this lesson claimed "8 of 13", conflating a
+**re-pinned existing assertion** with the new tests. The honest split is 8 of 18 new tests,
+plus one existing assertion consciously re-pinned. A verification lesson that miscounts its
+own verification is worth less than no lesson.
+
+---
+
+### 2026-08-28 — Prove a parity harness is deterministic before you trust a single hash it prints
+
+**Rule:** A byte-parity proof is only as good as the harness's determinism. **Run it twice
+against unchanged code and diff the two outputs BEFORE capturing any baseline.** If the hashes
+differ, find the volatile field and scrub it *by exact path*, never by key name — and assert
+the path exists, so a later refactor that moves it fails loudly instead of silently producing
+a false pass.
+
+The first parity harness for the F1b/F2 fix produced different sha256s on every run against
+identical code: `to_output()` embeds a wall-clock `report.timestamp`. Two failure modes were
+one step away. Capturing "before", editing, then capturing "after" would have shown all eight
+examples "changed" — a phantom regression to chase. And the reflexive fix, sweeping every key
+named `timestamp`, would have erased the incident and event timestamps too, hiding any real
+change in them behind a proof that still printed green.
+
+---
+
+### 2026-08-28 — A test can pin a bug as a contract, and then the suite defends the bug
+
+**Rule:** When a defect survives a green suite, check whether a test **asserts the defective
+behaviour** before concluding the code was untested. A passing test is evidence of a
+contract, not evidence of correctness, and the comment beside it is where the mistaken
+intent is usually admitted in plain language. Grep the assertions around a bug for wording
+like "wins", "overrides", "takes precedence" — that is what encoding a bug looks like.
+
+ADTE's `file_reputation` F2 defect (an unvalidated caller-supplied `vt_malicious` flag
+short-circuiting the graduated ratio tiers) sat through a full adversarial review and 766
+passing tests. My first explanation was that no fixture exercised the `0 < ratio < 0.5`
+tier — **and that was wrong**, caught by a later review pass. The tier *was* exercised, at
+`tests/test_file_signal.py:133` (`vt_positives=10, vt_total=72` → 20.0). What actually
+protected the bug was the row above it: `(dict(vt_positives=1, vt_total=72,
+vt_malicious=True), 40.0),  # flag wins`. A 1/72 false positive scoring a full conviction was
+written down as intended behaviour, so every run confirmed it. Fixing the defect required
+re-pinning that assertion, which is the tell: **if a fix turns a test red and the honest
+change is to the test, the test was the bug's alibi.**
+
+---
+
+### 2026-08-28 — A "read-only" review agent that runs mutation tests leaves the mutants in your working tree
+
+**Rule:** Any review agent told to *verify by running things* can write. Before trusting a
+single post-review measurement, **diff the working tree against the pre-review state and
+audit every hunk against what you actually wrote.** If anything is off, restore the file
+from the tag and re-apply your edits onto known-good bytes — never patch the mutated copy,
+because you cannot enumerate what else was changed. And never take your "known-good"
+snapshot *after* agents have run.
+
+The Waiver #2 adversarial review was scoped read-only for the finders, but the verifiers
+were told "where you can settle it by running something, DO run it". They settled
+test-coverage findings the correct way — by mutation testing — and left the mutants in
+`adte/engine.py`: the `vt_total > 0` conjunct deleted, and the confirmed-FIM floor's
+confidence changed `0.4 → 0.9`. Both matched their own finding text verbatim ("deleting it
+passes 779 tests", "0.4 -> 0.9 passes 779 tests"). They also left four `_vfy_*.py` repro
+scripts in the repo root, a stray git worktree, and a 981-line copy of the pre-fix engine at
+`adte/_engine_baseline.py` — **inside the shipping package**, one careless `git add` from
+being committed.
+
+Two things made this nearly invisible. The suite still reported green (784 passed) because
+the mutants sat in exactly the branches the review had just proven were unpinned — a mutant
+in uncovered code is silent by definition. And the deleted conjunct was a *live* defect: a
+caller-supplied `{"vt_positives":0,"vt_total":0}` divides by zero on the request thread. It
+surfaced only because a test written *from the finding* failed, and the failure was in the
+engine, not the test.
+
+The generalisable trap: the swap-file-and-restore trick (`cp` aside → `git checkout <tag> --
+<file>` → run → restore) is itself a state mutation, and a `trap` only protects against
+*your own* forgetfulness, not against a concurrent writer. Prefer a throwaway
+`git worktree add --detach <tag>` for any before/after comparison — the real tree is then
+never mutated and there is nothing to restore.
+
+**Skill impact:** `adversarial-audit` needs an explicit isolation rule — verifiers that
+mutate code must do it in a worktree or a copy, and the orchestrator must diff the tree
+after the run and before believing any measurement.
