@@ -769,3 +769,51 @@ the Microsoft 365 Developer Program is open free signup. It is now restricted to
 Professional/Enterprise subscribers, partner-program companies, and Premier/Unified Support
 customers. Vendor program terms drift; anything a plan asserts about a third party's free tier has a
 shelf life.
+
+---
+
+### 2026-09-03 — `/tmp` in Git Bash is not `/tmp` to the Windows Python interpreter
+
+**Rule:** When a shell step writes a file that a Windows-native program will read
+(`.venv/Scripts/python.exe`), pass an explicit `C:/...` path — the session scratchpad — never
+`/tmp`.
+
+`curl ... -o /tmp/queue.json` succeeded, then `python -c "open('/tmp/queue.json')"` raised
+`FileNotFoundError`. Git Bash maps `/tmp` to its own MSYS temp directory; the Windows interpreter
+resolves `/tmp` against the current drive root. Two tools, one path string, two different files.
+It cost a round-trip in the middle of a production deploy verification.
+
+---
+
+### 2026-09-26 — A production verification probe is a write if the endpoint logs
+
+**Rule:** Before sending anything to a public deployment to prove a deploy landed, ask what the
+request persists. If it writes, either pick a non-persisting discriminator or name the cleanup in
+the same breath and do it.
+
+The 2026-09-03 deploy check POSTed a crafted incident to `/api/triage` because it was the only
+input that separated the old build (500) from the new one (200) — a sound technique. But
+`/api/triage` writes an audit row and a case. `DEPLOY-PROBE-0904` was still in the public
+production audit log 22 days later, in a screenshot David took of the page recruiters see. It
+survived only because nothing deployed in between. Extends 2026-07-10: new-route 401-vs-404 and
+bundle grep are non-persisting, so they come first; a discriminating POST is the last resort, and
+it carries a cleanup step.
+
+---
+
+### 2026-09-26 — When the UI shows blank reference data, first check it reads the server's field at all
+
+**Rule:** Before debugging a lookup, grep the frontend for the server field that already carries
+the answer. A client-side copy of server reference data drifts silently; the fix is deleting the
+copy, not extending it.
+
+`T1090.003` rendered with no name, tactic or NIST while `/api/triage` returned its full details in
+`mitre_details`. The SPA never read that field. It looked every card up in a hand-maintained
+13-entry dict (`MITRE_TECH_MAP`) that had no `T1090`, so any native ATT&CK ID from a real alert
+outside those 13 blanked the same way. The YAML was correct the whole time.
+
+Corollary, same investigation: **an output that never varies across inputs is a constant, not
+analysis.** The deterministic report returned `["DE.CM-1", "DE.CM-7", "RS.AN-1"]` for every
+incident, labelled "CSF 2.0" — and 15 of the YAML's 42 NIST IDs point at subcategories CSF 2.0
+doesn't have. Checking a framework citation against the publisher's own text (here NIST CSWP 29)
+is the same four-minute check as 2026-08-29.
