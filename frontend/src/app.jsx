@@ -283,14 +283,6 @@ import OverviewPage from './overview.jsx';
       );
     }
 
-    function IconSend({ size = 18 }) {
-      return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-      );
-    }
-
     function IconSettings({ size = 16 }) {
       return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -337,7 +329,7 @@ import OverviewPage from './overview.jsx';
             {NAV.map(group => (
               <div key={group.section} style={{ marginBottom: 4 }}>
                 <div className="nav-section-label" style={{
-                  fontSize: '0.6rem', fontWeight: 600, letterSpacing: '0.12em',
+                  fontSize: 'var(--fs-caption)', fontWeight: 600, letterSpacing: '0.12em',
                   color: 'var(--text-muted)', textTransform: 'uppercase',
                   padding: '10px 16px 4px',
                 }}>
@@ -354,7 +346,7 @@ import OverviewPage from './overview.jsx';
                     <NavIcon path={item.icon} />
                     <span className="nav-label" style={{ flex: 1 }}>{item.label}</span>
                     {item.badge && (
-                      <span className="nav-label badge badge-medium" style={{ fontSize: '0.45rem', padding: '2px 5px', letterSpacing: '0.08em', flexShrink: 0 }}>
+                      <span className="nav-label badge badge-medium" style={{ fontSize: 'var(--fs-micro)', padding: '2px 5px', letterSpacing: '0.08em', flexShrink: 0 }}>
                         {item.badge}
                       </span>
                     )}
@@ -374,7 +366,7 @@ import OverviewPage from './overview.jsx';
           }}>
             {!collapsed && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
                   <span>SESSION</span>
                   <span style={{ color: 'var(--text-secondary)' }}>TRG/{String(triageCount).padStart(3, '0')}</span>
                 </div>
@@ -383,7 +375,7 @@ import OverviewPage from './overview.jsx';
                     width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
                     background: serverOnline ? 'var(--success)' : 'var(--critical)',
                   }} />
-                  <span className="mono" style={{ fontSize: '0.6rem', color: serverOnline ? 'var(--success)' : 'var(--critical)' }}>
+                  <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: serverOnline ? 'var(--success)' : 'var(--critical)' }}>
                     {serverOnline ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </div>
@@ -556,13 +548,13 @@ import OverviewPage from './overview.jsx';
         const id = setInterval(tick, 1000);
         return () => clearInterval(id);
       }, []);
-      return <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{utcTime}</span>;
+      return <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>{utcTime}</span>;
     }
 
     function NoResultBanner({ onGoTriage }) {
       return (
         <div className="panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', marginBottom: 20 }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)' }}>
             Run a triage first — load an example and click <strong>Run Triage</strong>
           </span>
           <button className="btn btn-primary" onClick={onGoTriage} style={{ flexShrink: 0 }}>
@@ -580,7 +572,7 @@ import OverviewPage from './overview.jsx';
       const full = VERDICT_LABEL[display] || display;
       return (
         <span className={`badge ${cls}`}
-          style={size === 'sm' ? { fontSize: '0.65rem', padding: '3px 8px' } : { fontSize: '0.7rem', padding: '4px 12px' }}
+          style={size === 'sm' ? { fontSize: 'var(--fs-caption)', padding: '3px 8px' } : { fontSize: 'var(--fs-caption)', padding: '4px 12px' }}
           title={size === 'sm' ? full : undefined}>
           {size === 'sm' ? full.replace(' RISK', '') : full}
         </span>
@@ -598,11 +590,11 @@ import OverviewPage from './overview.jsx';
             const label = info ? `${t} · ${info.name}` : t;
             const title = info ? `Tactic: ${info.tactic} | NIST CSF: ${info.nist} — ${info.nistLabel}` : t;
             return (
-              <span key={t} className="badge badge-accent" title={title} style={{ fontSize: '0.65rem' }}>{label}</span>
+              <span key={t} className="badge badge-accent" title={title} style={{ fontSize: 'var(--fs-caption)' }}>{label}</span>
             );
           })}
           {phase && (
-            <span className="badge badge-medium" title={phaseInfo ? phaseInfo.desc : phase} style={{ fontSize: '0.65rem' }}>
+            <span className="badge badge-medium" title={phaseInfo ? phaseInfo.desc : phase} style={{ fontSize: 'var(--fs-caption)' }}>
               {phaseInfo ? `NIST 800-61 Phase ${phaseInfo.num}: ${phase}` : phase}
             </span>
           )}
@@ -615,14 +607,14 @@ import OverviewPage from './overview.jsx';
       return (
         <div style={{ margin: '16px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <span className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>RISK SCORE</span>
+            <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>RISK SCORE</span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
               <span className="mono" style={{
-                fontSize: '3rem', fontWeight: 700, color, lineHeight: 1,
+                fontSize: 'var(--fs-hero)', fontWeight: 700, color, lineHeight: 1,
                 animation: 'countUp 0.4s ease-out both',
               }}>{riskScore}</span>
-              <span className="mono" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/100</span>
-              <span className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginLeft: 8 }}>CONF {confidence}%</span>
+              <span className="mono" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>/100</span>
+              <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginLeft: 8 }}>CONF {confidence}%</span>
             </div>
           </div>
           <div className="score-bar-track">
@@ -659,12 +651,12 @@ import OverviewPage from './overview.jsx';
         }}>
           <div style={{ padding: '12px 14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-              <span className="mono" style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: isSkipped ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+              <span className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: isSkipped ? 'var(--text-muted)' : 'var(--text-primary)' }}>
                 {isSkipped ? '⊘ ' : ''}{label}
               </span>
               {isSkipped
                 ? <span className="badge badge-low" style={{ opacity: 0.7 }}>SKIPPED</span>
-                : <span className="mono" style={{ fontSize: '0.75rem', color: signal.score > 0 ? barColor : 'var(--text-muted)', fontWeight: 600 }}>{signal.score}/{maxPts}</span>
+                : <span className="mono" style={{ fontSize: 'var(--fs-small)', color: signal.score > 0 ? barColor : 'var(--text-muted)', fontWeight: 600 }}>{signal.score}/{maxPts}</span>
               }
             </div>
             {!isSkipped && (
@@ -673,20 +665,20 @@ import OverviewPage from './overview.jsx';
               </div>
             )}
             <div ref={detailRef} style={{
-              fontSize: '0.75rem', color: isSkipped ? 'var(--text-muted)' : 'var(--text-secondary)', lineHeight: 1.5,
+              fontSize: 'var(--fs-small)', color: isSkipped ? 'var(--text-muted)' : 'var(--text-secondary)', lineHeight: 1.5,
               ...(expanded ? {} : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
             }}>
               {signal.detail}
             </div>
             {(overflowing || expanded) && (
               <button type="button" className="link link--muted" aria-expanded={expanded}
-                style={{ fontSize: '0.68rem', marginTop: 4 }}
+                style={{ fontSize: 'var(--fs-caption)', marginTop: 4 }}
                 onClick={() => setExpanded(e => !e)}>
                 {expanded ? 'show less' : 'show more'}
               </button>
             )}
             {!isSkipped && (
-              <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'right', marginTop: 6 }}>conf {confPct}%</div>
+              <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', textAlign: 'right', marginTop: 6 }}>conf {confPct}%</div>
             )}
           </div>
         </div>
@@ -698,8 +690,8 @@ import OverviewPage from './overview.jsx';
       return (
         <div className="panel" style={{ borderLeft: `3px solid ${color}`, marginTop: 12 }}>
           <div style={{ padding: '14px 16px' }}>
-            <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.08em' }}>RECOMMENDED ACTION</div>
-            <div style={{ color, fontWeight: 600, fontSize: '0.9rem', marginBottom: 8, lineHeight: 1.4 }}>
+            <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.08em' }}>RECOMMENDED ACTION</div>
+            <div style={{ color, fontWeight: 600, fontSize: 'var(--fs-lead)', marginBottom: 8, lineHeight: 1.4 }}>
               {result.recommended_action}
             </div>
             {result.actions?.length > 0 && (
@@ -710,7 +702,7 @@ import OverviewPage from './overview.jsx';
               </div>
             )}
             {result.safety?.human_review_required && (
-              <div className="mono" style={{ color: 'var(--medium)', fontSize: '0.65rem', marginTop: 8 }}>
+              <div className="mono" style={{ color: 'var(--medium)', fontSize: 'var(--fs-caption)', marginTop: 8 }}>
                 ⚠ HUMAN REVIEW REQUIRED — analyst must review before acting on recommendations
               </div>
             )}
@@ -750,7 +742,7 @@ import OverviewPage from './overview.jsx';
         return (
           <div className="panel" style={{ marginTop: 12 }}>
             <div style={{ padding: '12px 16px' }}>
-              <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--success)' }}>
+              <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--success)' }}>
                 {submitted.label === 'fp' ? 'FALSE POSITIVE' : 'TRUE POSITIVE'} recorded
                 {submitted.registryUpdated && ' — IP promoted to FP registry'}
               </span>
@@ -767,11 +759,11 @@ import OverviewPage from './overview.jsx';
               type="text" value={ip} onChange={e => setIp(e.target.value)}
               placeholder="Source IP (optional)" disabled={busy}
               className="mono"
-              style={{ flex: '1 1 140px', minWidth: 120, maxWidth: 200, fontSize: '0.75rem' }}
+              style={{ flex: '1 1 140px', minWidth: 120, maxWidth: 200, fontSize: 'var(--fs-small)' }}
             />
             <button className="btn btn-danger" onClick={() => submit('fp')} disabled={busy}>FALSE POSITIVE</button>
             <button className="btn btn-success" onClick={() => submit('tp')} disabled={busy}>TRUE POSITIVE</button>
-            {failed && <span className="mono" style={{ fontSize: '0.65rem', color: 'var(--critical)' }}>submission failed</span>}
+            {failed && <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--critical)' }}>submission failed</span>}
           </div>
         </div>
       );
@@ -904,8 +896,8 @@ import OverviewPage from './overview.jsx';
                   ].map(item => (
                     <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{item.label}</span>
-                      <span className="mono" style={{ fontSize: '0.75rem', fontWeight: 600, color: item.color, marginLeft: 'auto' }}>{item.count}</span>
+                      <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{item.label}</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-small)', fontWeight: 600, color: item.color, marginLeft: 'auto' }}>{item.count}</span>
                     </div>
                   ))}
                 </div>
@@ -1021,7 +1013,7 @@ import OverviewPage from './overview.jsx';
         <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--medium)' }}>
           <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Malware Evidence</span>
-            <span className="badge" style={{ fontSize: '0.55rem', background: 'var(--medium-dim)', color: 'var(--medium)', border: '1px solid var(--medium)' }}>FILE REPUTATION</span>
+            <span className="badge" style={{ fontSize: 'var(--fs-micro)', background: 'var(--medium-dim)', color: 'var(--medium)', border: '1px solid var(--medium)' }}>FILE REPUTATION</span>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {files.map((f, i) => {
@@ -1037,28 +1029,28 @@ import OverviewPage from './overview.jsx';
               return (
                 <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {f.path && (
-                    <div className="mono" style={{ fontSize: '0.78rem', fontWeight: 600, wordBreak: 'break-all' }}>{f.path}</div>
+                    <div className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 600, wordBreak: 'break-all' }}>{f.path}</div>
                   )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     {hasEmbedded && (
-                      <span className="badge" style={{ fontSize: '0.6rem', background: ratioBg, color: ratioColor, border: `1px solid ${ratioColor}` }}>
+                      <span className="badge" style={{ fontSize: 'var(--fs-caption)', background: ratioBg, color: ratioColor, border: `1px solid ${ratioColor}` }}>
                         VirusTotal {f.vt_positives}/{f.vt_total} engines
                       </span>
                     )}
                     {!hasEmbedded && lookup && (
-                      <span className="badge" style={{ fontSize: '0.6rem', background: ratioBg, color: ratioColor, border: `1px solid ${ratioColor}` }}>
+                      <span className="badge" style={{ fontSize: 'var(--fs-caption)', background: ratioBg, color: ratioColor, border: `1px solid ${ratioColor}` }}>
                         {lookup.is_malicious ? 'MALICIOUS' : 'CLEAN'} · {lookup.source}
                         {lookup.positives != null && lookup.total != null ? ` ${lookup.positives}/${lookup.total}` : ''}
                       </span>
                     )}
                     {f.fim_action && (
-                      <span className="badge badge-accent" style={{ fontSize: '0.6rem' }}>
+                      <span className="badge badge-accent" style={{ fontSize: 'var(--fs-caption)' }}>
                         FIM: {f.fim_action}{f.fim_action === 'deleted' ? ' (Wazuh active response)' : ''}
                       </span>
                     )}
                   </div>
                   {hash && (
-                    <div className="mono" style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }} title={hash}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }} title={hash}>
                       {hash.slice(0, 16)}… ({hash.length === 64 ? 'sha256' : hash.length === 40 ? 'sha1' : 'md5'})
                     </div>
                   )}
@@ -1067,7 +1059,7 @@ import OverviewPage from './overview.jsx';
                     if (!href) return null;
                     return (
                       <a href={href} target="_blank" rel="noopener noreferrer"
-                         style={{ fontSize: '0.68rem', color: 'var(--accent)' }}>
+                         style={{ fontSize: 'var(--fs-caption)', color: 'var(--accent)' }}>
                         VirusTotal report →
                       </a>
                     );
@@ -1075,7 +1067,7 @@ import OverviewPage from './overview.jsx';
                 </div>
               );
             })}
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', fontStyle: 'italic' }}>
               ADTE recommends containment — Wazuh's active response is the executor. ADTE never deletes.
             </div>
           </div>
@@ -1098,23 +1090,23 @@ import OverviewPage from './overview.jsx';
               <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span className="mono">{caseInfo.case_id}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {caseInfo.escalated && <span className="badge badge-high" style={{ fontSize: '0.55rem' }}>ESCALATED</span>}
+                  {caseInfo.escalated && <span className="badge badge-high" style={{ fontSize: 'var(--fs-micro)' }}>ESCALATED</span>}
                   <VerdictBadge verdict={caseInfo.case_verdict} riskScore={caseInfo.case_score} />
                 </div>
               </div>
-              <div className="panel-body" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="panel-body" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div>
                   {caseInfo.alert_count} correlated alert{caseInfo.alert_count === 1 ? '' : 's'} in the {caseInfo.window_minutes} min window
                   · case score <span className="mono" style={{ fontWeight: 600 }}>{caseInfo.case_score}</span>
                 </div>
                 {caseInfo.kill_chain?.detected && <TacticChips tactics={caseInfo.kill_chain.tactics_in_order} />}
                 {caseInfo.related_incident_ids?.length > 0 && (
-                  <div className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
                     Related: {caseInfo.related_incident_ids.join(', ')}
                   </div>
                 )}
                 {onOpenCase && (
-                  <button className="btn" style={{ alignSelf: 'flex-start', fontSize: '0.72rem' }}
+                  <button className="btn" style={{ alignSelf: 'flex-start', fontSize: 'var(--fs-small)' }}
                     onClick={() => onOpenCase(caseInfo.case_id)}>
                     View case →
                   </button>
@@ -1129,15 +1121,15 @@ import OverviewPage from './overview.jsx';
               <div className="panel" style={{ marginTop: 12 }}>
                 <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span>Summary</span>
-                  <span className={`badge ${isMock ? '' : 'badge-accent'}`} style={{ fontSize: '0.55rem' }}>
+                  <span className={`badge ${isMock ? '' : 'badge-accent'}`} style={{ fontSize: 'var(--fs-micro)' }}>
                     {isMock ? 'DETERMINISTIC' : 'CLAUDE'}
                   </span>
                 </div>
-                <div className="panel-body" style={{ fontSize: '0.8rem', lineHeight: 1.65, color: 'var(--text-secondary)' }}>
+                <div className="panel-body" style={{ fontSize: 'var(--fs-body)', lineHeight: 1.65, color: 'var(--text-secondary)' }}>
                   {result.report.one_paragraph_summary}
                 </div>
                 {result.report.confidence_note && (
-                  <div style={{ padding: '4px 12px 10px', fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  <div style={{ padding: '4px 12px 10px', fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                     {result.report.confidence_note}
                   </div>
                 )}
@@ -1145,7 +1137,7 @@ import OverviewPage from './overview.jsx';
             );
           })()}
           <div style={{ marginTop: 16 }}>
-            <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 10 }}>SIGNAL BREAKDOWN</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 10 }}>SIGNAL BREAKDOWN</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
               {SIGNAL_ORDER.map(name => {
                 const s = signalSummary[name];
@@ -1156,7 +1148,7 @@ import OverviewPage from './overview.jsx';
           {result.report && <MitrePanel report={result.report} />}
           <ActionBanner result={result} />
           <FeedbackPanel result={result} />
-          <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: 14, display: 'flex', gap: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginTop: 14, display: 'flex', gap: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             {result.report?.incident_id && <span>INC: {result.report.incident_id}</span>}
             {result.report?.user && <span>USER: {result.report.user}</span>}
             {result.report?.timestamp && <span>{result.report.timestamp.slice(0,19).replace('T',' ')} UTC</span>}
@@ -1188,7 +1180,7 @@ import OverviewPage from './overview.jsx';
                 {techniques.map(t => (
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <span className="badge badge-accent">{t.id}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.name}</span>
+                    <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{t.name}</span>
                   </div>
                 ))}
               </div>
@@ -1346,27 +1338,27 @@ import OverviewPage from './overview.jsx';
           {/* Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>HOURS</label>
+              <label className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>HOURS</label>
               <input type="number" min="1" max="168" value={hours}
                 onChange={e => setHours(Math.max(1, Math.min(168, parseInt(e.target.value) || 24)))}
-                style={{ width: 56, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem' }} />
+                style={{ width: 56, fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--fs-small)' }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>LIMIT</label>
+              <label className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>LIMIT</label>
               <input type="number" min="1" max="500" value={limit}
                 onChange={e => setLimit(Math.max(1, Math.min(500, parseInt(e.target.value) || 50)))}
-                style={{ width: 60, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem' }} />
+                style={{ width: 60, fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--fs-small)' }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>LEVEL</label>
+              <label className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>LEVEL</label>
               <input type="number" min="1" max="15" value={minLevel}
                 onChange={e => setMinLevel(Math.max(1, Math.min(15, parseInt(e.target.value) || 1)))}
-                style={{ width: 50, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem' }} />
+                style={{ width: 50, fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--fs-small)' }} />
             </div>
             <button className="btn btn-primary" onClick={handleRefresh} disabled={loading}>
               {loading ? 'Loading…' : 'Refresh'}
             </button>
-            <span className="mono" style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+            <span className="mono" style={{ marginLeft: 'auto', fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
               {lastFetch ? `Last: ${lastFetch.toLocaleTimeString()}` : ''}
             </span>
           </div>
@@ -1394,18 +1386,18 @@ import OverviewPage from './overview.jsx';
                   <div key={row.incident_id}>
                     <div className="data-table-row" style={{ gridTemplateColumns: colTemplate }}
                       onClick={() => onLoadIncident(row)}>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
                         {row.timestamp ? row.timestamp.slice(11,19) : '—'}
                       </span>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{row.incident_id}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.user}</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{row.incident_id}</span>
+                      <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.user}</span>
                       {row.source_ip
-                        ? <InlineLink mono style={{ fontSize: '0.75rem' }}
+                        ? <InlineLink mono style={{ fontSize: 'var(--fs-small)' }}
                             onClick={() => onGoIntel && onGoIntel(row.source_ip)}
                             title={`Look up ${row.source_ip} in Threat Intel`}>
                             {row.source_ip}
                           </InlineLink>
-                        : <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>—</span>}
+                        : <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>—</span>}
                       <RiskCell score={row.risk_score} color={VERDICT_COLOR[getDisplayVerdict(row.verdict, row.risk_score)]} />
                       <VerdictBadge verdict={row.verdict} riskScore={row.risk_score} size="sm" />
                       <span className="badge badge-low">OPEN</span>
@@ -1434,7 +1426,7 @@ import OverviewPage from './overview.jsx';
       const caseSummaries = meta.cases || [];
       return (
         <div style={{ marginBottom: 24 }}>
-          <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>
             BATCH — {meta.count} alerts · <span style={{ color: 'var(--success)' }}>{meta.succeeded} triaged</span>
             {meta.failed > 0 && <> · <span style={{ color: 'var(--medium)' }}>{meta.failed} failed</span></>}
           </div>
@@ -1446,11 +1438,11 @@ import OverviewPage from './overview.jsx';
                 <div key={c.case_id} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: onOpenCase ? 'pointer' : 'default', borderLeft: `3px solid ${c.escalated ? 'var(--high)' : 'var(--accent)'}` }}
                   onClick={onOpenCase ? () => onOpenCase(c.case_id) : undefined}
                   title={onOpenCase ? `Open ${c.case_id} in the Cases view` : c.case_id}>
-                  <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{c.case_id}</span>
-                  <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{c.alert_count} alert{c.alert_count === 1 ? '' : 's'}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-secondary)' }}>{c.case_id}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>{c.alert_count} alert{c.alert_count === 1 ? '' : 's'}</span>
                   <VerdictBadge verdict={c.case_verdict} riskScore={c.case_score} />
-                  {c.escalated && <span className="badge badge-high" style={{ fontSize: '0.5rem' }}>ESCALATED</span>}
-                  {c.kill_chain?.detected && <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--high)' }} title={c.kill_chain.tactics_in_order.join(' → ')}>⛓</span>}
+                  {c.escalated && <span className="badge badge-high" style={{ fontSize: 'var(--fs-micro)' }}>ESCALATED</span>}
+                  {c.kill_chain?.detected && <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--high)' }} title={c.kill_chain.tactics_in_order.join(' → ')}>⛓</span>}
                 </div>
               ))}
               </div>
@@ -1464,8 +1456,8 @@ import OverviewPage from './overview.jsx';
               if (!r.ok) {
                 return (
                   <div key={r.index} className="data-table-row" style={{ gridTemplateColumns: '32px 1fr', cursor: 'default' }}>
-                    <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{r.index + 1}</span>
-                    <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--medium)' }}>⚠ {r.error}</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>{r.index + 1}</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--medium)' }}>⚠ {r.error}</span>
                   </div>
                 );
               }
@@ -1475,12 +1467,12 @@ import OverviewPage from './overview.jsx';
                 <div key={r.index}>
                   <div className="data-table-row" style={{ gridTemplateColumns: colTemplate, background: focused ? 'var(--accent-dim)' : undefined }}
                     onClick={() => onSelect(r)} title="Show full triage result">
-                    <span className="mono" style={{ fontSize: '0.75rem', color: focused ? 'var(--accent)' : 'var(--text-muted)' }}>{r.index + 1}</span>
-                    <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.incident_id || '—'}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.user || '—'}</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-small)', color: focused ? 'var(--accent)' : 'var(--text-muted)' }}>{r.index + 1}</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.incident_id || '—'}</span>
+                    <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.report?.user || '—'}</span>
                     <RiskCell score={r.risk_score} color={VERDICT_COLOR[getDisplayVerdict(r.verdict, r.risk_score)]} />
                     <VerdictBadge verdict={r.verdict} riskScore={r.risk_score} size="sm" />
-                    <span className="mono" style={{ fontSize: '0.68rem', color: r.case ? (r.case.escalated ? 'var(--high)' : 'var(--accent)') : 'var(--text-muted)' }}
+                    <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: r.case ? (r.case.escalated ? 'var(--high)' : 'var(--accent)') : 'var(--text-muted)' }}
                       title={r.case ? r.case.case_id : 'Not correlated'}>
                       {r.case ? r.case.case_id.slice(-6) : '—'}
                     </span>
@@ -1508,11 +1500,11 @@ import OverviewPage from './overview.jsx';
       if (!tactics || tactics.length === 0) return null;
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>KILL CHAIN</span>
+          <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>KILL CHAIN</span>
           {tactics.map((t, i) => (
             <React.Fragment key={`${t}-${i}`}>
-              {i > 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>→</span>}
-              <span className="badge badge-high" style={{ fontSize: '0.55rem' }}>{t}</span>
+              {i > 0 && <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>→</span>}
+              <span className="badge badge-high" style={{ fontSize: 'var(--fs-micro)' }}>{t}</span>
             </React.Fragment>
           ))}
         </div>
@@ -1592,11 +1584,11 @@ import OverviewPage from './overview.jsx';
                   <div key={c.case_id}>
                     <div className="data-table-row" style={{ gridTemplateColumns: colTemplate, background: expanded ? 'var(--accent-dim)' : undefined }}
                       onClick={() => setExpandedId(expanded ? null : c.case_id)} title={expanded ? 'Collapse' : 'Expand case detail'}>
-                      <span className="mono" style={{ fontSize: '0.72rem', color: expanded ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-small)', color: expanded ? 'var(--accent)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {c.case_id}{c.escalated && <span style={{ color: 'var(--high)', marginLeft: 6 }} title="Escalated by correlation">▲</span>}
                       </span>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{c.alert_count}</span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{c.alert_count}</span>
+                      <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                         title={entities.join(', ')}>
                         {entities[0] || '—'}{entities.length > 1 && <span style={{ color: 'var(--text-muted)' }}> +{entities.length - 1}</span>}
                       </span>
@@ -1604,20 +1596,20 @@ import OverviewPage from './overview.jsx';
                         <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                           <div style={{ width: `${c.case_score}%`, height: '100%', background: VERDICT_COLOR[c.case_verdict], borderRadius: 2 }} />
                         </div>
-                        <span className="mono" style={{ fontSize: '0.75rem', color: VERDICT_COLOR[c.case_verdict], fontWeight: 600 }}>{c.case_score}</span>
+                        <span className="mono" style={{ fontSize: 'var(--fs-small)', color: VERDICT_COLOR[c.case_verdict], fontWeight: 600 }}>{c.case_score}</span>
                       </div>
                       <VerdictBadge verdict={c.case_verdict} riskScore={c.case_score} />
-                      <span className="mono" style={{ fontSize: '0.75rem', color: c.kill_chain?.detected ? 'var(--high)' : 'var(--text-muted)' }}
+                      <span className="mono" style={{ fontSize: 'var(--fs-small)', color: c.kill_chain?.detected ? 'var(--high)' : 'var(--text-muted)' }}
                         title={c.kill_chain?.detected ? c.kill_chain.tactics_in_order.join(' → ') : 'No kill-chain progression'}>
                         {c.kill_chain?.detected ? '⛓ ✓' : '—'}
                       </span>
-                      <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
                         {(c.last_activity || '').slice(0, 19).replace('T', ' ')}
-                        {c.status === 'open' && <span className="badge badge-low" style={{ marginLeft: 6, fontSize: '0.5rem' }}>OPEN</span>}
+                        {c.status === 'open' && <span className="badge badge-low" style={{ marginLeft: 6, fontSize: 'var(--fs-micro)' }}>OPEN</span>}
                       </span>
                     </div>
                     {expanded && !detail && (
-                      <div className="mono" style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', fontSize: '0.7rem', color: detailError ? 'var(--medium)' : 'var(--text-muted)' }}>
+                      <div className="mono" style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-caption)', color: detailError ? 'var(--medium)' : 'var(--text-muted)' }}>
                         {detailError ? `⚠ ${detailError}` : 'Loading…'}
                       </div>
                     )}
@@ -1632,7 +1624,7 @@ import OverviewPage from './overview.jsx';
                           <div>
                             <div className="micro-label" style={{ marginBottom: 6 }}>ESCALATION RATIONALE</div>
                             {(detail.escalation_rationale || []).map((r, i) => (
-                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '2px 0' }}>
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', padding: '2px 0' }}>
                                 <span>{r.detail}</span>
                                 <span className="mono" style={{ color: r.points >= 0 ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
                                   {r.points >= 0 ? `+${r.points}` : r.points}
@@ -1645,7 +1637,7 @@ import OverviewPage from './overview.jsx';
                               MEMBER ALERTS ({(detail.members || []).length})
                             </div>
                             {(detail.members || []).map((m, i) => (
-                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 60px 90px', gap: 8, alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', padding: '3px 0' }}>
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 60px 90px', gap: 8, alignItems: 'center', fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', padding: '3px 0' }}>
                                 <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.incident_id}</span>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.user || '—'}</span>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.rule_name || ''}>
@@ -1661,7 +1653,7 @@ import OverviewPage from './overview.jsx';
                                 <VerdictBadge verdict={m.verdict} riskScore={m.risk_score} size="sm" />
                               </div>
                             ))}
-                            <div className="mono" style={{ marginTop: 6, fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                            <div className="mono" style={{ marginTop: 6, fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
                               Members are stored summaries — re-run an incident through Triage for the full signal breakdown.
                             </div>
                           </div>
@@ -1709,7 +1701,7 @@ import OverviewPage from './overview.jsx';
             return (
               <div key={name} className="panel animate-in" style={{ marginBottom: 12, borderLeft: `3px solid ${sigColor}` }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span className="mono" style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                     {SIGNAL_LABELS[name]}
                   </span>
                   <span className="badge" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
@@ -1717,17 +1709,17 @@ import OverviewPage from './overview.jsx';
                   </span>
                 </div>
                 <div style={{ padding: '14px 16px' }}>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>{meta.description}</p>
+                  <p style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>{meta.description}</p>
 
                   {result && s && (
                     <div style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-                        <span className="mono" style={{ fontSize: '1.8rem', fontWeight: 700, color: isSkipped ? 'var(--text-muted)' : barColor, lineHeight: 1 }}>
+                        <span className="mono" style={{ fontSize: 'var(--fs-display)', fontWeight: 700, color: isSkipped ? 'var(--text-muted)' : barColor, lineHeight: 1 }}>
                           {isSkipped ? '—' : score}
                         </span>
-                        <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>/ {maxPts} pts</span>
+                        <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>/ {maxPts} pts</span>
                         {confPct !== null && !isSkipped && (
-                          <span className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginLeft: 8 }}>conf {confPct}%</span>
+                          <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginLeft: 8 }}>conf {confPct}%</span>
                         )}
                         {isSkipped && <span className="badge badge-low">SKIPPED</span>}
                       </div>
@@ -1737,7 +1729,7 @@ import OverviewPage from './overview.jsx';
                         </div>
                       )}
                       {(s?.detail || rat?.detail) && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6, background: 'var(--bg-elevated)', padding: '10px 12px', borderLeft: `2px solid ${barColor}`, borderRadius: '0 4px 4px 0' }}>
+                        <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', lineHeight: 1.6, background: 'var(--bg-elevated)', padding: '10px 12px', borderLeft: `2px solid ${barColor}`, borderRadius: '0 4px 4px 0' }}>
                           {s?.detail || rat?.detail}
                         </div>
                       )}
@@ -1751,8 +1743,8 @@ import OverviewPage from './overview.jsx';
                       { label: 'Example', value: meta.example },
                     ].map(({ label, value }) => (
                       <div key={label} style={{ background: 'var(--bg-elevated)', padding: '8px 10px', borderRadius: 4 }}>
-                        <div className="mono" style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{value}</div>
+                        <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+                        <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{value}</div>
                       </div>
                     ))}
                   </div>
@@ -1826,13 +1818,13 @@ import OverviewPage from './overview.jsx';
 
             {/* LEFT — MITRE ATT&CK */}
             <div>
-              <h3 className="heading" style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12 }}>MITRE ATT&CK</h3>
+              <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>MITRE ATT&CK</h3>
 
               {/* Reference cards for techs not in the live result — one card per technique */}
               {referenceTechs.length > 0 && (
                 <div style={{ marginBottom: 14 }}>
                   {referenceTechs.length > 1 && (
-                    <div className="mono" style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em' }}>
                       TECHNIQUE REFERENCES ({referenceTechs.length})
                     </div>
                   )}
@@ -1845,19 +1837,19 @@ import OverviewPage from './overview.jsx';
                         )}
                         <div className="panel-body">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                            <span className="badge badge-accent" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>{t}</span>
-                            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{meta.name || t}</span>
+                            <span className="badge badge-accent" style={{ fontSize: 'var(--fs-small)', padding: '4px 10px' }}>{t}</span>
+                            <span style={{ fontSize: 'var(--fs-body)', fontWeight: 700 }}>{meta.name || t}</span>
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.8rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 'var(--fs-body)' }}>
                             <div>
-                              <div className="mono" style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>TACTIC</div>
+                              <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>TACTIC</div>
                               <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{meta.tactic || '—'}</div>
                             </div>
                             <div>
-                              <div className="mono" style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>NIST CSF DETECT</div>
+                              <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>NIST CSF DETECT</div>
                               <div>
                                 <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{meta.nist || '—'}</span>
-                                {meta.nistLabel && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: '0.75rem' }}>· {meta.nistLabel}</span>}
+                                {meta.nistLabel && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--fs-small)' }}>· {meta.nistLabel}</span>}
                               </div>
                             </div>
                           </div>
@@ -1878,7 +1870,7 @@ import OverviewPage from './overview.jsx';
                   {techniques.map(t => (
                     <div key={t.id} id={`mitre-tech-${t.id}`} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 6 }}>
                       <span className="badge badge-accent">{t.id}</span>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{t.name}</span>
+                      <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600 }}>{t.name}</span>
                     </div>
                   ))}
                 </div>
@@ -1900,7 +1892,7 @@ import OverviewPage from './overview.jsx';
                           background: fired ? 'var(--critical)' : 'transparent',
                           border: `2px solid ${fired ? 'var(--critical)' : 'var(--border-accent)'}`,
                         }} />
-                        <span style={{ fontSize: '0.8rem', color: fired ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: fired ? 600 : 400 }}>{tactic}</span>
+                        <span style={{ fontSize: 'var(--fs-body)', color: fired ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: fired ? 600 : 400 }}>{tactic}</span>
                         {fired && <span className="badge badge-critical" style={{ marginLeft: 'auto' }}>DETECTED</span>}
                       </div>
                     );
@@ -1911,13 +1903,13 @@ import OverviewPage from './overview.jsx';
 
             {/* RIGHT — NIST */}
             <div id="mitre-nist-section">
-              <h3 className="heading" style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 12 }}>NIST SP 800-61 Rev. 2</h3>
+              <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>NIST SP 800-61 Rev. 2</h3>
 
               {/* Phase reference cards — one per phase, shown when arriving from audit log NIST badge */}
               {focusNistPhases && focusNistPhases.length > 0 && (
                 <div style={{ marginBottom: 14 }}>
                   {focusNistPhases.length > 1 && (
-                    <div className="mono" style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em' }}>
                       INCIDENT HANDLING PHASES ({focusNistPhases.length})
                     </div>
                   )}
@@ -1930,10 +1922,10 @@ import OverviewPage from './overview.jsx';
                         )}
                         <div className="panel-body">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                            <span className="badge badge-medium" style={{ fontSize: '0.7rem', padding: '3px 10px' }}>Phase {ph.num}</span>
-                            <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{ph.fullName || phase}</span>
+                            <span className="badge badge-medium" style={{ fontSize: 'var(--fs-caption)', padding: '3px 10px' }}>Phase {ph.num}</span>
+                            <span style={{ fontSize: 'var(--fs-lead)', fontWeight: 700 }}>{ph.fullName || phase}</span>
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.65 }}>{ph.desc}</div>
+                          <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.65 }}>{ph.desc}</div>
                         </div>
                       </div>
                     );
@@ -1943,18 +1935,18 @@ import OverviewPage from './overview.jsx';
 
               <div className="panel" style={{ borderLeft: '3px solid var(--accent)', marginBottom: 14 }}>
                 <div className="panel-body">
-                  <div className="mono" style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>DETECT Function — NIST CSF 2.0</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>ADTE's primary coverage area — identifying and analyzing security events in real time.</div>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>DETECT Function — NIST CSF 2.0</div>
+                  <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)' }}>ADTE's primary coverage area — identifying and analyzing security events in real time.</div>
                 </div>
               </div>
 
               {nistPhases.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 8 }}>FIRED CATEGORIES</div>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>FIRED CATEGORIES</div>
                   {nistPhases.map(phase => (
                     <div key={phase} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', marginBottom: 4 }}>
                       <span className="badge badge-accent">{phase}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>
                         {phase.startsWith('DE.CM-1') ? 'Network monitoring'
                           : phase.startsWith('DE.CM-3') ? 'Personnel activity monitoring'
                           : phase.startsWith('DE.CM-7') ? 'Monitoring for unauthorised access'
@@ -1965,7 +1957,7 @@ import OverviewPage from './overview.jsx';
                 </div>
               )}
 
-              <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 8 }}>CSF 2.0 FUNCTIONS</div>
+              <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>CSF 2.0 FUNCTIONS</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
                 {NIST_FUNCTIONS.map(fn => (
                   <span key={fn} className={`badge ${fn === 'DETECT' ? 'badge-accent' : ''}`}
@@ -1976,7 +1968,7 @@ import OverviewPage from './overview.jsx';
               </div>
 
               <div className="panel">
-                <div className="panel-body" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                <div className="panel-body" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)', lineHeight: 1.6 }}>
                   ADTE covers the <strong style={{ color: 'var(--accent)' }}>DETECT</strong> function.
                   Response actions (<strong>RESPOND</strong>) are not implemented — ADTE recommends only; the safety-gate config is reserved for a future execution layer.
                 </div>
@@ -2048,17 +2040,17 @@ import OverviewPage from './overview.jsx';
           {/* IP Reputation Signal — from last triage */}
           {result && (
             <>
-              <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>IP REPUTATION SIGNAL — LAST TRIAGE</div>
+              <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>IP REPUTATION SIGNAL — LAST TRIAGE</div>
               <div className="panel" style={{ marginBottom: repIps.length > 0 ? 10 : 20 }}>
                 <div className="panel-body">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                    <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>SIGNAL SCORE</span>
-                    <span className="mono" style={{ fontSize: '0.8rem', color: repColor, fontWeight: 600 }}>{repScore}/{repMaxPts} pts · conf {Math.round(repConf * 100)}%</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>SIGNAL SCORE</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-body)', color: repColor, fontWeight: 600 }}>{repScore}/{repMaxPts} pts · conf {Math.round(repConf * 100)}%</span>
                   </div>
                   <div className="score-bar-track" style={{ height: 5, marginBottom: 10 }}>
                     <div style={{ width: `${Math.min(100, (repScore / repMaxPts) * 100)}%`, height: '100%', background: repColor, borderRadius: 3 }} />
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{repDetail || 'No detail available.'}</div>
+                  <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{repDetail || 'No detail available.'}</div>
                 </div>
               </div>
               {repIps.length > 0 && (
@@ -2071,7 +2063,7 @@ import OverviewPage from './overview.jsx';
                       <div key={ip} className="data-table-row" style={{ gridTemplateColumns: '1fr 80px 1fr', cursor: 'pointer' }}
                         onClick={() => { setIntelIp(ip); setIntelError(null); setIntelResult(null); }}
                         title={`Populate lookup for ${ip}`}>
-                        <InlineLink mono style={{ fontSize: '0.8rem', color: repIsMalicious ? 'var(--critical)' : undefined }}
+                        <InlineLink mono style={{ fontSize: 'var(--fs-body)', color: repIsMalicious ? 'var(--critical)' : undefined }}
                           onClick={() => { setIntelIp(ip); setIntelError(null); setIntelResult(null); }}>
                           {ip}
                         </InlineLink>
@@ -2079,7 +2071,7 @@ import OverviewPage from './overview.jsx';
                           <div style={{ width: 32, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                             <div style={{ width: `${Math.round(repConf * 100)}%`, height: '100%', background: repColor, borderRadius: 2 }} />
                           </div>
-                          <span className="mono" style={{ fontSize: '0.7rem', color: repColor }}>{Math.round(repConf * 100)}</span>
+                          <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: repColor }}>{Math.round(repConf * 100)}</span>
                         </div>
                         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                           {repIsMalicious
@@ -2090,7 +2082,7 @@ import OverviewPage from './overview.jsx';
                       </div>
                     ))}
                   </div>
-                  <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 8, textAlign: 'right' }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8, textAlign: 'right' }}>
                     Click any IP to populate the lookup below
                   </div>
                 </>
@@ -2106,7 +2098,7 @@ import OverviewPage from './overview.jsx';
               type="text" value={intelIp} onChange={e => setIntelIp(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleLookup()}
               placeholder="Enter IPv4 address (e.g. 198.51.100.23)"
-              className="mono" style={{ flex: 1, fontSize: '0.85rem' }}
+              className="mono" style={{ flex: 1, fontSize: 'var(--fs-body)' }}
             />
             <button className="btn btn-primary" onClick={handleLookup} disabled={intelLoading || !intelIp.trim()}>
               {intelLoading ? 'Loading…' : 'Enrich'}
@@ -2120,26 +2112,26 @@ import OverviewPage from './overview.jsx';
           {intelResult && (
             <div className="panel" style={{ marginBottom: 20 }}>
               <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="mono" style={{ fontSize: '1.3rem', fontWeight: 500 }}>{intelResult.ip}</span>
-                <span className={`badge ${intelResult.is_malicious ? 'badge-critical' : 'badge-success'}`} style={{ fontSize: '0.75rem', padding: '4px 12px' }}>
+                <span className="mono" style={{ fontSize: 'var(--fs-title)', fontWeight: 500 }}>{intelResult.ip}</span>
+                <span className={`badge ${intelResult.is_malicious ? 'badge-critical' : 'badge-success'}`} style={{ fontSize: 'var(--fs-small)', padding: '4px 12px' }}>
                   {intelResult.is_malicious ? 'MALICIOUS' : 'CLEAN'}
                 </span>
               </div>
               <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
                 <div>
-                  <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 4 }}>CONFIDENCE</div>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 4 }}>CONFIDENCE</div>
                   <div className="score-bar-track" style={{ height: 4, marginBottom: 4 }}>
                     <div style={{ width: `${(intelResult.confidence * 100).toFixed(0)}%`, height: '100%', background: verdictColor, borderRadius: 2 }} />
                   </div>
-                  <span className="mono" style={{ fontSize: '0.8rem', color: verdictColor, fontWeight: 600 }}>{(intelResult.confidence * 100).toFixed(0)}%</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-body)', color: verdictColor, fontWeight: 600 }}>{(intelResult.confidence * 100).toFixed(0)}%</span>
                 </div>
                 <div>
-                  <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 4 }}>SOURCE</div>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{intelResult.source}</span>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 4 }}>SOURCE</div>
+                  <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{intelResult.source}</span>
                 </div>
                 <div>
-                  <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 4 }}>QUERIED</div>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 4 }}>QUERIED</div>
+                  <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>
                     {intelResult.queried_at ? intelResult.queried_at.slice(0,19).replace('T',' ') : '—'}
                   </span>
                 </div>
@@ -2151,7 +2143,7 @@ import OverviewPage from './overview.jsx';
                 const visible = tagsExpanded ? tags : tags.slice(0, TAGS_VISIBLE_DEFAULT);
                 return (
                   <div style={{ padding: '0 16px 14px' }}>
-                    <div className="mono" style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em' }}>
                       TAGS · {tags.length} total
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2159,12 +2151,12 @@ import OverviewPage from './overview.jsx';
                         <span key={tag} className={`badge ${badgeCls}`}>{tag}</span>
                       ))}
                       {hasMore && !tagsExpanded && (
-                        <InlineLink style={{ fontSize: '0.68rem', whiteSpace: 'nowrap' }} onClick={() => setTagsExpanded(true)}>
+                        <InlineLink style={{ fontSize: 'var(--fs-caption)', whiteSpace: 'nowrap' }} onClick={() => setTagsExpanded(true)}>
                           +{tags.length - TAGS_VISIBLE_DEFAULT} more — see all
                         </InlineLink>
                       )}
                       {tagsExpanded && (
-                        <InlineLink muted style={{ fontSize: '0.68rem', whiteSpace: 'nowrap' }} onClick={() => setTagsExpanded(false)}>
+                        <InlineLink muted style={{ fontSize: 'var(--fs-caption)', whiteSpace: 'nowrap' }} onClick={() => setTagsExpanded(false)}>
                           show less
                         </InlineLink>
                       )}
@@ -2181,12 +2173,12 @@ import OverviewPage from './overview.jsx';
               {intelHistory.map((h, i) => (
                 <div key={h.ip} className="hover-row" onClick={() => { setIntelIp(h.ip); setIntelResult(h); setIntelError(null); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < intelHistory.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <span className="mono" style={{ fontSize: '0.8rem', flex: 1, color: h.is_malicious ? 'var(--critical)' : 'var(--text-primary)' }}>{h.ip}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-body)', flex: 1, color: h.is_malicious ? 'var(--critical)' : 'var(--text-primary)' }}>{h.ip}</span>
                   <span className={`badge ${h.is_malicious ? 'badge-critical' : 'badge-success'}`}>
                     {h.is_malicious ? 'MALICIOUS' : 'CLEAN'}
                   </span>
-                  <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{(h.confidence * 100).toFixed(0)}%</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>›</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>{(h.confidence * 100).toFixed(0)}%</span>
+                  <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>›</span>
                 </div>
               ))}
             </div>
@@ -2226,21 +2218,21 @@ import OverviewPage from './overview.jsx';
                     <div style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '2px 8px', borderRadius: 3 }}>
+                          <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '2px 8px', borderRadius: 3 }}>
                             {gate.id}
                           </span>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{gate.name}</span>
+                          <span style={{ fontSize: 'var(--fs-body)', fontWeight: 700 }}>{gate.name}</span>
                         </div>
-                        <span className="mono" style={{ fontSize: '0.65rem', fontWeight: 700, color: statusColor, border: `1px solid ${statusColor}`, padding: '2px 8px', borderRadius: 3 }}>
+                        <span className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 700, color: statusColor, border: `1px solid ${statusColor}`, padding: '2px 8px', borderRadius: 3 }}>
                           {statusLabel}
                         </span>
                       </div>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>{gate.desc}</p>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                      <p style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>{gate.desc}</p>
+                      <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', lineHeight: 1.7 }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Condition:</span> {gate.condition}<br/>
                         <span style={{ color: 'var(--text-secondary)' }}>Action:</span> {gate.action}
                       </div>
-                      <div className="mono" style={{ marginTop: 8, fontSize: '0.65rem', color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '3px 8px', borderRadius: 3, display: 'inline-block' }}>
+                      <div className="mono" style={{ marginTop: 8, fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '3px 8px', borderRadius: 3, display: 'inline-block' }}>
                         {gate.env}
                       </div>
                     </div>
@@ -2304,12 +2296,12 @@ import OverviewPage from './overview.jsx';
                 <div key={w.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <div style={{ width: 12, height: 12, borderRadius: 2, background: w.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 2 }}>{w.label}</div>
+                    <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, marginBottom: 2 }}>{w.label}</div>
                     <div className="score-bar-track" style={{ height: 4 }}>
                       <div style={{ width: `${w.weight}%`, height: '100%', background: w.color, borderRadius: 2 }} />
                     </div>
                   </div>
-                  <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: w.color, width: 28, textAlign: 'right' }}>{w.weight}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, color: w.color, width: 28, textAlign: 'right' }}>{w.weight}</span>
                 </div>
               ))}
               {/* Additive signals — sit outside the 100-pt core donut. */}
@@ -2317,16 +2309,16 @@ import OverviewPage from './overview.jsx';
                 <div key={cc.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingTop: 10, borderTop: i === 0 ? '1px dashed var(--border)' : 'none' }}>
                   <div style={{ width: 12, height: 12, borderRadius: 2, background: cc.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {cc.label}
-                      <span className="badge" style={{ fontSize: '0.5rem', background: `${cc.color}1f`, color: cc.color, border: `1px solid ${cc.color}` }}>ADDITIVE</span>
+                      <span className="badge" style={{ fontSize: 'var(--fs-micro)', background: `${cc.color}1f`, color: cc.color, border: `1px solid ${cc.color}` }}>ADDITIVE</span>
                     </div>
                     <div className="score-bar-track" style={{ height: 4 }}>
                       {/* Additive weights can exceed 100% of the 100-pt core scale; clamp the bar. */}
                       <div style={{ width: `${Math.min(100, cc.weight)}%`, height: '100%', background: cc.color, borderRadius: 2 }} />
                     </div>
                   </div>
-                  <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: cc.color, width: 28, textAlign: 'right' }}>+{cc.weight}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, color: cc.color, width: 28, textAlign: 'right' }}>+{cc.weight}</span>
                 </div>
               ))}
             </div>
@@ -2341,13 +2333,13 @@ import OverviewPage from './overview.jsx';
               <div key={w.name} className="data-table-row" style={{ gridTemplateColumns: '1fr 60px 1fr 80px', cursor: 'default' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 8, height: 8, borderRadius: 2, background: w.color }} />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{w.label}</span>
+                  <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600 }}>{w.label}</span>
                   {w.context && (
-                    <span className="badge" style={{ fontSize: '0.55rem', background: `${w.color}1f`, color: w.color, border: `1px solid ${w.color}` }}>ADDITIVE +{w.weight}</span>
+                    <span className="badge" style={{ fontSize: 'var(--fs-micro)', background: `${w.color}1f`, color: w.color, border: `1px solid ${w.color}` }}>ADDITIVE +{w.weight}</span>
                   )}
                 </div>
-                <span className="mono" style={{ fontSize: '0.8rem', color: w.color, fontWeight: 700 }}>{w.weight}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{w.method}</span>
+                <span className="mono" style={{ fontSize: 'var(--fs-body)', color: w.color, fontWeight: 700 }}>{w.weight}</span>
+                <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{w.method}</span>
                 <span className="badge badge-accent">{w.mitre}</span>
               </div>
             ))}
@@ -2357,7 +2349,7 @@ import OverviewPage from './overview.jsx';
           <div className="panel" style={{ marginBottom: 8 }}>
             <div className="panel-header">Weight Redistribution (Live-SIEM Mode)</div>
             <div className="panel-body">
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+              <p style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', marginBottom: 4 }}>
                 Wazuh and live Sentinel Query-API alerts carry no geolocation or MFA data. The two skipped signals' combined
                 weight ({skipped3.reduce((s,w) => s+w.weight, 0)} pts) is redistributed proportionally
                 across the {remaining3.length} evaluable core signals ({total3} pts → scaled to 100).
@@ -2371,11 +2363,11 @@ import OverviewPage from './overview.jsx';
                   <div key={w.name} className="data-table-row" style={{ gridTemplateColumns: '1fr 80px 100px 80px', cursor: 'default', opacity: 0.5 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 8, height: 8, borderRadius: 2, background: w.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, textDecoration: 'line-through', color: 'var(--text-muted)' }}>{w.label}</span>
+                      <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600, textDecoration: 'line-through', color: 'var(--text-muted)' }}>{w.label}</span>
                     </div>
-                    <span className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{w.weight}</span>
-                    <span className="badge" style={{ fontSize: '0.6rem', alignSelf: 'center' }}>SKIPPED</span>
-                    <span className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>—</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>{w.weight}</span>
+                    <span className="badge" style={{ fontSize: 'var(--fs-caption)', alignSelf: 'center' }}>SKIPPED</span>
+                    <span className="mono" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>—</span>
                   </div>
                 ))}
                 {remaining3.map(w => {
@@ -2385,11 +2377,11 @@ import OverviewPage from './overview.jsx';
                     <div key={w.name} className="data-table-row" style={{ gridTemplateColumns: '1fr 80px 100px 80px', cursor: 'default' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ width: 8, height: 8, borderRadius: 2, background: w.color, flexShrink: 0 }} />
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{w.label}</span>
+                        <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600 }}>{w.label}</span>
                       </div>
-                      <span className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{w.weight}</span>
-                      <span className="mono" style={{ fontSize: '0.8rem', color: w.color, fontWeight: 700 }}>{redist}</span>
-                      <span className="mono" style={{ fontSize: '0.8rem', color: 'var(--success)' }}>+{diff}</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>{w.weight}</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-body)', color: w.color, fontWeight: 700 }}>{redist}</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-body)', color: 'var(--success)' }}>+{diff}</span>
                     </div>
                   );
                 })}
@@ -2500,7 +2492,7 @@ import OverviewPage from './overview.jsx';
       return (
         <div className="view">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <select value={dateRange} onChange={handleDateRangeChange} className="mono" style={{ fontSize: '0.75rem' }}>
+            <select value={dateRange} onChange={handleDateRangeChange} className="mono" style={{ fontSize: 'var(--fs-small)' }}>
               <option value="all">All time</option>
               <option value="24h">Last 24 h</option>
               <option value="7d">Last 7 days</option>
@@ -2530,7 +2522,7 @@ import OverviewPage from './overview.jsx';
                   <div>
                     <div className="micro-label" style={{ marginBottom: 4 }}>INCIDENTS</div>
                     <span style={{ fontSize: 'var(--fs-title)', fontWeight: 700, color: 'var(--text-primary)' }}>{dedupedRows.length}</span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>
+                    <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginLeft: 6 }}>
                       {rows.length > dedupedRows.length ? `unique · ${rows.length} total runs` : 'logged'}
                     </span>
                   </div>
@@ -2556,7 +2548,7 @@ import OverviewPage from './overview.jsx';
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
                         <span className="micro-label">TECHNIQUES ({allTechs.length})</span>
                         {allTechs.length > 0 && (
-                          <InlineLink style={{ fontSize: '0.68rem' }} title="View all techniques in MITRE view"
+                          <InlineLink style={{ fontSize: 'var(--fs-caption)' }} title="View all techniques in MITRE view"
                             onClick={() => onNav('view:mitre', { techs: allTechs })}>
                             open in MITRE →
                           </InlineLink>
@@ -2569,11 +2561,11 @@ import OverviewPage from './overview.jsx';
                             <span key={t} className="badge badge-accent badge-clickable"
                               onClick={() => onNav('view:mitre', { tech: t })}
                               title={meta.name ? `${t} — ${meta.name}\nTactic: ${meta.tactic}\nNIST CSF: ${meta.nist}\n\nClick to view this technique` : t}
-                              style={{ fontSize: '0.65rem' }}>{t}</span>
+                              style={{ fontSize: 'var(--fs-caption)' }}>{t}</span>
                           );
-                        }) : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>}
+                        }) : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>}
                         {allTechs.length > TECH_CLOUD_CAP && (
-                          <InlineLink muted style={{ fontSize: '0.68rem' }} onClick={() => setTechsExpanded(e => !e)}>
+                          <InlineLink muted style={{ fontSize: 'var(--fs-caption)' }} onClick={() => setTechsExpanded(e => !e)}>
                             {techsExpanded ? 'show less' : `+${allTechs.length - TECH_CLOUD_CAP} more`}
                           </InlineLink>
                         )}
@@ -2583,7 +2575,7 @@ import OverviewPage from './overview.jsx';
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
                         <span className="micro-label">NIST PHASES ({allPhases.length})</span>
                         {allPhases.length > 0 && (
-                          <InlineLink style={{ fontSize: '0.68rem' }} title="View all phases in MITRE view"
+                          <InlineLink style={{ fontSize: 'var(--fs-caption)' }} title="View all phases in MITRE view"
                             onClick={() => onNav('view:mitre', { section: 'nist', nistPhases: allPhases })}>
                             open in MITRE →
                           </InlineLink>
@@ -2594,8 +2586,8 @@ import OverviewPage from './overview.jsx';
                           <span key={phase} className="badge badge-medium badge-clickable"
                             onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: phase })}
                             title={`${NIST_PHASE_LABEL[phase] || phase}\n\nClick to view this phase`}
-                            style={{ fontSize: '0.65rem' }}>{phase}</span>
-                        )) : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>}
+                            style={{ fontSize: 'var(--fs-caption)' }}>{phase}</span>
+                        )) : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>}
                       </div>
                     </div>
                   </div>
@@ -2625,12 +2617,12 @@ import OverviewPage from './overview.jsx';
 
                     {/* Incident ID — the single row-level link */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                      <InlineLink mono style={{ fontSize: '0.75rem' }}
+                      <InlineLink mono style={{ fontSize: 'var(--fs-small)' }}
                         onClick={() => onNav(signalDest)} title={signalTip}>
                         {row.incident_id}
-                        {!isLoaded && <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: 4 }}>↩</span>}
+                        {!isLoaded && <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginLeft: 4 }}>↩</span>}
                       </InlineLink>
-                      <span className="mono" style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
                         {row.logged_at ? row.logged_at.slice(0,19).replace('T',' ') : '—'}
                       </span>
                     </div>
@@ -2638,9 +2630,9 @@ import OverviewPage from './overview.jsx';
                     {/* Verdict badge + Risk score — data, not a duplicate link */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                       <VerdictBadge verdict={row.verdict} riskScore={row.risk_score} size="sm" />
-                      <span className="mono" style={{ fontSize: '0.8rem', color: VERDICT_COLOR[row.verdict] || 'var(--text-muted)', fontWeight: 700 }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-body)', color: VERDICT_COLOR[row.verdict] || 'var(--text-muted)', fontWeight: 700 }}>
                         {row.risk_score}
-                        <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: 2 }}>/ 100</span>
+                        <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', fontWeight: 400, marginLeft: 2 }}>/ 100</span>
                       </span>
                     </div>
 
@@ -2656,18 +2648,18 @@ import OverviewPage from './overview.jsx';
                               <div key={t} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
                                 <span className="badge badge-accent badge-clickable"
                                   onClick={() => onNav('view:mitre', { tech: t })} title={tip}
-                                  style={{ fontSize: '0.65rem' }}>
+                                  style={{ fontSize: 'var(--fs-caption)' }}>
                                   {t}
                                 </span>
                                 {meta.tactic && (
-                                  <span style={{ fontSize: '0.52rem', color: 'var(--text-muted)', paddingLeft: 1, letterSpacing: '0.02em' }}>
+                                  <span style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', paddingLeft: 1, letterSpacing: '0.02em' }}>
                                     {meta.tactic}
                                   </span>
                                 )}
                               </div>
                             );
                           })
-                        : <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>
+                        : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>
                       }
                     </div>
 
@@ -2676,11 +2668,11 @@ import OverviewPage from './overview.jsx';
                       <span className="badge badge-medium badge-clickable"
                         onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: row.nist_phase })}
                         title={`${NIST_PHASE_LABEL[row.nist_phase] || 'NIST SP 800-61 Rev. 2 — ' + row.nist_phase}\n\nClick to jump to NIST section in MITRE view`}
-                        style={{ fontSize: '0.65rem', justifySelf: 'start' }}>
+                        style={{ fontSize: 'var(--fs-caption)', justifySelf: 'start' }}>
                         {row.nist_phase}
                       </span>
                     ) : (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>—</span>
+                      <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>
                     )}
 
                   </div>
@@ -2746,7 +2738,7 @@ import OverviewPage from './overview.jsx';
         : null;
 
       const colTemplate = '170px 150px 90px 1fr';
-      const inputStyle = { fontSize: '0.75rem', fontFamily: 'JetBrains Mono, monospace', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)', padding: '4px 8px' };
+      const inputStyle = { fontSize: 'var(--fs-small)', fontFamily: 'JetBrains Mono, monospace', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)', padding: '4px 8px' };
 
       return (
         <div className="view">
@@ -2764,13 +2756,13 @@ import OverviewPage from './overview.jsx';
                 placeholder="Search ID or IP…" style={{ ...inputStyle, minWidth: 180 }} />
               {searchText && (
                 <button onClick={() => setSearchText('')}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem', padding: '2px 4px' }}>✕</button>
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-body)', padding: '2px 4px' }}>✕</button>
               )}
             </div>
 
             {/* Row count badge */}
             {!loading && rows !== null && (
-              <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
                 {searchText
                   ? `${visibleRows.length} of ${rows.length}`
                   : `${rows.length} row${rows.length !== 1 ? 's' : ''}`}
@@ -2799,14 +2791,14 @@ import OverviewPage from './overview.jsx';
               </div>
               {visibleRows.map(row => (
                 <div key={row.id} className="data-table-row" style={{ gridTemplateColumns: colTemplate, cursor: 'default' }}>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
                     {row.submitted_at ? row.submitted_at.slice(0,19).replace('T',' ') : '—'}
                   </span>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{row.incident_id}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{row.incident_id}</span>
                   <span className={`badge ${row.label === 'fp' ? 'badge-critical' : 'badge-success'}`}>
                     {row.label === 'fp' ? 'FALSE POS' : 'TRUE POS'}
                   </span>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{row.ip || '—'}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>{row.ip || '—'}</span>
                 </div>
               ))}
             </div>
@@ -2906,14 +2898,14 @@ import OverviewPage from './overview.jsx';
           <div className="panel" style={{ marginBottom: 16, borderLeft: panelBorder }}>
             <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>ADTE Session</span>
-              <span className={`badge ${keyStatusClass}`} style={{ fontSize: '0.55rem' }}>
+              <span className={`badge ${keyStatusClass}`} style={{ fontSize: 'var(--fs-micro)' }}>
                 {keyStatusLabel}
               </span>
             </div>
             <div className="panel-body">
               {isLoggedIn ? (
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--success)', marginBottom: 10 }}>
+                  <div style={{ fontSize: 'var(--fs-small)', color: 'var(--success)', marginBottom: 10 }}>
                     Authenticated as <strong>{keyRole.replace(/_/g, ' ')}</strong>. Session expires in 8 hours.
                   </div>
                   <button className="btn btn-danger" onClick={handleLogout}>Log Out</button>
@@ -2924,12 +2916,12 @@ import OverviewPage from './overview.jsx';
                     onChange={e => { setAdteApiKey(e.target.value); setKeyStatus(null); setKeyRole(''); }}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()}
                     placeholder="Paste your ADTE passkey…" className="mono"
-                    style={{ width: '100%', fontSize: '0.8rem', marginBottom: 8 }} />
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+                    style={{ width: '100%', fontSize: 'var(--fs-body)', marginBottom: 8 }} />
+                  <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 10 }}>
                     The passkey is exchanged for an HttpOnly session cookie — it is never stored in the browser after login.
                   </div>
                   {keyStatus === 'invalid' && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--high)', marginBottom: 8, fontWeight: 600 }}>
+                    <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--high)', marginBottom: 8, fontWeight: 600 }}>
                       Passkey not recognised — check it matches an <code>ADTE_API_KEY_*</code> value in your <code>.env</code>.
                     </div>
                   )}
@@ -2947,15 +2939,15 @@ import OverviewPage from './overview.jsx';
           {!isLoggedIn && (
             <div className="panel" style={{ marginTop: 16, borderLeft: '3px solid var(--accent)' }}>
               <div className="panel-header">Recruiter access</div>
-              <div className="panel-body" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <div className="panel-body" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                 Trying the live demo? Use the shared analyst passkey below. It runs triage and
                 reads the alert queue, cases, threat intel, and audit log (it cannot delete
                 anything or read configuration).
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                  <code className="mono" style={{ fontSize: '0.72rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', padding: '4px 8px', borderRadius: 4, userSelect: 'all', wordBreak: 'break-all' }}>
+                  <code className="mono" style={{ fontSize: 'var(--fs-small)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', padding: '4px 8px', borderRadius: 4, userSelect: 'all', wordBreak: 'break-all' }}>
                     {RECRUITER_PASSKEY}
                   </code>
-                  <button className="btn" style={{ fontSize: '0.7rem', padding: '5px 12px', flexShrink: 0 }}
+                  <button className="btn" style={{ fontSize: 'var(--fs-caption)', padding: '5px 12px', flexShrink: 0 }}
                     onClick={() => { setAdteApiKey(RECRUITER_PASSKEY); setKeyStatus(null); setKeyRole(''); }}>
                     Fill passkey
                   </button>
@@ -2965,7 +2957,7 @@ import OverviewPage from './overview.jsx';
           )}
 
           <div className="panel" style={{ marginTop: 20, borderLeft: '3px solid var(--medium)' }}>
-            <div className="panel-body" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            <div className="panel-body" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               <strong style={{ color: 'var(--medium)' }}>Note:</strong> LLM output is display-only and never feeds back into scoring.
               All verdicts are deterministic. RBAC is enforced server-side only when <code>ADTE_API_KEY_*</code> env vars are set.
               Threat intel keys (VirusTotal, OTX, AbuseIPDB) are configured server-side via env vars — see <code>.env.example</code>.
@@ -2979,7 +2971,7 @@ import OverviewPage from './overview.jsx';
     /* Agent View — in-progress placeholder                                 */
     /* ------------------------------------------------------------------ */
 
-    function AgentView({ query }) {
+    function AgentView() {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 440, padding: '60px 24px', textAlign: 'center' }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-elevated)', border: '1px solid var(--border-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
@@ -2989,25 +2981,18 @@ import OverviewPage from './overview.jsx';
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <span className="mono" style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.06em' }}>AGENTIC ANALYSIS</span>
-            <span className="badge badge-medium" style={{ fontSize: '0.55rem', letterSpacing: '0.1em' }}>IN PROGRESS</span>
+            <span className="mono" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.06em' }}>AGENTIC ANALYSIS</span>
+            <span className="badge badge-medium" style={{ fontSize: 'var(--fs-micro)', letterSpacing: '0.1em' }}>IN PROGRESS</span>
           </div>
 
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: 500, lineHeight: 1.75, marginBottom: 32 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-body)', maxWidth: 500, lineHeight: 1.75, marginBottom: 32 }}>
             Natural language querying and autonomous alert investigation are under active development.
             This capability will allow analysts to ask questions about incidents, request deeper analysis,
-            and generate guided response recommendations directly from the query bar.
+            and generate guided response recommendations.
           </p>
 
-          {query && (
-            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 20px', maxWidth: 500, width: '100%', marginBottom: 28, textAlign: 'left' }}>
-              <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.08em' }}>YOUR QUERY</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>"{query}"</div>
-            </div>
-          )}
-
           <div className="panel" style={{ borderLeft: '3px solid var(--accent)', maxWidth: 500, width: '100%', textAlign: 'left' }}>
-            <div className="panel-body" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+            <div className="panel-body" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', lineHeight: 1.7 }}>
               <strong style={{ color: 'var(--text-secondary)' }}>Planned capabilities:</strong> on-demand incident summarisation, cross-alert correlation queries, and guided MITRE technique drill-down with full audit trail.
             </div>
           </div>
@@ -3053,8 +3038,6 @@ import OverviewPage from './overview.jsx';
       // this state just mirrors it for the toggle button.
       const [theme, setTheme] = useState(initialTheme);
       const [llmAvailable, setLlmAvailable] = useState(false);
-      const [queryBarInput, setQueryBarInput] = useState('');
-      const [agentQuery, setAgentQuery] = useState('');
       const [mitreHighlight, setMitreHighlight] = useState(null);
       const [mitreFocusTechs, setMitreFocusTechs] = useState(null);
       const [mitreNistPhases2, setMitreNistPhases2] = useState(null);
@@ -3300,13 +3283,13 @@ import OverviewPage from './overview.jsx';
                     <path d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </button>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text-primary)' }}>
                   {VIEW_LABELS[activeView] || activeView}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                {isLive && <span className="mono badge badge-success" style={{ fontSize: '0.6rem' }}>● LIVE</span>}
-                <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TRG/{String(triageCount).padStart(3,'0')}</span>
+                {isLive && <span className="mono badge badge-success" style={{ fontSize: 'var(--fs-caption)' }}>● LIVE</span>}
+                <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>TRG/{String(triageCount).padStart(3,'0')}</span>
                 <UtcClock />
                 <button onClick={toggleTheme} className="theme-toggle" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} />
                 {/* Gear = shortcut to the Settings view (also a nav item now);
@@ -3319,7 +3302,7 @@ import OverviewPage from './overview.jsx';
             </header>
 
             {/* Content */}
-            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 64, minHeight: 0 }}>
+            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 24, minHeight: 0 }}>
               {/* Enter Console lands on Triage (a full workspace for an
                   anonymous visitor) rather than the auth-gated queue — the cold
                   first impression the Overview exists to fix. */}
@@ -3340,14 +3323,14 @@ import OverviewPage from './overview.jsx';
               {activeView === 'safety' && <SafetyView />}
               {activeView === 'audit' && <AuditView result={result} onNav={handleNav} />}
               {activeView === 'settings' && <SettingsView llmAvailable={llmAvailable} />}
-              {activeView === 'agent' && <AgentView query={agentQuery} />}
+              {activeView === 'agent' && <AgentView />}
 
               {activeView === 'triage' && (
                 <div className="triage-layout">
-                  {/* Left: Input — bottom clearance for the query bar comes from
-                      the outer scroll container's paddingBottom, not repeated here */}
+                  {/* Left: Input — bottom clearance comes from the outer scroll
+                      container's paddingBottom, not repeated here */}
                   <div style={{ borderRight: '1px solid var(--border)', padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>ALERT INPUT</div>
+                    <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>ALERT INPUT</div>
                     <textarea
                       value={inputText}
                       onChange={e => { setInputText(e.target.value); setError(null); }}
@@ -3358,15 +3341,15 @@ import OverviewPage from './overview.jsx';
 
                     {/* Scenario tiles — fill space, replace generic Load Example */}
                     <div>
-                      <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>QUICK LOAD</div>
+                      <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>QUICK LOAD</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {EXAMPLE_KEYS.map(key => (
                           <button key={key} className="btn" onClick={() => handleLoadSpecific(key)} disabled={!examples}
                             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left',
                               borderColor: loadedKey === key ? 'var(--accent)' : undefined,
                               background: loadedKey === key ? 'var(--accent-dim)' : undefined }}>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{EXAMPLE_DESCRIPTIONS[key]}</span>
-                            <span className={`badge ${EXAMPLE_BADGE_CLASS[key]}`} style={{ fontSize: '0.5rem', flexShrink: 0, marginLeft: 8 }}>{EXAMPLE_DISPLAY[key]}</span>
+                            <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{EXAMPLE_DESCRIPTIONS[key]}</span>
+                            <span className={`badge ${EXAMPLE_BADGE_CLASS[key]}`} style={{ fontSize: 'var(--fs-micro)', flexShrink: 0, marginLeft: 8 }}>{EXAMPLE_DISPLAY[key]}</span>
                           </button>
                         ))}
                       </div>
@@ -3382,7 +3365,7 @@ import OverviewPage from './overview.jsx';
 
                   {/* Right: Results */}
                   <div style={{ padding: 24, overflowY: 'auto' }}>
-                    <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 12 }}>TRIAGE RESULTS</div>
+                    <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 12 }}>TRIAGE RESULTS</div>
                     {loading && <ResultSkeleton />}
                     {!loading && !result && !batchResults && (
                       <EmptyState
@@ -3409,33 +3392,6 @@ import OverviewPage from './overview.jsx';
             </div>
           </div>
 
-          {/* Query Bar — its `left` tracks the sidebar via the same CSS sibling rules */}
-          <div className="query-bar">
-            <span className="badge badge-accent" style={{ flexShrink: 0, fontSize: '0.55rem' }}>Claude</span>
-            <span className="badge badge-medium" style={{ flexShrink: 0, fontSize: '0.5rem', letterSpacing: '0.08em' }}>COMING SOON</span>
-            <input
-              className="query-input" type="text"
-              value={queryBarInput}
-              onChange={e => setQueryBarInput(e.target.value)}
-              placeholder="Ask ADTE... (agentic queries — not yet implemented)"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && queryBarInput.trim()) {
-                  setAgentQuery(queryBarInput.trim());
-                  setQueryBarInput('');
-                  setActiveView('agent');
-                }
-              }}
-            />
-            <button className="btn btn-primary" style={{ padding: '8px 12px' }}
-              onClick={() => {
-                if (!queryBarInput.trim()) return;
-                setAgentQuery(queryBarInput.trim());
-                setQueryBarInput('');
-                setActiveView('agent');
-              }}>
-              <IconSend size={14} />
-            </button>
-          </div>
         </div>
       );
     }

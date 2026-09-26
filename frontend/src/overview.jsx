@@ -9,7 +9,7 @@ import React from 'react';
 // references/current-claims.md (regenerated from the repos by collect_stats.py).
 // Bump here when the claims file changes.
 const STATS = [
-  { value: '766', label: 'Passing Tests' },
+  { value: '784', label: 'Passing Tests' },
   { value: '7', label: 'Scoring Signals' },
   { value: '2', label: 'Live SIEM Adapters' },
   { value: '42', label: 'ATT&CK Map Entries' },
@@ -155,13 +155,13 @@ const PATCHED_VULNS = [
 function SectionHeading({ eyebrow, title, sub }) {
   return (
     <div style={{ marginBottom: 20 }}>
-      <div className="mono" style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.18em', color: 'var(--brand)', marginBottom: 6 }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, letterSpacing: '0.18em', color: 'var(--brand)', marginBottom: 6 }}>
         {eyebrow}
       </div>
-      <h2 className="heading" style={{ fontSize: '1.7rem', fontWeight: 700, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: 0, textTransform: 'uppercase' }}>
+      <h2 className="heading" style={{ fontSize: 'var(--fs-display)', fontWeight: 700, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: 0, textTransform: 'uppercase' }}>
         {title}
       </h2>
-      {sub && <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '8px 0 0', maxWidth: 720, lineHeight: 1.6 }}>{sub}</p>}
+      {sub && <p style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', margin: '8px 0 0', maxWidth: 720, lineHeight: 1.6 }}>{sub}</p>}
     </div>
   );
 }
@@ -307,14 +307,14 @@ function Hero({ onEnterConsole }) {
     <div className="animate-in" style={{ padding: '48px 0 40px', borderBottom: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 24 }}>
         <LogoMark />
-        <div className="mono" style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.2em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+        <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, letterSpacing: '0.2em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
           Portfolio project · Detection engineering · Live deployment
         </div>
       </div>
       <h1 className="heading" style={{ fontSize: 'clamp(2rem, 5vw, 3.4rem)', fontWeight: 700, lineHeight: 1.05, letterSpacing: '0.01em', margin: '0 0 18px', color: 'var(--text-primary)', textTransform: 'uppercase' }}>
         Autonomous Detection<br />& Triage Engine
       </h1>
-      <p style={{ fontSize: '1rem', lineHeight: 1.7, color: 'var(--text-secondary)', maxWidth: 680, margin: '0 0 16px' }}>
+      <p style={{ fontSize: 'var(--fs-title)', lineHeight: 1.7, color: 'var(--text-secondary)', maxWidth: 680, margin: '0 0 16px' }}>
         ADTE is a source-agnostic triage engine for security alerts. It ingests incidents from
         two live SIEM adapters — Wazuh/OpenSearch and Microsoft Sentinel&apos;s Log Analytics
         Query API — or any pasted incident JSON, enriches them with threat intelligence and
@@ -322,20 +322,20 @@ function Hero({ onEnterConsole }) {
         deterministic verdict with a per-signal rationale an analyst can argue with.
       </p>
       <div style={{ borderLeft: '3px solid var(--brand)', padding: '10px 16px', maxWidth: 680, marginBottom: 28, background: 'var(--bg-surface)' }}>
-        <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+        <span className="mono" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-primary)', fontWeight: 600 }}>
           ADTE recommends. It never executes.
         </span>
-        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+        <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)' }}>
           {' '}Every verdict ends at an explainable recommendation for a human analyst — there is
           no code path that mutates an external system.
         </span>
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" onClick={onEnterConsole} style={{ fontSize: '0.85rem', padding: '10px 22px' }}>
+        <button className="btn btn-primary" onClick={onEnterConsole} style={{ fontSize: 'var(--fs-body)', padding: '10px 22px' }}>
           Enter Console →
         </button>
         <a className="btn" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: '0.85rem', padding: '10px 22px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+          style={{ fontSize: 'var(--fs-body)', padding: '10px 22px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
           View on GitHub
         </a>
       </div>
@@ -367,7 +367,7 @@ function IdentityPanels() {
       {panels.map(p => (
         <div key={p.title} className="panel">
           <div className="panel-header">{p.title}</div>
-          <div className="panel-body" style={{ fontSize: '0.82rem', lineHeight: 1.65, color: 'var(--text-secondary)' }}>{p.body}</div>
+          <div className="panel-body" style={{ fontSize: 'var(--fs-body)', lineHeight: 1.65, color: 'var(--text-secondary)' }}>{p.body}</div>
         </div>
       ))}
     </div>
@@ -386,10 +386,10 @@ function ArchitectureSection() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 12 }}>
         {STAGE_DETAILS.map(d => (
           <div key={d.n} style={{ display: 'flex', gap: 14, padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <div className="mono" style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--brand)', flexShrink: 0, paddingTop: 2 }}>{d.n}</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 700, color: 'var(--brand)', flexShrink: 0, paddingTop: 2 }}>{d.n}</div>
             <div>
-              <div className="mono" style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-primary)', textTransform: 'uppercase', marginBottom: 5 }}>{d.title}</div>
-              <div style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{d.body}</div>
+              <div className="mono" style={{ fontSize: 'var(--fs-small)', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-primary)', textTransform: 'uppercase', marginBottom: 5 }}>{d.title}</div>
+              <div style={{ fontSize: 'var(--fs-body)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{d.body}</div>
             </div>
           </div>
         ))}
@@ -401,8 +401,8 @@ function ArchitectureSection() {
 function BrainHandsSplit() {
   const row = (label, desc) => (
     <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-      <span className="mono" style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent)', flexShrink: 0, minWidth: 74 }}>{label}</span>
-      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{desc}</span>
+      <span className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 700, color: 'var(--accent)', flexShrink: 0, minWidth: 74 }}>{label}</span>
+      <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{desc}</span>
     </div>
   );
   return (
@@ -428,7 +428,7 @@ function BrainHandsSplit() {
           </div>
         </div>
       </div>
-      <div className="mono" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 12, textAlign: 'center', letterSpacing: '0.06em' }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', marginTop: 12, textAlign: 'center', letterSpacing: '0.06em' }}>
         ADTE never deletes and never calls the Wazuh API.
       </div>
     </div>
@@ -445,10 +445,10 @@ function SourcesSection() {
           <div key={s.name} className="panel" style={{ borderTop: `2px solid ${s.tone}` }}>
             <div className="panel-body">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                <span className="mono" style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>{s.name}</span>
-                <span className="mono" style={{ fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.1em', color: s.tone, border: `1px solid ${s.tone}`, borderRadius: 3, padding: '2px 7px' }}>{s.badge}</span>
+                <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>{s.name}</span>
+                <span className="mono" style={{ fontSize: 'var(--fs-micro)', fontWeight: 700, letterSpacing: '0.1em', color: s.tone, border: `1px solid ${s.tone}`, borderRadius: 3, padding: '2px 7px' }}>{s.badge}</span>
               </div>
-              <div style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{s.body}</div>
+              <div style={{ fontSize: 'var(--fs-body)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{s.body}</div>
             </div>
           </div>
         ))}
@@ -466,14 +466,14 @@ function HowToStrip() {
         {HOW_TO_STEPS.map(s => (
           <div key={s.n} style={{ padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 6 }}>
-              <span className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--brand)' }}>{s.n}</span>
-              <span className="mono" style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>{s.title}</span>
+              <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, color: 'var(--brand)' }}>{s.n}</span>
+              <span className="mono" style={{ fontSize: 'var(--fs-small)', fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>{s.title}</span>
             </div>
-            <div style={{ fontSize: '0.76rem', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{s.body}</div>
+            <div style={{ fontSize: 'var(--fs-small)', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{s.body}</div>
           </div>
         ))}
       </div>
-      <div className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 12, letterSpacing: '0.04em' }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginTop: 12, letterSpacing: '0.04em' }}>
         PREFER A TERMINAL? git clone → pip install . → python -m adte triage --file examples/incident_account_takeover_tor_exfil.json — the CLI needs no key.
       </div>
     </div>
@@ -497,11 +497,11 @@ function ViewCardsGrid({ onNav }) {
               </svg>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
-                  <span className="mono" style={{ fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>{v.label}</span>
-                  {v.badge && <span className="badge badge-medium" style={{ fontSize: '0.55rem' }}>{v.badge}</span>}
-                  {v.auth && <span className="mono" style={{ fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-muted)', border: '1px solid var(--border-accent)', borderRadius: 3, padding: '2px 6px' }}>{v.auth}</span>}
+                  <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>{v.label}</span>
+                  {v.badge && <span className="badge badge-medium" style={{ fontSize: 'var(--fs-micro)' }}>{v.badge}</span>}
+                  {v.auth && <span className="mono" style={{ fontSize: 'var(--fs-micro)', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-muted)', border: '1px solid var(--border-accent)', borderRadius: 3, padding: '2px 6px' }}>{v.auth}</span>}
                 </div>
-                <div style={{ fontSize: '0.76rem', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{v.desc}</div>
+                <div style={{ fontSize: 'var(--fs-small)', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{v.desc}</div>
               </div>
             </div>
           </div>
@@ -519,8 +519,8 @@ function SecuritySection() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 12 }}>
         {SECURITY_CONTROLS.map(c => (
           <div key={c.title} style={{ padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
-            <div className="mono" style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: 6 }}>{c.title}</div>
-            <div style={{ fontSize: '0.76rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{c.body}</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: 6 }}>{c.title}</div>
+            <div style={{ fontSize: 'var(--fs-small)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{c.body}</div>
           </div>
         ))}
       </div>
@@ -538,14 +538,14 @@ function PatchedVulnsList() {
           <div key={v.title} className="panel" style={{ borderLeft: `3px solid ${v.tone}` }}>
             <div className="panel-body">
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                <span className="mono" style={{ fontSize: '0.68rem', fontWeight: 700, color: v.tone }}>{String(i + 1).padStart(2, '0')}</span>
-                <span className="mono" style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text-primary)' }}>{v.title}</span>
-                <span className="mono" style={{ fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.1em', color: v.tone, border: `1px solid ${v.tone}`, borderRadius: 3, padding: '2px 7px', textTransform: 'uppercase' }}>{v.sev}</span>
+                <span className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 700, color: v.tone }}>{String(i + 1).padStart(2, '0')}</span>
+                <span className="mono" style={{ fontSize: 'var(--fs-body)', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text-primary)' }}>{v.title}</span>
+                <span className="mono" style={{ fontSize: 'var(--fs-micro)', fontWeight: 700, letterSpacing: '0.1em', color: v.tone, border: `1px solid ${v.tone}`, borderRadius: 3, padding: '2px 7px', textTransform: 'uppercase' }}>{v.sev}</span>
               </div>
               {[['FOUND', v.found], ['IMPACT', v.impact], ['FIX', v.fix]].map(([label, text]) => (
                 <div key={label} style={{ display: 'flex', gap: 12, padding: '5px 0', alignItems: 'baseline' }}>
-                  <span className="mono" style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', flexShrink: 0, minWidth: 52 }}>{label}</span>
-                  <span style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{text}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', flexShrink: 0, minWidth: 52 }}>{label}</span>
+                  <span style={{ fontSize: 'var(--fs-body)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{text}</span>
                 </div>
               ))}
             </div>
@@ -559,16 +559,16 @@ function PatchedVulnsList() {
 function OverviewFooter() {
   return (
     <div style={{ borderTop: '1px solid var(--border)', padding: '24px 0 8px', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
-      <div className="mono" style={{ fontSize: '0.68rem', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-caption)', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
         PYTHON 3.11 · FLASK · PYDANTIC · REACT 18 · ESBUILD · SQLITE · RAILWAY
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <a className="mono" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--accent)', textDecoration: 'none' }}>
+          style={{ fontSize: 'var(--fs-small)', fontWeight: 600, letterSpacing: '0.08em', color: 'var(--accent)', textDecoration: 'none' }}>
           GITHUB →
         </a>
       </div>
-      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', width: '100%' }}>
+      <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', width: '100%' }}>
         Demo note: with no threat-intel API keys configured, enrichment answers from a deterministic
         synthetic feed — scores are reproducible, and the example scenarios are golden-pinned in the test suite.
       </div>
