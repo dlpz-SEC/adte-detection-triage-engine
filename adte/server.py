@@ -41,8 +41,14 @@ from flask_limiter.util import get_remote_address
 from pydantic import ValidationError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from adte.case_policy import KILL_CHAIN_ORDER
 from adte.engine import TriageEngine
-from adte.intel.mitre_mapper import get_nist_phase, get_technique_details, get_techniques
+from adte.intel.mitre_mapper import (
+    get_nist_phase,
+    get_technique_details,
+    get_technique_map,
+    get_techniques,
+)
 from adte.intel.sigma_fp_registry import FPRegistry, add_fp_entry
 from adte.models import NormalizedIncident, SentinelIncident
 from adte.store import session_store
@@ -591,6 +597,35 @@ def examples() -> Any:
         normalized = NormalizedIncident.from_sentinel(sentinel)
         result[key] = normalized.model_dump(mode="json")
     return jsonify(result)
+
+
+@app.route("/api/mitre/map")
+def mitre_map() -> Any:
+    """Return ADTE's ATT&CK technique table and the kill-chain tactic order.
+
+    Public on purpose, with no ``require_role`` — the same rationale as
+    ``/api/examples``: this is static reference data built from the committed
+    ``mitre_technique_map.yaml`` (nothing incident-, user-, or tenant-specific),
+    and the SPA needs it before any login to label technique cards.  Serving
+    it replaces a hand-maintained client-side copy that drifted, so a
+    technique outside that copy (e.g. ``T1090.003``) rendered blank.  Entries
+    come from ``get_technique_map``, which reads the same first-wins table as
+    the ``mitre_details`` attached to every triage response.
+
+    Serialized with ``json.dumps`` rather than ``jsonify`` because the default
+    Flask JSON provider sorts keys, which would discard the YAML first-seen
+    order of ``techniques``.
+
+    Returns:
+        JSON ``{"techniques": {id: {"id", "name", "tactic", "nist_csf",
+        "nist_csf_name"}}, "kill_chain_order": [14 tactic names]}``.
+        ``techniques`` is empty if the mapping YAML is missing.
+    """
+    payload = {
+        "techniques": get_technique_map(),
+        "kill_chain_order": list(KILL_CHAIN_ORDER),
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
 
 
 class _BatchPayloadError(ValueError):

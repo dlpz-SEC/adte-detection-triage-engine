@@ -75,7 +75,7 @@ class TestMitreDetails:
         details = body["mitre_details"]
         assert [d["id"] for d in details] == body["mitre_techniques"]
         for d in details:
-            assert set(d) == {"id", "name", "tactic", "source"}
+            assert set(d) == {"id", "name", "tactic", "source", "nist_csf", "nist_csf_name"}
             assert d["source"] in ("signal", "native", "rule_text")
 
     def test_native_tags_labeled_native(self, demo_client) -> None:

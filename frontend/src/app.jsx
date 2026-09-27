@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
 import ReactDOM from 'react-dom/client';
 import OverviewPage from './overview.jsx';
 
@@ -185,12 +185,6 @@ import OverviewPage from './overview.jsx';
         example: "VirusTotal 58/72 engines flag /tmp/malware/eicar.com → +40 points → high risk.",
       },
     };
-
-    const ALL_TACTICS = [
-      'Initial Access', 'Credential Access', 'Persistence', 'Privilege Escalation',
-      'Lateral Movement', 'Defense Evasion', 'Discovery', 'Command and Control',
-      'Execution', 'Exfiltration',
-    ];
 
     const WEIGHTS_DATA = [
       { name: 'impossible_travel', label: 'Impossible Travel', weight: 30, color: '#ef4444', method: 'Geospatial velocity analysis', mitre: 'T1078.004' },
@@ -579,16 +573,81 @@ import OverviewPage from './overview.jsx';
       );
     }
 
+    // ATT&CK technique map: ONE source of truth. App fetches GET /api/mitre/map
+    // (built server-side from adte/data/mitre_technique_map.yaml, the same file
+    // the triage output's mitre_details resolve against) once on mount and
+    // hands it down through this context. `status` is explicit so a view can
+    // tell "this ID is not in the map" apart from "the map has not arrived"
+    // ('loading') or "the map could not be fetched" ('error').
+    const EMPTY_MITRE_MAP = { status: 'loading', techniques: {}, killChainOrder: [] };
+    const MitreMapContext = createContext(EMPTY_MITRE_MAP);
+    const useMitreMap = () => useContext(MitreMapContext);
+
+    // Map entry for one technique ID, or null. Own-property check only:
+    // technique IDs reach here from alert data, and a plain object lookup
+    // would resolve "constructor" or "__proto__" to Object.prototype members.
+    function lookupTechnique(mitreMap, id) {
+      if (mitreMap.status !== 'ready' || typeof id !== 'string') return null;
+      return Object.prototype.hasOwnProperty.call(mitreMap.techniques, id) ? mitreMap.techniques[id] : null;
+    }
+
+    // What to say when a technique has no map entry. Only a LOADED map can
+    // claim an ID is absent from it.
+    function techniqueMissingText(mitreMap) {
+      if (mitreMap.status === 'loading') return 'Loading technique details…';
+      if (mitreMap.status === 'error') return 'Technique details unavailable';
+      return "Not in ADTE's technique map";
+    }
+
+    // Multi-line hover text for a technique badge.
+    function techniqueTooltip(mitreMap, id) {
+      const info = lookupTechnique(mitreMap, id);
+      if (!info) return `${id} — ${techniqueMissingText(mitreMap)}`;
+      const nist = info.nist_csf ? `${info.nist_csf}${info.nist_csf_name ? ` · ${info.nist_csf_name}` : ''}` : '—';
+      return `${id} — ${info.name || id}\nTactic: ${info.tactic || '—'}\nNIST CSF: ${nist}`;
+    }
+
+    // External ATT&CK reference, DERIVED from a validated ID — never a URL
+    // taken from alert data (LESSONS.md 2026-07-13). Anything that is not a
+    // well-formed technique or sub-technique ID gets no link at all.
+    const ATTACK_ID_RE = /^T\d{4}(?:\.\d{3})?$/;
+    function attackTechniqueUrl(id) {
+      if (typeof id !== 'string' || !ATTACK_ID_RE.test(id)) return null;
+      const [base, sub] = id.split('.');
+      return sub
+        ? `https://attack.mitre.org/techniques/${base}/${sub}/`
+        : `https://attack.mitre.org/techniques/${base}/`;
+    }
+
+    function AttackLink({ id }) {
+      const href = attackTechniqueUrl(id);
+      if (!href) return null;
+      return (
+        <a className="link" href={href} target="_blank" rel="noopener noreferrer"
+           style={{ fontSize: 'var(--fs-caption)', alignSelf: 'flex-start' }}>
+          View {id} on MITRE ATT&CK →
+        </a>
+      );
+    }
+
+    // Provenance of a technique in the triage output's mitre_details.
+    const TECH_SOURCE_LABEL = {
+      signal:    { label: 'SIGNAL',    title: 'Derived from a fired ADTE scoring signal' },
+      native:    { label: 'NATIVE',    title: 'Carried on the alert itself (e.g. Wazuh rule.mitre.id)' },
+      rule_text: { label: 'RULE TEXT', title: 'Surfaced by rule-text enrichment' },
+    };
+
     function MitreBadges({ techniques, phase }) {
+      const mitreMap = useMitreMap();
       const techs = Array.isArray(techniques) ? techniques : [];
       if (!techs.length && !phase) return null;
       const phaseInfo = phase && NIST_800_61_PHASES[phase];
       return (
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
           {techs.map(t => {
-            const info = MITRE_TECH_MAP[t];
-            const label = info ? `${t} · ${info.name}` : t;
-            const title = info ? `Tactic: ${info.tactic} | NIST CSF: ${info.nist} — ${info.nistLabel}` : t;
+            const info = lookupTechnique(mitreMap, t);
+            const label = info && info.name ? `${t} · ${info.name}` : t;
+            const title = techniqueTooltip(mitreMap, t);
             return (
               <span key={t} className="badge badge-accent" title={title} style={{ fontSize: 'var(--fs-caption)' }}>{label}</span>
             );
@@ -1145,7 +1204,7 @@ import OverviewPage from './overview.jsx';
               })}
             </div>
           </div>
-          {result.report && <MitrePanel report={result.report} />}
+          {result.report && <MitrePanel result={result} />}
           <ActionBanner result={result} />
           <FeedbackPanel result={result} />
           <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginTop: 14, display: 'flex', gap: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
@@ -1161,9 +1220,15 @@ import OverviewPage from './overview.jsx';
     /* MitrePanel                                                           */
     /* ------------------------------------------------------------------ */
 
-    function MitrePanel({ report }) {
-      const tactics = report.mitre_tactics || [];
-      const techniques = report.mitre_techniques || [];
+    // Same technique set as the MITRE / NIST view's last-triage panel: the
+    // top-level IDs + mitre_details, not report.mitre_techniques (a signal-only
+    // subset that drops native IDs such as T1090.003).
+    function MitrePanel({ result }) {
+      const mitreMap = useMitreMap();
+      const report = result.report;
+      const techniques = lastTriageTechniques(result, mitreMap);
+      const reportTactics = Array.isArray(report.mitre_tactics) ? report.mitre_tactics.filter(t => typeof t === 'string' && t) : [];
+      const tactics = [...new Set([...reportTactics, ...techniques.map(t => t.tactic).filter(Boolean)])];
       const phases = report.nist_phases || [];
       if (tactics.length === 0 && techniques.length === 0) return null;
       return (
@@ -1180,7 +1245,7 @@ import OverviewPage from './overview.jsx';
                 {techniques.map(t => (
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <span className="badge badge-accent">{t.id}</span>
-                    <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{t.name}</span>
+                    <span style={{ fontSize: 'var(--fs-small)', color: t.name ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{t.name || techniqueMissingText(mitreMap)}</span>
                   </div>
                 ))}
               </div>
@@ -1780,18 +1845,68 @@ import OverviewPage from './overview.jsx';
       },
     };
 
+    // Normalise the last triage's techniques to { id, name, tactic, source,
+    // nist_csf, nist_csf_name } rows. The top-level mitre_techniques (IDs:
+    // signal-derived, then native, then rule-text) + mitre_details are
+    // authoritative; report.mitre_techniques is a signal-only subset and is
+    // read only when a result carries neither top-level field. Empty detail
+    // fields fall back to the shared map.
+    function lastTriageTechniques(result, mitreMap) {
+      if (!result) return [];
+      const hasTopIds = Array.isArray(result.mitre_techniques);
+      const hasDetails = Array.isArray(result.mitre_details);
+      const detailsById = new Map();
+      if (hasDetails) {
+        for (const d of result.mitre_details) {
+          if (d && typeof d.id === 'string' && d.id && !detailsById.has(d.id)) detailsById.set(d.id, d);
+        }
+      }
+      let entries;   // [{ id, name?, source? }] before map fallback
+      if (hasTopIds || hasDetails) {
+        const ids = hasTopIds ? result.mitre_techniques : [...detailsById.keys()];
+        entries = ids.filter(id => typeof id === 'string' && id).map(id => ({ id, ...(detailsById.get(id) || {}) }));
+      } else {
+        const legacy = Array.isArray(result.report?.mitre_techniques) ? result.report.mitre_techniques : [];
+        entries = legacy
+          .map(t => (typeof t === 'string' ? { id: t } : (t && typeof t.id === 'string' ? { id: t.id, name: t.name } : null)))
+          .filter(e => e && e.id);
+      }
+      const str = (v) => (typeof v === 'string' ? v : '');
+      const seen = new Set();
+      const rows = [];
+      for (const e of entries) {
+        if (seen.has(e.id)) continue;
+        seen.add(e.id);
+        const info = lookupTechnique(mitreMap, e.id) || {};
+        rows.push({
+          id: e.id,
+          name: str(e.name) || str(info.name),
+          tactic: str(e.tactic) || str(info.tactic),
+          source: str(e.source),
+          nist_csf: str(e.nist_csf) || str(info.nist_csf),
+          nist_csf_name: str(e.nist_csf_name) || str(info.nist_csf_name),
+        });
+      }
+      return rows;
+    }
+
     function MitreView({ result, onGoTriage, highlight, focusTechs, focusNistPhases }) {
-      const tactics = result?.report?.mitre_tactics || [];
-      const techniques = result?.report?.mitre_techniques || [];
+      const mitreMap = useMitreMap();
+      const techniques = lastTriageTechniques(result, mitreMap);
+      const reportTactics = Array.isArray(result?.report?.mitre_tactics) ? result.report.mitre_tactics.filter(t => typeof t === 'string' && t) : [];
+      // Tactics that light the matrix: the report's own tactics UNION every
+      // technique's tactic (native IDs carry tactics the signal path never saw).
+      const tactics = [...new Set([...reportTactics, ...techniques.map(t => t.tactic).filter(Boolean)])];
       const nistPhases = result?.report?.nist_phases || [];
       const tacticSet = new Set(tactics);
       const NIST_FUNCTIONS = ['GOVERN', 'IDENTIFY', 'PROTECT', 'DETECT', 'RESPOND', 'RECOVER'];
+      const killChainOrder = mitreMap.status === 'ready' ? mitreMap.killChainOrder : [];
 
       const resultTechIds = new Set(techniques.map(t => t.id));
       // only show reference cards for techs not already shown in the live result panel
       const referenceTechs = (focusTechs || []).filter(t => !resultTechIds.has(t));
       // highlight the tactic for any focused tech
-      const focusTacticSet = new Set((focusTechs || []).map(t => MITRE_TECH_MAP[t]?.tactic).filter(Boolean));
+      const focusTacticSet = new Set((focusTechs || []).map(t => lookupTechnique(mitreMap, t)?.tactic).filter(Boolean));
 
       useEffect(() => {
         if (!highlight) return;
@@ -1829,7 +1944,11 @@ import OverviewPage from './overview.jsx';
                     </div>
                   )}
                   {referenceTechs.map(t => {
-                    const meta = MITRE_TECH_MAP[t] || {};
+                    // Three states: found (full detail), map loaded but ID absent
+                    // (say so + ATT&CK link), map loading/failed (say THAT —
+                    // never "not in the map" before the map has arrived).
+                    const meta = lookupTechnique(mitreMap, t);
+                    const known = Boolean(meta);
                     return (
                       <div key={t} id={`mitre-tech-${t}`} className="panel" style={{ borderLeft: '3px solid var(--accent)', marginBottom: 8 }}>
                         {referenceTechs.length === 1 && (
@@ -1838,21 +1957,26 @@ import OverviewPage from './overview.jsx';
                         <div className="panel-body">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                             <span className="badge badge-accent" style={{ fontSize: 'var(--fs-small)', padding: '4px 10px' }}>{t}</span>
-                            <span style={{ fontSize: 'var(--fs-body)', fontWeight: 700 }}>{meta.name || t}</span>
+                            {known
+                              ? <span style={{ fontSize: 'var(--fs-body)', fontWeight: 700 }}>{meta.name || t}</span>
+                              : <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text-muted)' }}>{techniqueMissingText(mitreMap)}</span>}
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 'var(--fs-body)' }}>
                             <div>
                               <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>TACTIC</div>
-                              <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{meta.tactic || '—'}</div>
+                              <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{(known && meta.tactic) || '—'}</div>
                             </div>
                             <div>
                               <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>NIST CSF DETECT</div>
                               <div>
-                                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{meta.nist || '—'}</span>
-                                {meta.nistLabel && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--fs-small)' }}>· {meta.nistLabel}</span>}
+                                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{(known && meta.nist_csf) || '—'}</span>
+                                {known && meta.nist_csf_name && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--fs-small)' }}>· {meta.nist_csf_name}</span>}
                               </div>
                             </div>
                           </div>
+                          {!known && mitreMap.status !== 'loading' && (
+                            <div style={{ marginTop: 10 }}><AttackLink id={t} /></div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1867,24 +1991,50 @@ import OverviewPage from './overview.jsx';
               )}
               {result && techniques.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  {techniques.map(t => (
-                    <div key={t.id} id={`mitre-tech-${t.id}`} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 6 }}>
-                      <span className="badge badge-accent">{t.id}</span>
-                      <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600 }}>{t.name}</span>
-                    </div>
-                  ))}
+                  {techniques.map(t => {
+                    const known = Boolean(t.name) || Boolean(lookupTechnique(mitreMap, t.id));
+                    const src = Object.prototype.hasOwnProperty.call(TECH_SOURCE_LABEL, t.source) ? TECH_SOURCE_LABEL[t.source] : null;
+                    return (
+                      <div key={t.id} id={`mitre-tech-${t.id}`} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 6 }}>
+                        <span className="badge badge-accent" style={{ flexShrink: 0 }}>{t.id}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                          {known
+                            ? <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600 }}>{t.name || t.id}</span>
+                            : <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text-muted)' }}>{techniqueMissingText(mitreMap)}</span>}
+                          <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+                            {t.tactic || '—'}
+                            {t.nist_csf && (
+                              <> · NIST CSF <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{t.nist_csf}</span>{t.nist_csf_name ? ` ${t.nist_csf_name}` : ''}</>
+                            )}
+                          </span>
+                          {!known && mitreMap.status !== 'loading' && <AttackLink id={t.id} />}
+                        </div>
+                        {src && (
+                          <span className="micro-label" title={src.title} style={{ marginLeft: 'auto', flexShrink: 0 }}>{src.label}</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <div className="panel">
                 <div className="panel-header">Tactic Coverage Matrix</div>
                 <div className="panel-body" style={{ padding: 0 }}>
-                  {ALL_TACTICS.map((tactic, i) => {
+                  {/* Rows come from the map's kill_chain_order (all 14 ATT&CK
+                      tactics). No map yet / no map at all → say so, never an
+                      empty panel. */}
+                  {killChainOrder.length === 0 && (
+                    <div style={{ padding: '10px 14px', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+                      {mitreMap.status === 'loading' ? 'Loading tactic list…' : 'Tactic list unavailable'}
+                    </div>
+                  )}
+                  {killChainOrder.map((tactic, i) => {
                     const fired = tacticSet.has(tactic) || focusTacticSet.has(tactic);
                     return (
                       <div key={tactic} style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         padding: '8px 14px',
-                        borderBottom: i < ALL_TACTICS.length - 1 ? '1px solid var(--border)' : 'none',
+                        borderBottom: i < killChainOrder.length - 1 ? '1px solid var(--border)' : 'none',
                         background: fired ? 'var(--critical-dim)' : 'transparent',
                       }}>
                         <div style={{
@@ -2407,25 +2557,6 @@ import OverviewPage from './overview.jsx';
       );
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Lookup: ATT&CK technique ID → name, tactic, NIST CSF detect code.
-       Curated subset of adte/data/mitre_technique_map.yaml (42 entries shipped)
-       — technique IDs without a frontend entry render as bare badges. */
-    const MITRE_TECH_MAP = {
-      'T1078.004': { name: 'Valid Accounts: Cloud Accounts',          tactic: 'Initial Access',       nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
-      'T1621':     { name: 'Multi-Factor Authentication Request Gen.', tactic: 'Credential Access',   nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
-      'T1071':     { name: 'Application Layer Protocol',              tactic: 'Command and Control',  nist: 'DE.CM-7', nistLabel: 'System Monitoring' },
-      'T1078':     { name: 'Valid Accounts',                          tactic: 'Initial Access',       nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
-      'T1110':     { name: 'Brute Force',                             tactic: 'Credential Access',    nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
-      'T1021':     { name: 'Remote Services',                         tactic: 'Lateral Movement',     nist: 'DE.CM-3', nistLabel: 'Malicious Activity Monitoring' },
-      'T1548':     { name: 'Abuse Elevation Control Mechanism',       tactic: 'Privilege Escalation', nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
-      'T1098':     { name: 'Account Manipulation',                    tactic: 'Persistence',          nist: 'DE.CM-3', nistLabel: 'Malicious Activity Monitoring' },
-      'T1020':     { name: 'Automated Exfiltration',                  tactic: 'Exfiltration',         nist: 'DE.CM-2', nistLabel: 'Secure Configuration Monitoring' },
-      'T1562':     { name: 'Indicator Removal',                       tactic: 'Defense Evasion',      nist: 'DE.CM-7', nistLabel: 'System Monitoring' },
-      'T1087':     { name: 'Account Discovery',                       tactic: 'Discovery',            nist: 'DE.CM-1', nistLabel: 'Anomalies & Events' },
-      'T1059':     { name: 'Command and Scripting Interpreter',       tactic: 'Execution',            nist: 'DE.CM-6', nistLabel: 'Malicious Activity Monitoring' },
-    };
-
     const NIST_PHASE_LABEL = {
       'Containment':          'NIST SP 800-61 Rev. 2 — Phase 3: Containment, Eradication & Recovery',
       'Detection & Analysis': 'NIST SP 800-61 Rev. 2 — Phase 2: Detection & Analysis',
@@ -2433,6 +2564,7 @@ import OverviewPage from './overview.jsx';
       'Post-Incident Activity': 'NIST SP 800-61 Rev. 2 — Phase 4: Post-Incident Activity',
     };
 
+    /* ------------------------------------------------------------------ */
     /* VIEW: VerdictHistoryView                                             */
     /* ------------------------------------------------------------------ */
 
@@ -2440,6 +2572,7 @@ import OverviewPage from './overview.jsx';
     const TECH_CLOUD_CAP = 8;
 
     function VerdictHistoryView({ result, onNav }) {
+      const mitreMap = useMitreMap();
       const [rows, setRows] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
@@ -2555,15 +2688,12 @@ import OverviewPage from './overview.jsx';
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {visibleTechs.length ? visibleTechs.map(t => {
-                          const meta = MITRE_TECH_MAP[t] || {};
-                          return (
-                            <span key={t} className="badge badge-accent badge-clickable"
-                              onClick={() => onNav('view:mitre', { tech: t })}
-                              title={meta.name ? `${t} — ${meta.name}\nTactic: ${meta.tactic}\nNIST CSF: ${meta.nist}\n\nClick to view this technique` : t}
-                              style={{ fontSize: 'var(--fs-caption)' }}>{t}</span>
-                          );
-                        }) : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>}
+                        {visibleTechs.length ? visibleTechs.map(t => (
+                          <span key={t} className="badge badge-accent badge-clickable"
+                            onClick={() => onNav('view:mitre', { tech: t })}
+                            title={`${techniqueTooltip(mitreMap, t)}\n\nClick to view this technique`}
+                            style={{ fontSize: 'var(--fs-caption)' }}>{t}</span>
+                        )) : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>}
                         {allTechs.length > TECH_CLOUD_CAP && (
                           <InlineLink muted style={{ fontSize: 'var(--fs-caption)' }} onClick={() => setTechsExpanded(e => !e)}>
                             {techsExpanded ? 'show less' : `+${allTechs.length - TECH_CLOUD_CAP} more`}
@@ -2640,10 +2770,8 @@ import OverviewPage from './overview.jsx';
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                       {techs.length
                         ? techs.map(t => {
-                            const meta = MITRE_TECH_MAP[t] || {};
-                            const tip = meta.name
-                              ? `${t} — ${meta.name}\nTactic: ${meta.tactic}\nNIST CSF: ${meta.nist} · ${meta.nistLabel}\n\nClick to jump to this technique in MITRE view`
-                              : `Click to open MITRE / NIST view`;
+                            const meta = lookupTechnique(mitreMap, t) || {};
+                            const tip = `${techniqueTooltip(mitreMap, t)}\n\nClick to jump to this technique in MITRE view`;
                             return (
                               <div key={t} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
                                 <span className="badge badge-accent badge-clickable"
@@ -3044,9 +3172,46 @@ import OverviewPage from './overview.jsx';
       const [focusCaseId, setFocusCaseId] = useState(null);   // case pre-expanded when opening the Cases view
       const [signalsTab, setSignalsTab] = useState('last');   // 'last' | 'weights' — inner tab of the merged Signals view
       const [mobileNavOpen, setMobileNavOpen] = useState(false); // ≤900px off-canvas drawer state
+      // Shared ATT&CK technique map (MitreMapContext). One state object, set
+      // atomically, so its identity — and every consumer — changes only when
+      // the fetch settles.
+      const [mitreMap, setMitreMap] = useState(EMPTY_MITRE_MAP);
 
       useEffect(() => {
         fetch(`${API_BASE}/api/examples`, { headers: authHeaders() }).then(r => r.json()).then(setExamples).catch(() => {});
+      }, []);
+
+      // Public route, fetched once on success. A failed attempt is retried
+      // twice with a short backoff (a dropped request should not blank every
+      // technique card for the whole session); the status stays 'loading'
+      // until the last attempt fails. A non-OK status or a malformed body is
+      // then an 'error' state the views name as such — never a throw, never
+      // an empty map that would read as "no technique is in ADTE's map".
+      useEffect(() => {
+        let cancelled = false;
+        let retryTimer = null;
+        const RETRY_DELAYS_MS = [1000, 3000];
+        const attempt = (n) => {
+          fetch(`${API_BASE}/api/mitre/map`, { headers: authHeaders() })
+            .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+            .then(d => {
+              const techniques = d && d.techniques;
+              const order = d && d.kill_chain_order;
+              if (!techniques || typeof techniques !== 'object' || Array.isArray(techniques) || !Array.isArray(order)) {
+                throw new Error('Malformed /api/mitre/map response');
+              }
+              if (!cancelled) {
+                setMitreMap({ status: 'ready', techniques, killChainOrder: order.filter(t => typeof t === 'string' && t) });
+              }
+            })
+            .catch(() => {
+              if (cancelled) return;
+              if (n < RETRY_DELAYS_MS.length) retryTimer = setTimeout(() => attempt(n + 1), RETRY_DELAYS_MS[n]);
+              else setMitreMap({ ...EMPTY_MITRE_MAP, status: 'error' });
+            });
+        };
+        attempt(0);
+        return () => { cancelled = true; clearTimeout(retryTimer); };
       }, []);
 
       // Mark the Overview as seen the moment the visitor leaves it by ANY route
@@ -3258,6 +3423,7 @@ import OverviewPage from './overview.jsx';
       const canRun = !loading && inputText.trim().length > 0;
 
       return (
+        <MitreMapContext.Provider value={mitreMap}>
         <div>
           <Sidebar
             activeView={activeView} onNav={handleNav}
@@ -3393,6 +3559,7 @@ import OverviewPage from './overview.jsx';
           </div>
 
         </div>
+        </MitreMapContext.Provider>
       );
     }
 

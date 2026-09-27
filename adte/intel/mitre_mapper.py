@@ -18,6 +18,16 @@ _MAPPING_PATH = Path(__file__).resolve().parents[1] / "data" / "mitre_technique_
 _singleton: "MitreMapper | None" = None
 _singleton_lock: threading.Lock = threading.Lock()
 
+# Display field → the YAML key it is read from.  The single projection used
+# by both get_technique_details and get_technique_map; rule_keywords is
+# matcher-internal and deliberately never exposed.
+_DISPLAY_FIELDS: tuple[tuple[str, str], ...] = (
+    ("name", "mitre_technique_name"),
+    ("tactic", "mitre_tactic"),
+    ("nist_csf", "nist_detect"),
+    ("nist_csf_name", "nist_category"),
+)
+
 
 def _get_mapper() -> "MitreMapper | None":
     """Return the module-level cached MitreMapper, loading from disk on first call."""
@@ -53,6 +63,21 @@ class MitreMapper:
             for mapping in mappings
             for kw in mapping.get("rule_keywords", [])
         ]
+        # Technique ID → display fields, built once so get_technique_details
+        # and get_technique_map read the same table and can never disagree.
+        # The YAML repeats some IDs under different keyword sets (e.g. T1621);
+        # the FIRST entry for an ID wins.  Entries with no ID are skipped.
+        self._id_index: dict[str, dict[str, str]] = {}
+        for mapping in mappings:
+            tid = str(mapping.get("mitre_technique_id") or "")
+            if tid and tid not in self._id_index:
+                self._id_index[tid] = {
+                    "id": tid,
+                    **{
+                        field: str(mapping.get(key) or "")
+                        for field, key in _DISPLAY_FIELDS
+                    },
+                }
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> "MitreMapper":
@@ -128,9 +153,11 @@ def get_technique_details(
 ) -> list[dict[str, str]]:
     """Return display detail objects for a list of ATT&CK technique IDs.
 
-    Resolves each ID against the mapping YAML for its human-readable name
-    and tactic.  IDs absent from the map are still returned (with empty
-    name/tactic) so native log labels are never dropped from display.
+    Resolves each ID against the mapping YAML for its human-readable name,
+    tactic, and NIST CSF subcategory.  IDs absent from the map are still
+    returned (with every display field empty) so native log labels are never
+    dropped from display.  A repeated YAML ID resolves to its FIRST entry —
+    the same table :func:`get_technique_map` serves.
 
     Args:
         technique_ids: Deduplicated ATT&CK technique IDs, in display order.
@@ -139,25 +166,48 @@ def get_technique_details(
             default to ``"signal"``.
 
     Returns:
-        One ``{"id", "name", "tactic", "source"}`` dict per input ID.
+        One ``{"id", "name", "tactic", "source", "nist_csf", "nist_csf_name"}``
+        dict per input ID, in input order.  ``nist_csf`` is the YAML's
+        ``nist_detect`` subcategory ID and ``nist_csf_name`` its
+        ``nist_category`` label.  Empty strings for an unmapped ID or a
+        missing YAML.
     """
     mapper = _get_mapper()
-    by_id: dict[str, dict[str, Any]] = {}
-    if mapper is not None:
-        for entry in mapper.mappings:
-            by_id.setdefault(entry.get("mitre_technique_id", ""), entry)
+    index = mapper._id_index if mapper is not None else {}
     details: list[dict[str, str]] = []
     for tid in technique_ids:
-        entry = by_id.get(tid)
+        fields = index.get(tid, {})
         details.append(
             {
                 "id": tid,
-                "name": entry.get("mitre_technique_name", "") if entry else "",
-                "tactic": entry.get("mitre_tactic", "") if entry else "",
+                "name": fields.get("name", ""),
+                "tactic": fields.get("tactic", ""),
                 "source": (sources or {}).get(tid, "signal"),
+                "nist_csf": fields.get("nist_csf", ""),
+                "nist_csf_name": fields.get("nist_csf_name", ""),
             }
         )
     return details
+
+
+def get_technique_map() -> dict[str, dict[str, str]]:
+    """Return every mapped ATT&CK technique keyed by ID, for reference display.
+
+    Serves the SPA's technique cards so they resolve from the same table as
+    :func:`get_technique_details`, instead of a client-side copy that drifts.
+    A repeated YAML ID resolves to its FIRST entry; entries with no ID are
+    skipped; ``rule_keywords`` is never exposed.
+
+    Returns:
+        ``{technique_id: {"id", "name", "tactic", "nist_csf", "nist_csf_name"}}``
+        with one entry per distinct ID, in YAML first-seen order.  Fresh
+        copies, so mutating the result cannot corrupt later lookups.  Empty
+        dict if the mapping YAML is missing.
+    """
+    mapper = _get_mapper()
+    if mapper is None:
+        return {}
+    return {tid: dict(fields) for tid, fields in mapper._id_index.items()}
 
 
 def get_nist_phase(verdict: str) -> str:
