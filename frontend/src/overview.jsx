@@ -9,7 +9,7 @@ import React from 'react';
 // references/current-claims.md (regenerated from the repos by collect_stats.py).
 // Bump here when the claims file changes.
 const STATS = [
-  { value: '784', label: 'Passing Tests' },
+  { value: '844', label: 'Automated Tests' },
   { value: '7', label: 'Scoring Signals' },
   { value: '2', label: 'Live SIEM Adapters' },
   { value: '42', label: 'ATT&CK Map Entries' },
