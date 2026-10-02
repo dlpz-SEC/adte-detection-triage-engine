@@ -1917,7 +1917,110 @@ import OverviewPage from './overview.jsx';
       return rows;
     }
 
-    function MitreView({ result, onGoTriage, highlight, focusTechs, focusNistPhases }) {
+    // Element a cross-view link aims at: a technique row, one phase card, or
+    // the whole NIST column. Only one scope renders at a time, so both scopes
+    // share these ids.
+    function mitreFocusElementId(target) {
+      if (typeof target !== 'string' || !target) return null;
+      if (target === '__nist__') return 'mitre-nist-section';
+      if (target.startsWith('phase:')) return `mitre-phase-${target.slice(6)}`;
+      return `mitre-tech-${target}`;
+    }
+
+    // Scroll to and briefly flash the focused element. `focus` is
+    // { target, nonce }: a fresh nonce re-flashes even when the same chip is
+    // clicked twice. `ready` holds the lookup until async content has rendered.
+    function useMitreFocusFlash(focus, ready) {
+      useEffect(() => {
+        if (!ready || !focus) return;
+        const id = mitreFocusElementId(focus.target);
+        const el = id ? document.getElementById(id) : null;
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('mitre-highlight-flash');
+        // void offsetWidth forces a synchronous reflow so the browser registers
+        // the class removal before re-adding it; otherwise a repeat visit to the
+        // same element would not re-trigger the CSS animation.
+        void el.offsetWidth;
+        el.classList.add('mitre-highlight-flash');
+        // Matches the 300ms CSS pulse (+50ms slack).
+        const t = setTimeout(() => el.classList.remove('mitre-highlight-flash'), 350);
+        return () => clearTimeout(t);
+      }, [focus?.nonce, ready]);
+    }
+
+    // One incident-handling phase: its name, CSF 2.0 Function per SP 800-61
+    // Rev. 3 Table 1, what the phase involves, and (ALL INCIDENTS) how many
+    // logged incidents sit in it.
+    function PhaseCard({ phase, count, header }) {
+      const ph = NIST_800_61_PHASES[phase] || { fn: '', csf: '', desc: '' };
+      return (
+        <div id={`mitre-phase-${phase}`} className="panel" style={{ borderLeft: '3px solid var(--medium)', marginBottom: 8 }}>
+          {header && <div className="panel-header" style={{ color: 'var(--medium)' }}>{header}</div>}
+          <div className="panel-body">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: ph.desc ? 10 : 0, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 'var(--fs-lead)', fontWeight: 700 }}>{ph.fullName || phase}</span>
+              {ph.fn && (
+                <span className="badge badge-medium" title={ph.csf} style={{ fontSize: 'var(--fs-caption)', padding: '3px 10px' }}>{ph.fn}</span>
+              )}
+              {count != null && (
+                <span className="mono" style={{ marginLeft: 'auto', fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>
+                  {count} {count === 1 ? 'incident' : 'incidents'}
+                </span>
+              )}
+            </div>
+            {ph.desc && <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.65 }}>{ph.desc}</div>}
+            {ph.csf && (
+              <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: 8 }}>
+                SP 800-61 Rev. 3 maps this phase to {ph.csf}.
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // CSF 2.0 Functions strip plus the recommend-only note, shown under both scopes.
+    function CsfFunctionsFooter() {
+      const NIST_FUNCTIONS = ['GOVERN', 'IDENTIFY', 'PROTECT', 'DETECT', 'RESPOND', 'RECOVER'];
+      return (
+        <>
+          <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>CSF 2.0 FUNCTIONS</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {NIST_FUNCTIONS.map(fn => (
+              <span key={fn} className={`badge ${fn === 'DETECT' ? 'badge-accent' : ''}`}
+                style={fn !== 'DETECT' ? { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-muted)' } : {}}>
+                {fn}
+              </span>
+            ))}
+          </div>
+          <div className="panel">
+            <div className="panel-body" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              ADTE covers the <strong style={{ color: 'var(--accent)' }}>DETECT</strong> function.
+              Response actions (<strong>RESPOND</strong>) are not implemented: ADTE recommends only, and the safety-gate config is reserved for a future execution layer.
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // MITRE / NIST, scoped. LAST TRIAGE is the incident on the Triage page;
+    // ALL INCIDENTS counts the incidents in the audit log, each once (analyst login).
+    function MitreView({ result, onGoTriage, scope, onScopeChange, focus, onLogin }) {
+      return (
+        <div>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', paddingLeft: 24 }}>
+            <button className={`tab ${scope !== 'all' ? 'active' : ''}`} onClick={() => onScopeChange('last')}>LAST TRIAGE</button>
+            <button className={`tab ${scope === 'all' ? 'active' : ''}`} onClick={() => onScopeChange('all')}>ALL INCIDENTS</button>
+          </div>
+          {scope === 'all'
+            ? <MitreAllIncidents focus={focus} onLogin={onLogin} />
+            : <MitreLastTriage result={result} onGoTriage={onGoTriage} focus={focus} />}
+        </div>
+      );
+    }
+
+    function MitreLastTriage({ result, onGoTriage, focus }) {
       const mitreMap = useMitreMap();
       const techniques = lastTriageTechniques(result, mitreMap);
       const reportTactics = Array.isArray(result?.report?.mitre_tactics) ? result.report.mitre_tactics.filter(t => typeof t === 'string' && t) : [];
@@ -1925,91 +2028,20 @@ import OverviewPage from './overview.jsx';
       // technique's tactic (native IDs carry tactics the signal path never saw).
       const tactics = [...new Set([...reportTactics, ...techniques.map(t => t.tactic).filter(Boolean)])];
       const nistPhases = result?.report?.nist_phases || [];
+      const incidentPhase = typeof result?.nist_phase === 'string' ? result.nist_phase : '';
       const tacticSet = new Set(tactics);
-      const NIST_FUNCTIONS = ['GOVERN', 'IDENTIFY', 'PROTECT', 'DETECT', 'RESPOND', 'RECOVER'];
       const killChainOrder = mitreMap.status === 'ready' ? mitreMap.killChainOrder : [];
 
-      const resultTechIds = new Set(techniques.map(t => t.id));
-      // only show reference cards for techs not already shown in the live result panel
-      const referenceTechs = (focusTechs || []).filter(t => !resultTechIds.has(t));
-      // highlight the tactic for any focused tech
-      const focusTacticSet = new Set((focusTechs || []).map(t => lookupTechnique(mitreMap, t)?.tactic).filter(Boolean));
-
-      useEffect(() => {
-        if (!highlight) return;
-        const id = highlight === '__nist__' ? 'mitre-nist-section' : `mitre-tech-${highlight}`;
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.remove('mitre-highlight-flash');
-        // void offsetWidth forces a synchronous reflow so the browser registers
-        // the class removal before re-adding it — without this, consecutive
-        // navigation to the same element wouldn't re-trigger the CSS animation.
-        void el.offsetWidth;
-        el.classList.add('mitre-highlight-flash');
-        // Matches the 300ms CSS pulse (+50ms slack) — the old 1.6s flash was
-        // the single slowest-feeling interaction in the app.
-        const t = setTimeout(() => el.classList.remove('mitre-highlight-flash'), 350);
-        return () => clearTimeout(t);
-      }, [highlight]);
+      useMitreFocusFlash(focus, true);
 
       return (
         <div className="view">
-          {!result && !focusTechs && !focusNistPhases && <NoResultBanner onGoTriage={onGoTriage} />}
+          {!result && <NoResultBanner onGoTriage={onGoTriage} />}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 20 }}>
 
             {/* LEFT — MITRE ATT&CK */}
             <div>
               <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>MITRE ATT&CK</h3>
-
-              {/* Reference cards for techs not in the live result — one card per technique */}
-              {referenceTechs.length > 0 && (
-                <div style={{ marginBottom: 14 }}>
-                  {referenceTechs.length > 1 && (
-                    <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                      TECHNIQUE REFERENCES ({referenceTechs.length})
-                    </div>
-                  )}
-                  {referenceTechs.map(t => {
-                    // Three states: found (full detail), map loaded but ID absent
-                    // (say so + ATT&CK link), map loading/failed (say THAT —
-                    // never "not in the map" before the map has arrived).
-                    const meta = lookupTechnique(mitreMap, t);
-                    const known = Boolean(meta);
-                    return (
-                      <div key={t} id={`mitre-tech-${t}`} className="panel" style={{ borderLeft: '3px solid var(--accent)', marginBottom: 8 }}>
-                        {referenceTechs.length === 1 && (
-                          <div className="panel-header" style={{ color: 'var(--accent)' }}>TECHNIQUE REFERENCE</div>
-                        )}
-                        <div className="panel-body">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                            <span className="badge badge-accent" style={{ fontSize: 'var(--fs-small)', padding: '4px 10px' }}>{t}</span>
-                            {known
-                              ? <span style={{ fontSize: 'var(--fs-body)', fontWeight: 700 }}>{meta.name || t}</span>
-                              : <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text-muted)' }}>{techniqueMissingText(mitreMap)}</span>}
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 'var(--fs-body)' }}>
-                            <div>
-                              <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>TACTIC</div>
-                              <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{(known && meta.tactic) || '—'}</div>
-                            </div>
-                            <div>
-                              <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }} title="The CSF 2.0 Continuous Monitoring subcategory whose monitoring would surface this technique">CSF 2.0 MONITORING</div>
-                              <div>
-                                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{(known && meta.nist_csf) || '—'}</span>
-                                {known && meta.nist_csf_name && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--fs-small)' }}>· {meta.nist_csf_name}</span>}
-                              </div>
-                            </div>
-                          </div>
-                          {!known && mitreMap.status !== 'loading' && (
-                            <div style={{ marginTop: 10 }}><AttackLink id={t} /></div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
 
               {result && tactics.length > 0 && (
                 <div style={{ marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -2056,7 +2088,7 @@ import OverviewPage from './overview.jsx';
                     </div>
                   )}
                   {killChainOrder.map((tactic, i) => {
-                    const fired = tacticSet.has(tactic) || focusTacticSet.has(tactic);
+                    const fired = tacticSet.has(tactic);
                     return (
                       <div key={tactic} style={{
                         display: 'flex', alignItems: 'center', gap: 10,
@@ -2082,40 +2114,7 @@ import OverviewPage from './overview.jsx';
             <div id="mitre-nist-section">
               <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>Incident handling: NIST SP 800-61 Rev. 3 and CSF 2.0</h3>
 
-              {/* Phase reference cards — one per phase, shown when arriving from audit log NIST badge */}
-              {focusNistPhases && focusNistPhases.length > 0 && (
-                <div style={{ marginBottom: 14 }}>
-                  {focusNistPhases.length > 1 && (
-                    <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                      INCIDENT HANDLING PHASES ({focusNistPhases.length})
-                    </div>
-                  )}
-                  {focusNistPhases.map(phase => {
-                    const ph = NIST_800_61_PHASES[phase] || { fn: '', csf: '', desc: '' };
-                    return (
-                      <div key={phase} className="panel" style={{ borderLeft: '3px solid var(--medium)', marginBottom: 8 }}>
-                        {focusNistPhases.length === 1 && (
-                          <div className="panel-header" style={{ color: 'var(--medium)' }}>INCIDENT HANDLING PHASE</div>
-                        )}
-                        <div className="panel-body">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 'var(--fs-lead)', fontWeight: 700 }}>{ph.fullName || phase}</span>
-                            {ph.fn && (
-                              <span className="badge badge-medium" title={ph.csf} style={{ fontSize: 'var(--fs-caption)', padding: '3px 10px' }}>{ph.fn}</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.65 }}>{ph.desc}</div>
-                          {ph.csf && (
-                            <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: 8 }}>
-                              SP 800-61 Rev. 3 maps this phase to {ph.csf}.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {incidentPhase && <PhaseCard phase={incidentPhase} header="THIS INCIDENT'S PHASE" />}
 
               <div className="panel" style={{ borderLeft: '3px solid var(--accent)', marginBottom: 14 }}>
                 <div className="panel-body">
@@ -2150,22 +2149,167 @@ import OverviewPage from './overview.jsx';
                 );
               })()}
 
-              <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>CSF 2.0 FUNCTIONS</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-                {NIST_FUNCTIONS.map(fn => (
-                  <span key={fn} className={`badge ${fn === 'DETECT' ? 'badge-accent' : ''}`}
-                    style={fn !== 'DETECT' ? { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-muted)' } : {}}>
-                    {fn}
-                  </span>
-                ))}
-              </div>
+              <CsfFunctionsFooter />
+            </div>
 
-              <div className="panel">
-                <div className="panel-body" style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  ADTE covers the <strong style={{ color: 'var(--accent)' }}>DETECT</strong> function.
-                  Response actions (<strong>RESPOND</strong>) are not implemented — ADTE recommends only; the safety-gate config is reserved for a future execution layer.
+          </div>
+        </div>
+      );
+    }
+
+    // Every incident in the audit log, counted once each (its latest run).
+    // Reads /api/verdicts, which needs an analyst login: anonymous visitors
+    // get a login prompt, never an empty table that reads as "no incidents".
+    // Not /api/stats/mitre: that counts runs (a re-triage counts twice) and
+    // carries no NIST phase.
+    const ALL_INCIDENTS_LIMIT = 500;   // /api/verdicts caps limit at 500
+
+    function MitreAllIncidents({ focus, onLogin }) {
+      const mitreMap = useMitreMap();
+      const [state, setState] = useState({ status: 'loading', incidents: [], runs: 0, message: '' });
+
+      useEffect(() => {
+        let cancelled = false;
+        fetch(`${API_BASE}/api/verdicts?limit=${ALL_INCIDENTS_LIMIT}`, { headers: authHeaders() })
+          .then(async r => {
+            let d = null;
+            try { d = await r.json(); } catch { /* non-JSON body */ }
+            return { ok: r.ok, status: r.status, d };
+          })
+          .then(({ ok, status, d }) => {
+            if (cancelled) return;
+            if (ok) {
+              const runs = Array.isArray(d?.verdicts) ? d.verdicts : [];
+              setState({ status: 'ready', incidents: latestRunPerIncident(runs), runs: runs.length, message: '' });
+            } else if (status === 401 || status === 403) {
+              setState({ status: 'auth', incidents: [], runs: 0, message: d?.error || '' });
+            } else {
+              setState({ status: 'error', incidents: [], runs: 0, message: d?.error || `HTTP ${status}` });
+            }
+          })
+          .catch(() => { if (!cancelled) setState({ status: 'error', incidents: [], runs: 0, message: 'Network error' }); });
+        return () => { cancelled = true; };
+      }, []);
+
+      // Wait for the technique map too: it decides the tactic grouping, and a
+      // regroup after the flash would remount the target and lose it.
+      useMitreFocusFlash(focus, state.status === 'ready' && mitreMap.status !== 'loading');
+
+      if (state.status === 'loading') return <div className="view"><TableSkeleton rows={4} rowHeight={40} /></div>;
+      if (state.status === 'auth') {
+        return (
+          <div className="view">
+            <EmptyState title="Analyst login required"
+              hint={`ALL INCIDENTS counts the incidents in the audit log (from its newest ${ALL_INCIDENTS_LIMIT} runs), which needs an analyst login. Open Settings and log in. Recruiters: use the recruiter passkey ${RECRUITER_PASSKEY}.`}
+              actionLabel="Open Settings" onAction={onLogin} />
+          </div>
+        );
+      }
+      if (state.status === 'error') {
+        return <div className="view"><Banner tone="warn" label="ERROR">{`Could not load the audit log: ${state.message}`}</Banner></div>;
+      }
+      if (state.incidents.length === 0) {
+        return (
+          <div className="view">
+            <EmptyState title="No incidents logged yet" hint="Run a triage. Every verdict lands in the audit log, and this view counts them." />
+          </div>
+        );
+      }
+
+      // Technique and tactic counts, per incident: an incident counts once per
+      // technique and once per tactic, however many of its IDs share one.
+      const techIncidents = new Map();     // technique ID -> incident count
+      const tacticIncidents = new Map();   // tactic ('' = not in the map) -> Set of incident IDs
+      const phaseIncidents = new Map();    // phase -> incident count
+      for (const row of state.incidents) {
+        for (const id of new Set(rowTechniques(row))) {
+          techIncidents.set(id, (techIncidents.get(id) || 0) + 1);
+          const tactic = lookupTechnique(mitreMap, id)?.tactic || '';
+          if (!tacticIncidents.has(tactic)) tacticIncidents.set(tactic, new Set());
+          tacticIncidents.get(tactic).add(row.incident_id);
+        }
+        if (row.nist_phase) phaseIncidents.set(row.nist_phase, (phaseIncidents.get(row.nist_phase) || 0) + 1);
+      }
+      const killChainOrder = mitreMap.status === 'ready' ? mitreMap.killChainOrder : [];
+      const tacticOrder = [...killChainOrder, ...[...tacticIncidents.keys()].filter(t => t && !killChainOrder.includes(t)), ''];
+      const tacticGroups = tacticOrder
+        .filter(t => tacticIncidents.has(t))
+        .map(tactic => ({
+          tactic,
+          count: tacticIncidents.get(tactic).size,
+          techs: [...techIncidents.keys()]
+            .filter(id => (lookupTechnique(mitreMap, id)?.tactic || '') === tactic)
+            .sort((a, b) => techIncidents.get(b) - techIncidents.get(a) || a.localeCompare(b)),
+        }));
+      const phases = [
+        ...NIST_PHASE_ORDER.filter(p => phaseIncidents.has(p)),
+        ...[...phaseIncidents.keys()].filter(p => !NIST_PHASE_ORDER.includes(p)),
+      ];
+      const n = state.incidents.length;
+      const capped = state.runs >= ALL_INCIDENTS_LIMIT;
+      // A chip from a verdict-filtered Audit list can name a technique or phase
+      // that only an EARLIER run of an incident carried. This view counts each
+      // incident's latest run, so there is nothing to flash: say why.
+      const focusTarget = typeof focus?.target === 'string' ? focus.target : '';
+      const focusIsPhase = focusTarget.startsWith('phase:');
+      const focusMissing = Boolean(focusTarget) && focusTarget !== '__nist__' && (
+        focusIsPhase ? !phaseIncidents.has(focusTarget.slice(6)) : !techIncidents.has(focusTarget));
+
+      return (
+        <div className="view">
+          <ViewIntro description={`${n} ${n === 1 ? 'incident' : 'incidents'} in the audit log, each counted once (its latest run), across ${techIncidents.size} ${techIncidents.size === 1 ? 'technique' : 'techniques'}.${capped ? ` Built from the newest ${ALL_INCIDENTS_LIMIT} runs.` : ''}`} />
+          {focusMissing && (
+            <Banner tone="info" label="NOTE" style={{ marginBottom: 16 }}>
+              {`${focusIsPhase ? focusTarget.slice(6) : focusTarget} appears only in an earlier run of an incident. This view counts each incident's latest run, so it is not listed here.`}
+            </Banner>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 20 }}>
+
+            {/* LEFT — techniques grouped by tactic, kill-chain order */}
+            <div>
+              <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>MITRE ATT&CK</h3>
+              {tacticGroups.length === 0 && (
+                <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>No ATT&CK techniques recorded on these incidents.</div>
+              )}
+              {tacticGroups.map(g => (
+                <div key={g.tactic || '__unmapped__'} className="panel" style={{ marginBottom: 10 }}>
+                  <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span>{g.tactic || techniqueMissingText(mitreMap)}</span>
+                    <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text-secondary)' }}>{g.count} {g.count === 1 ? 'incident' : 'incidents'}</span>
+                  </div>
+                  <div className="panel-body" style={{ padding: 0 }}>
+                    {g.techs.map((id, i) => {
+                      const info = lookupTechnique(mitreMap, id);
+                      const count = techIncidents.get(id);
+                      return (
+                        <div key={id} id={`mitre-tech-${id}`} title={techniqueTooltip(mitreMap, id)} style={{
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
+                          borderBottom: i < g.techs.length - 1 ? '1px solid var(--border)' : 'none',
+                        }}>
+                          <span className="badge badge-accent" style={{ flexShrink: 0 }}>{id}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                            <span style={{ fontSize: 'var(--fs-body)', color: info ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                              {info ? (info.name || id) : techniqueMissingText(mitreMap)}
+                            </span>
+                            {!info && mitreMap.status !== 'loading' && <AttackLink id={id} />}
+                          </div>
+                          <span className="mono" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
+              ))}
+            </div>
+
+            {/* RIGHT — incident-handling phases */}
+            <div id="mitre-nist-section">
+              <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 6 }}>Incident handling: NIST SP 800-61 Rev. 3 and CSF 2.0</h3>
+              <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                Each incident's phase comes from its verdict: high risk means containment is recommended; anything else is still in detection and analysis.
               </div>
+              {phases.map(phase => <PhaseCard key={phase} phase={phase} count={phaseIncidents.get(phase)} />)}
+              <CsfFunctionsFooter />
             </div>
 
           </div>
@@ -2605,6 +2749,30 @@ import OverviewPage from './overview.jsx';
       Object.entries(NIST_800_61_PHASES).map(([phase, info]) => [phase, `${phase} · ${info.csf}`])
     );
 
+    // Life-cycle display order (the phase table above is keyed, not ordered).
+    const NIST_PHASE_ORDER = ['Preparation', 'Detection & Analysis', 'Containment', 'Post-Incident Activity'];
+
+    // Latest audit row per incident. /api/verdicts returns rows newest-first,
+    // so the first row seen for an incident_id is its latest run. The Audit
+    // Log and the MITRE / NIST "ALL INCIDENTS" scope both count through this,
+    // so a re-triaged incident is one incident in both places, never two.
+    function latestRunPerIncident(rows) {
+      const seen = new Set();
+      return (Array.isArray(rows) ? rows : []).filter(r => {
+        if (!r || seen.has(r.incident_id)) return false;
+        seen.add(r.incident_id);
+        return true;
+      });
+    }
+
+    // A logged row's technique IDs (stored as a JSON string; [] if unreadable).
+    function rowTechniques(row) {
+      try {
+        const ids = JSON.parse(row?.mitre_techniques || '[]');
+        return Array.isArray(ids) ? ids.filter(t => typeof t === 'string' && t) : [];
+      } catch { return []; }
+    }
+
     /* ------------------------------------------------------------------ */
     /* VIEW: VerdictHistoryView                                             */
     /* ------------------------------------------------------------------ */
@@ -2612,7 +2780,7 @@ import OverviewPage from './overview.jsx';
     // Coverage badge clouds cap at this many before the "+n more" expander.
     const TECH_CLOUD_CAP = 8;
 
-    function VerdictHistoryView({ result, onNav }) {
+    function VerdictHistoryView({ result, onNav, rerunnableIds, onRerun }) {
       const mitreMap = useMitreMap();
       const [rows, setRows] = useState(null);
       const [loading, setLoading] = useState(true);
@@ -2646,7 +2814,7 @@ import OverviewPage from './overview.jsx';
       const handleDateRangeChange = (e) => { const v = e.target.value; setDateRange(v); load(filter || null, v); };
 
       const handleClear = () => {
-        if (!window.confirm('Clear all verdict history? This cannot be undone.')) return;
+        if (!window.confirm('Clear all triage history? This cannot be undone.')) return;
         fetch(`${API_BASE}/api/verdicts`, { method: 'DELETE', headers: authHeaders() })
           .then(r => r.json())
           .then(d => { if (d.status === 'ok') { setRows([]); setFilter(''); setDateRange('all'); } else setError('Clear failed'); })
@@ -2655,12 +2823,11 @@ import OverviewPage from './overview.jsx';
 
       const colTemplate = '220px 170px 1fr minmax(150px, 200px)';
 
-      // Deduplicate by incident_id (rows are newest-first; keep the latest run per ID).
-      const _dedupSeen = new Set();
-      const dedupedRows = (rows || []).filter(r => { if (_dedupSeen.has(r.incident_id)) return false; _dedupSeen.add(r.incident_id); return true; });
+      // One row per incident (its latest run); shared with MITRE / NIST.
+      const dedupedRows = latestRunPerIncident(rows);
 
       // Pre-compute aggregates so both summary strip and column headers can share them
-      const allTechs = [...new Set(dedupedRows.flatMap(r => { try { return JSON.parse(r.mitre_techniques || '[]'); } catch { return []; } }))];
+      const allTechs = [...new Set(dedupedRows.flatMap(rowTechniques))];
       const allPhases = [...new Set(dedupedRows.map(r => r.nist_phase).filter(Boolean))];
 
       return (
@@ -2722,16 +2889,16 @@ import OverviewPage from './overview.jsx';
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
                         <span className="micro-label">TECHNIQUES ({allTechs.length})</span>
                         {allTechs.length > 0 && (
-                          <InlineLink style={{ fontSize: 'var(--fs-caption)' }} title="View all techniques in MITRE view"
-                            onClick={() => onNav('view:mitre', { techs: allTechs })}>
-                            open in MITRE →
+                          <InlineLink style={{ fontSize: 'var(--fs-caption)' }} title="Every technique across all incidents, grouped by tactic"
+                            onClick={() => onNav('view:mitre', { scope: 'all' })}>
+                            View all in MITRE / NIST →
                           </InlineLink>
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         {visibleTechs.length ? visibleTechs.map(t => (
                           <span key={t} className="badge badge-accent badge-clickable"
-                            onClick={() => onNav('view:mitre', { tech: t })}
+                            onClick={() => onNav('view:mitre', { scope: 'all', target: t })}
                             title={`${techniqueTooltip(mitreMap, t)}\n\nClick to view this technique`}
                             style={{ fontSize: 'var(--fs-caption)' }}>{t}</span>
                         )) : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>}
@@ -2746,16 +2913,16 @@ import OverviewPage from './overview.jsx';
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
                         <span className="micro-label">NIST PHASES ({allPhases.length})</span>
                         {allPhases.length > 0 && (
-                          <InlineLink style={{ fontSize: 'var(--fs-caption)' }} title="View all phases in MITRE view"
-                            onClick={() => onNav('view:mitre', { section: 'nist', nistPhases: allPhases })}>
-                            open in MITRE →
+                          <InlineLink style={{ fontSize: 'var(--fs-caption)' }} title="Every incident-handling phase across all incidents"
+                            onClick={() => onNav('view:mitre', { scope: 'all', target: '__nist__' })}>
+                            View all in MITRE / NIST →
                           </InlineLink>
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {allPhases.length ? allPhases.map(phase => (
                           <span key={phase} className="badge badge-medium badge-clickable"
-                            onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: phase })}
+                            onClick={() => onNav('view:mitre', { scope: 'all', target: `phase:${phase}` })}
                             title={`${NIST_PHASE_LABEL[phase] || phase}\n\nClick to view this phase`}
                             style={{ fontSize: 'var(--fs-caption)' }}>{phase}</span>
                         )) : <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>—</span>}
@@ -2780,19 +2947,26 @@ import OverviewPage from './overview.jsx';
               {dedupedRows.map(row => {
                 let techs = [];
                 try { techs = row.mitre_techniques ? JSON.parse(row.mitre_techniques) : []; } catch {}
+                // The ID links only where it can deliver: the loaded incident
+                // opens its signals; a bundled example re-runs in Triage. The
+                // audit row stores no incident JSON, so anything else is text.
                 const isLoaded = activeId === row.incident_id;
-                const signalDest = isLoaded ? 'view:signals' : 'view:triage';
-                const signalTip  = isLoaded ? 'View signal breakdown' : 'Load in Triage to re-run';
+                const canRerun = !isLoaded && Boolean(rerunnableIds && rerunnableIds.has(row.incident_id));
                 return (
                   <div key={row.id} className="data-table-row" style={{ gridTemplateColumns: colTemplate, cursor: 'default', alignItems: 'start', paddingTop: 10, paddingBottom: 10 }}>
 
                     {/* Incident ID — the single row-level link */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                      <InlineLink mono style={{ fontSize: 'var(--fs-small)' }}
-                        onClick={() => onNav(signalDest)} title={signalTip}>
-                        {row.incident_id}
-                        {!isLoaded && <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginLeft: 4 }}>↩</span>}
-                      </InlineLink>
+                      {isLoaded || canRerun ? (
+                        <InlineLink mono style={{ fontSize: 'var(--fs-small)' }}
+                          onClick={() => (isLoaded ? onNav('view:signals') : onRerun(row.incident_id))}
+                          title={isLoaded ? 'View signal breakdown' : 'Bundled example: load and re-run it in Triage'}>
+                          {row.incident_id}
+                          {canRerun && <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginLeft: 4 }}>↩</span>}
+                        </InlineLink>
+                      ) : (
+                        <span className="mono" style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>{row.incident_id}</span>
+                      )}
                       <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>
                         {row.logged_at ? row.logged_at.slice(0,19).replace('T',' ') : '—'}
                       </span>
@@ -2812,11 +2986,11 @@ import OverviewPage from './overview.jsx';
                       {techs.length
                         ? techs.map(t => {
                             const meta = lookupTechnique(mitreMap, t) || {};
-                            const tip = `${techniqueTooltip(mitreMap, t)}\n\nClick to jump to this technique in MITRE view`;
+                            const tip = `${techniqueTooltip(mitreMap, t)}\n\nClick to see this technique across the logged incidents`;
                             return (
                               <div key={t} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
                                 <span className="badge badge-accent badge-clickable"
-                                  onClick={() => onNav('view:mitre', { tech: t })} title={tip}
+                                  onClick={() => onNav('view:mitre', { scope: 'all', target: t })} title={tip}
                                   style={{ fontSize: 'var(--fs-caption)' }}>
                                   {t}
                                 </span>
@@ -2835,8 +3009,8 @@ import OverviewPage from './overview.jsx';
                     {/* NIST phase badge — deep-links to NIST section; text may wrap */}
                     {row.nist_phase ? (
                       <span className="badge badge-medium badge-clickable"
-                        onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: row.nist_phase })}
-                        title={`${NIST_PHASE_LABEL[row.nist_phase] || row.nist_phase}\n\nClick to jump to NIST section in MITRE view`}
+                        onClick={() => onNav('view:mitre', { scope: 'all', target: `phase:${row.nist_phase}` })}
+                        title={`${NIST_PHASE_LABEL[row.nist_phase] || row.nist_phase}\n\nClick to see this phase across the logged incidents`}
                         style={{ fontSize: 'var(--fs-caption)', justifySelf: 'start' }}>
                         {row.nist_phase}
                       </span>
@@ -2850,7 +3024,7 @@ import OverviewPage from './overview.jsx';
             </div>
           )}
           {!loading && !error && rows && rows.length > 0 && (
-            <LegendFooter hints={['Incident ID → Signals (↩ re-runs in Triage)', 'Badges → MITRE / NIST detail']} />
+            <LegendFooter hints={['Incident ID → Signals, or ↩ re-runs a bundled example', 'Badges → MITRE / NIST, logged incidents']} />
           )}
         </div>
       );
@@ -2980,15 +3154,15 @@ import OverviewPage from './overview.jsx';
     /* VIEW: AuditView (Verdict History + Feedback History)                */
     /* ------------------------------------------------------------------ */
 
-    function AuditView({ result, onNav }) {
+    function AuditView({ result, onNav, rerunnableIds, onRerun }) {
       const [tab, setTab] = useState('verdicts');
       return (
         <div>
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', paddingLeft: 24 }}>
-            <button className={`tab ${tab === 'verdicts' ? 'active' : ''}`} onClick={() => setTab('verdicts')}>VERDICTS</button>
-            <button className={`tab ${tab === 'feedback' ? 'active' : ''}`} onClick={() => setTab('feedback')}>FEEDBACK</button>
+            <button className={`tab ${tab === 'verdicts' ? 'active' : ''}`} onClick={() => setTab('verdicts')}>TRIAGE HISTORY</button>
+            <button className={`tab ${tab === 'feedback' ? 'active' : ''}`} onClick={() => setTab('feedback')}>ANALYST FEEDBACK</button>
           </div>
-          {tab === 'verdicts' && <VerdictHistoryView result={result} onNav={onNav} />}
+          {tab === 'verdicts' && <VerdictHistoryView result={result} onNav={onNav} rerunnableIds={rerunnableIds} onRerun={onRerun} />}
           {tab === 'feedback' && <FeedbackHistoryView />}
         </div>
       );
@@ -3173,6 +3347,15 @@ import OverviewPage from './overview.jsx';
     /* App                                                                  */
     /* ------------------------------------------------------------------ */
 
+    // Back trail depth: enough to retrace a session, small enough to stay a trail.
+    const NAV_STACK_CAP = 10;
+
+    // The view an action lands on ('view:weights' is an alias for Signals).
+    function navTargetView(action) {
+      const view = String(action || '').replace('view:', '');
+      return view === 'weights' ? 'signals' : view;
+    }
+
     function App() {
       const [inputText, setInputText] = useState('');
       const [examples, setExamples] = useState(null);
@@ -3207,9 +3390,10 @@ import OverviewPage from './overview.jsx';
       // this state just mirrors it for the toggle button.
       const [theme, setTheme] = useState(initialTheme);
       const [llmAvailable, setLlmAvailable] = useState(false);
-      const [mitreHighlight, setMitreHighlight] = useState(null);
-      const [mitreFocusTechs, setMitreFocusTechs] = useState(null);
-      const [mitreNistPhases2, setMitreNistPhases2] = useState(null);
+      const [mitreScope, setMitreScope] = useState('last');   // 'last' | 'all' — MITRE / NIST scope tab
+      const [mitreFocus, setMitreFocus] = useState(null);     // { target, nonce }: element a cross-view link flashes
+      // Back trail: snapshots of the views cross-view links left (newest last).
+      const [navStack, setNavStack] = useState([]);
       const [focusCaseId, setFocusCaseId] = useState(null);   // case pre-expanded when opening the Cases view
       const [signalsTab, setSignalsTab] = useState('last');   // 'last' | 'weights' — inner tab of the merged Signals view
       const [mobileNavOpen, setMobileNavOpen] = useState(false); // ≤900px off-canvas drawer state
@@ -3304,12 +3488,25 @@ import OverviewPage from './overview.jsx';
 
       const isLive = lastTriageTime && (Date.now() - lastTriageTime) < 60000;
 
-      // handleNav routes to any view and optionally pre-focuses the MITRE panel.
-      // Three context shapes:
-      //   { tech }       — single technique badge clicked → scroll + flash that card
-      //   { techs }      — "All techniques" from summary strip → highlight set
-      //   { section: 'nist', nistPhase? / nistPhases? } → scroll to NIST section
-      const handleNav = useCallback((action, ctx) => {
+      // What a Back press must restore. Read through a ref so the navigation
+      // callbacks always see the CURRENT view without being rebuilt on every
+      // state change. The Threat Intel IP is deliberately NOT in it: a Back to
+      // another view must not rewrite the IP box away from the result it shows.
+      const navSnapshotRef = useRef(null);
+      navSnapshotRef.current = { view: activeView, signalsTab, mitreScope, focusCaseId };
+
+      // Remember the view a cross-view link is leaving. A link to the view you
+      // are already on is not a step you can go back from, so it is not kept.
+      const pushNav = useCallback((destView) => {
+        const cur = navSnapshotRef.current;
+        if (!cur || destView === cur.view) return;
+        setNavStack(st => [...st, cur].slice(-NAV_STACK_CAP));
+      }, []);
+
+      // applyNav routes to any view. MITRE links may carry
+      // { scope: 'last' | 'all', target }: target is a technique ID, '__nist__'
+      // or 'phase:<name>', and the view scrolls to and flashes that element.
+      const applyNav = useCallback((action, ctx) => {
         const view = action.replace('view:', '');
         // 'view:weights' survives as a compat alias (overview cards and any
         // old link emit it): it lands on Signals with the WEIGHT MODEL tab up.
@@ -3320,43 +3517,64 @@ import OverviewPage from './overview.jsx';
           setActiveView(view);
           if (view === 'signals') setSignalsTab('last');
         }
-        // Sidebar navigation shows the fresh case list; only openCase()
-        // (which bypasses handleNav) pre-expands a specific case.
+        if (view === 'mitre') {
+          setMitreScope(ctx?.scope || 'last');
+          setMitreFocus(ctx?.target ? { target: ctx.target, nonce: Date.now() } : null);
+        }
+        // A plain navigation shows the fresh case list; only openCase()
+        // pre-expands a specific case.
         setFocusCaseId(null);
         // Any navigation closes the mobile drawer (no-op on desktop).
         setMobileNavOpen(false);
-        if (ctx?.tech) {
-          setMitreHighlight(ctx.tech);
-          setMitreFocusTechs([ctx.tech]);
-          setMitreNistPhases2(null);
-        } else if (ctx?.techs) {
-          setMitreHighlight(null);
-          setMitreFocusTechs(ctx.techs);
-          setMitreNistPhases2(null);
-        } else if (ctx?.section === 'nist') {
-          setMitreHighlight('__nist__');
-          setMitreFocusTechs(null);
-          setMitreNistPhases2(ctx.nistPhase ? [ctx.nistPhase] : ctx.nistPhases || null);
-        } else {
-          setMitreFocusTechs(null);
-          setMitreNistPhases2(null);
-        }
       }, []);
+
+      // Sidebar: a fresh start, so the Back trail is cleared.
+      const navigateTop = useCallback((action, ctx) => {
+        setNavStack([]);
+        applyNav(action, ctx);
+      }, [applyNav]);
+
+      // Every other cross-view link: remember where it came from, then go.
+      const navigateCross = useCallback((action, ctx) => {
+        pushNav(navTargetView(action));
+        applyNav(action, ctx);
+      }, [pushNav, applyNav]);
+
+      const goTriage = useCallback(() => navigateCross('view:triage'), [navigateCross]);
+
+      // Back restores the snapshot directly, not through applyNav (which
+      // would reset the Signals tab and drop the focused case), and it never
+      // re-runs a triage.
+      const goBack = useCallback(() => {
+        const prev = navStack[navStack.length - 1];
+        if (!prev) return;
+        setNavStack(navStack.slice(0, -1));
+        setActiveView(prev.view);
+        setSignalsTab(prev.signalsTab);
+        setMitreScope(prev.mitreScope);
+        setMitreFocus(null);
+        setFocusCaseId(prev.focusCaseId);
+        setMobileNavOpen(false);
+      }, [navStack]);
 
       const openCase = useCallback((caseId) => {
+        pushNav('cases');
         setFocusCaseId(caseId);
         setActiveView('cases');
-      }, []);
+        setMobileNavOpen(false);
+      }, [pushNav]);
 
       const navigateToIntel = useCallback((ip) => {
+        pushNav('intel');
         setIntelIp(ip);
         setIntelResult(null);
         setIntelError(null);
         setActiveView('intel');
+        setMobileNavOpen(false);
         // Increment (not toggle) so navigating to the same IP twice still fires
         // IntelView's useEffect — a boolean flip would no-op on repeated calls.
         setIntelAutoLookupTrigger(t => t + 1);
-      }, []);
+      }, [pushNav]);
 
       const handleLoadExample = useCallback(() => {
         if (!examples) return;
@@ -3459,11 +3677,37 @@ import OverviewPage from './overview.jsx';
 
       const handleLoadIncident = useCallback((row) => {
         const json = row.incident_json;
+        pushNav('triage');
         setInputText(JSON.stringify(json, null, 2));
         setLoadedKey(null);
         setActiveView('triage');
         runTriage(json);
-      }, [runTriage]);
+      }, [runTriage, pushNav]);
+
+      // The bundled examples are the only audit rows ADTE can re-run: an audit
+      // row stores the verdict, not the incident JSON.
+      const exampleKeyById = useMemo(() => {
+        const byId = new Map();
+        if (examples) {
+          for (const key of EXAMPLE_KEYS) {
+            const id = examples[key]?.incident_id;
+            if (typeof id === 'string' && id) byId.set(id, key);
+          }
+        }
+        return byId;
+      }, [examples]);
+      const rerunnableIds = useMemo(() => new Set(exampleKeyById.keys()), [exampleKeyById]);
+
+      const rerunExample = useCallback((incidentId) => {
+        const key = exampleKeyById.get(incidentId);
+        if (!key || !examples) return;
+        pushNav('triage');
+        setInputText(JSON.stringify(examples[key], null, 2));
+        setLoadedKey(key);
+        setActiveView('triage');
+        setMobileNavOpen(false);
+        runTriage(examples[key]);
+      }, [exampleKeyById, examples, pushNav, runTriage]);
 
       const canRun = !loading && inputText.trim().length > 0;
 
@@ -3471,7 +3715,7 @@ import OverviewPage from './overview.jsx';
         <MitreMapContext.Provider value={mitreMap}>
         <div>
           <Sidebar
-            activeView={activeView} onNav={handleNav}
+            activeView={activeView} onNav={navigateTop}
             triageCount={triageCount} serverOnline={serverOnline}
             collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)}
             mobileOpen={mobileNavOpen}
@@ -3483,8 +3727,8 @@ import OverviewPage from './overview.jsx';
               sibling rule — an inline duplicate here would shadow it. */}
           <div className="content-area">
             {/* Header */}
-            <header className="app-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <header className={`app-header${navStack.length > 0 ? ' has-back' : ''}`}>
+              <div className="app-header-left">
                 {/* Hamburger — only rendered ≤900px, where the sidebar is an
                     off-canvas drawer (it used to simply vanish with NO nav). */}
                 <button className="mobile-only" onClick={() => setMobileNavOpen(o => !o)}
@@ -3494,18 +3738,26 @@ import OverviewPage from './overview.jsx';
                     <path d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </button>
-                <span style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {navStack.length > 0 && (() => {
+                  const backLabel = VIEW_LABELS[navStack[navStack.length - 1].view] || 'previous view';
+                  return (
+                    <button type="button" className="link back-link" onClick={goBack} title={`Back to ${backLabel}`}>
+                      ← <span className="back-link-prefix">Back to </span>{backLabel}
+                    </button>
+                  );
+                })()}
+                <span className="app-header-title" style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text-primary)' }}>
                   {VIEW_LABELS[activeView] || activeView}
                 </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                {isLive && <span className="mono badge badge-success" style={{ fontSize: 'var(--fs-caption)' }}>● LIVE</span>}
-                <span className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>TRG/{String(triageCount).padStart(3,'0')}</span>
-                <UtcClock />
+              <div className="app-header-right">
+                {isLive && <span className="mono badge badge-success live-badge" style={{ fontSize: 'var(--fs-caption)' }}>● LIVE</span>}
+                <span className="mono header-meta" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)' }}>TRG/{String(triageCount).padStart(3,'0')}</span>
+                <span className="header-meta"><UtcClock /></span>
                 <button onClick={toggleTheme} className="theme-toggle" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} />
                 {/* Gear = shortcut to the Settings view (also a nav item now);
                     it lights up when Settings is the active view. */}
-                <button onClick={() => setActiveView('settings')} title="Settings"
+                <button onClick={() => navigateCross('view:settings')} title="Settings"
                   style={{ background: 'none', border: 'none', color: activeView === 'settings' ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
                   <IconSettings size={18} />
                 </button>
@@ -3517,11 +3769,13 @@ import OverviewPage from './overview.jsx';
               {/* Enter Console lands on Triage (a full workspace for an
                   anonymous visitor) rather than the auth-gated queue — the cold
                   first impression the Overview exists to fix. */}
-              {activeView === 'overview' && <OverviewPage onEnterConsole={() => setActiveView('triage')} onNav={handleNav} />}
+              {activeView === 'overview' && <OverviewPage onEnterConsole={goTriage} onNav={navigateCross} />}
               {activeView === 'queue' && <QueueView onLoadIncident={handleLoadIncident} onGoIntel={navigateToIntel} />}
               {activeView === 'cases' && <CasesView focusCaseId={focusCaseId} onGoIntel={navigateToIntel} />}
-              {activeView === 'signals' && <SignalsView result={result} onGoTriage={() => setActiveView('triage')} tab={signalsTab} onTabChange={setSignalsTab} />}
-              {activeView === 'mitre' && <MitreView result={result} onGoTriage={() => setActiveView('triage')} highlight={mitreHighlight} focusTechs={mitreFocusTechs} focusNistPhases={mitreNistPhases2} />}
+              {activeView === 'signals' && <SignalsView result={result} onGoTriage={goTriage} tab={signalsTab} onTabChange={setSignalsTab} />}
+              {activeView === 'mitre' && <MitreView result={result} onGoTriage={goTriage}
+                  scope={mitreScope} onScopeChange={sc => { setMitreScope(sc); setMitreFocus(null); }}
+                  focus={mitreFocus} onLogin={() => navigateCross('view:settings')} />}
               {activeView === 'intel' && (
                 <IntelView intelIp={intelIp} setIntelIp={setIntelIp}
                   intelResult={intelResult} setIntelResult={setIntelResult}
@@ -3532,7 +3786,7 @@ import OverviewPage from './overview.jsx';
                   result={result} />
               )}
               {activeView === 'safety' && <SafetyView />}
-              {activeView === 'audit' && <AuditView result={result} onNav={handleNav} />}
+              {activeView === 'audit' && <AuditView result={result} onNav={navigateCross} rerunnableIds={rerunnableIds} onRerun={rerunExample} />}
               {activeView === 'settings' && <SettingsView llmAvailable={llmAvailable} />}
               {activeView === 'agent' && <AgentView />}
 

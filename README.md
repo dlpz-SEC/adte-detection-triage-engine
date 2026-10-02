@@ -560,7 +560,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Aggregation endpoints — `/api/stats/verdicts`, `/api/stats/mitre`, `/api/stats/feedback` (P13 backend)
 - [x] Threat-intel bounded TTL cache + per-provider daily quotas; LLM narrative response cache
 - [x] Adversarial prompt-injection test suite + gap report (`docs/INJECTION_GAP_REPORT.md`)
-- [x] Verdict History + Feedback History views with filter and clear controls
+- [x] Triage History + Analyst Feedback tabs (Audit Log) with filter and clear controls
 - [x] Alert correlation / case management — rolling-window entity correlation (IP/user), ATT&CK kill-chain detection, explainable case-level escalation, Cases view + `/api/cases` endpoints; per-alert verdicts untouched at the time (Phase 30 — superseded by the cluster-context signal below)
 - [x] Cluster-context 6th signal — correlated-case context (sibling volume + kill-chain) feeds the per-alert score as an additive signal, up to +15 on top of the 100-point core; solo alerts byte-identical, parity golden-pinned (Phase 31)
 - [x] File-reputation 7th signal + Wazuh malware-pipeline integration — ingests FIM/VirusTotal alerts (rule 554/87105/553), an additive malware verdict (up to +40) built from the embedded VT result or an ADTE `/files` hash lookup, file-hash campaign correlation across hosts, and recommend-only containment actions; ADTE never executes (Phase 32, see `docs/WAZUH_MALWARE_INTEGRATION.md`)
@@ -580,7 +580,7 @@ See [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) for full project histor
 - [x] Alert queue source banner — full-width WAZUH LIVE (green) vs WAZUH UNAVAILABLE (amber) banner replacing the old inline badge (since superseded: the banner now reports WAZUH LIVE / SENTINEL LIVE / DEMO MODE — demo is the expected hosted state, not an outage)
 - [x] CRITICAL quick load tile — 4th scenario: CEO account takeover via Tor exit, all 5 core signals fire (expected solo score ~99)
 - [x] Cross-view IP navigation — clicking any IP in Queue, IP Rep, or Threat Intel history navigates to Threat Intel and auto-runs enrichment lookup
-- [x] Verdict History navigation — every cell redirects to the most relevant engine view (Signal Breakdown, MITRE / NIST, or Alert Input)
+- [x] Triage History navigation — technique and phase badges open MITRE / NIST counted across the logged incidents (newest 500 runs), a bundled example's ID re-runs it in Triage, and a header Back link returns to the previous view
 
 ## Skills Demonstrated
 
