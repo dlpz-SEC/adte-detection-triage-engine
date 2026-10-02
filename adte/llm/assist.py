@@ -29,7 +29,8 @@ _log = logging.getLogger(__name__)
 
 import anthropic
 
-from adte.intel.mitre_mapper import MitreMapper
+from adte.intel.mitre_mapper import MitreMapper, get_technique_details
+from adte.intel.nist_csf import CSF_SUBCATEGORIES, DE_CM
 
 # ------------------------------------------------------------------ #
 # Module-level constants                                               #
@@ -102,28 +103,31 @@ def _get_mapper() -> MitreMapper | None:
     return _mapper
 
 
-_SYSTEM_PROMPT: str = """\
+_CSF_REFERENCE: str = "\n".join(
+    f"  {sub_id}: {text}" for sub_id, text in CSF_SUBCATEGORIES.items()
+)
+
+_SYSTEM_PROMPT: str = f"""\
 You are an expert security analyst working in a Security Operations Center (SOC).
 Analyze the provided security incident triage result and return a JSON object.
 
-NIST CSF 2.0 reference categories for this function:
-  DE.CM-1: Networks and network services are monitored to find potentially adverse events
-  DE.CM-7: Monitoring for unauthorized personnel, connections, devices, and software
-  RS.AN-1: Notifications from detection systems are investigated
-  RS.AN-3: Forensics are performed
+NIST CSF 2.0 subcategories (DETECT function) you may cite:
+{_CSF_REFERENCE}
+DE.CM names the monitoring surface where the activity would be seen; DE.AE names
+analysis performed on this alert.
 
 Your response MUST be a valid JSON object with exactly these keys:
   narrative        - one paragraph plain-English summary of the incident
   mitre_tactics    - list of relevant MITRE ATT&CK tactic names inferred from the signals
   mitre_techniques - list of objects with "id" and "name" keys for specific ATT&CK techniques
-  nist_phases      - list of applicable NIST CSF 2.0 categories from [DE.CM-1, DE.CM-7, RS.AN-1, RS.AN-3]
+  nist_phases      - list of applicable NIST CSF 2.0 subcategory IDs, only from the list above
   confidence_note  - one sentence on your confidence in the MITRE ATT&CK mappings
 
 Rules:
   - narrative: summarise the verdict and key signals; do NOT contradict or override the verdict
   - mitre_tactics: infer from the signal rationale (e.g. impossible_travel -> Initial Access)
   - mitre_techniques: include the most relevant technique IDs with their full names
-  - nist_phases: only include categories that genuinely apply to this incident
+  - nist_phases: only include subcategories that genuinely apply to this incident
   - confidence_note: be honest about uncertainty, especially for ambiguous signals
 
 SECURITY BOUNDARY:
@@ -280,9 +284,79 @@ def _build_deterministic_summary(decision_output: dict[str, Any]) -> dict[str, A
         "narrative": narrative,
         "mitre_tactics": tactics,
         "mitre_techniques": techniques,
-        "nist_phases": ["DE.CM-1", "DE.CM-7", "RS.AN-1"],
+        "nist_phases": derive_nist_phases(
+            decision_output, [t["id"] for t in techniques]
+        ),
         "confidence_note": _MOCK_CONFIDENCE_NOTE,
     }
+
+
+def derive_nist_phases(
+    decision_output: dict[str, Any], technique_ids: list[str]
+) -> list[str]:
+    """Derive the NIST CSF 2.0 subcategories that fit one triage result.
+
+    Replaces a constant list that every incident used to receive.  Two
+    halves, each keyed on something the triage actually did:
+
+    - **DE.CM (where it would be seen):** the Continuous Monitoring
+      subcategory of each technique — the fired signals' techniques passed
+      in, plus native / rule-text IDs from ``llm_enrichment`` when the route
+      ran it — resolved through the same first-wins table as
+      ``mitre_details``.  Unmapped techniques contribute nothing.  A
+      registered ``file_reputation`` signal adds ``DE.CM-09`` on its own:
+      it exists only when the alert carries file evidence, which host file
+      monitoring produced, even on paths that skip ``llm_enrich``.
+    - **DE.AE (what ADTE did):** ``DE.AE-02`` for every triage (the alert was
+      analysed); ``DE.AE-03`` when the ``cluster_context`` signal is present
+      (correlated with sibling alerts); ``DE.AE-07`` when threat intelligence
+      was consulted (any ``evidence.threat_intel`` result, or a fired
+      ``ip_reputation`` signal) or the ``file_reputation`` signal is present
+      (a VirusTotal verdict);
+      ``DE.AE-08`` when the verdict is ``high_risk`` (the incident criteria
+      are met).
+
+    No RESPOND subcategory is ever returned: ADTE recommends containment
+    but never performs it.
+
+    Args:
+        decision_output: The canonical output dict from TriageEngine.
+        technique_ids: ATT&CK IDs already attributed to the fired signals.
+
+    Returns:
+        Deduplicated subcategory IDs, every one a key of
+        ``CSF_SUBCATEGORIES``: DE.CM in ID order, then DE.AE in ID order.
+    """
+    enrichment = decision_output.get("llm_enrichment")
+    native_ids = enrichment.get("technique_ids") if isinstance(enrichment, dict) else None
+    all_ids = list(technique_ids) + [
+        tid for tid in (native_ids if isinstance(native_ids, list) else [])
+        if isinstance(tid, str)
+    ]
+    monitoring = {
+        d["nist_csf"] for d in get_technique_details(list(dict.fromkeys(all_ids)))
+        if d["nist_csf"] in DE_CM
+    }
+
+    rationale = [r for r in decision_output.get("rationale") or [] if isinstance(r, dict)]
+    signals = {r.get("signal") for r in rationale}
+    if "file_reputation" in signals:
+        monitoring.add("DE.CM-09")
+    ip_reputation_fired = any(
+        r.get("signal") == "ip_reputation" and (r.get("score") or 0) > 0 for r in rationale
+    )
+    evidence = decision_output.get("evidence")
+    threat_intel = evidence.get("threat_intel") if isinstance(evidence, dict) else None
+
+    analysis = ["DE.AE-02"]
+    if "cluster_context" in signals:
+        analysis.append("DE.AE-03")
+    if threat_intel or ip_reputation_fired or "file_reputation" in signals:
+        analysis.append("DE.AE-07")
+    if decision_output.get("verdict") == "high_risk":
+        analysis.append("DE.AE-08")
+
+    return sorted(monitoring) + analysis
 
 
 def _build_llm_prompt(decision_output: dict[str, Any]) -> str:
@@ -339,6 +413,13 @@ def _parse_llm_response(text: str) -> dict[str, Any] | None:
     try:
         result: dict[str, Any] = json.loads(text.strip())
         if _REQUIRED_KEYS.issubset(result.keys()):
+            # The model may cite a CSF 1.1 ID or invent one; only IDs ADTE
+            # can stand behind reach the report.
+            phases = result.get("nist_phases")
+            result["nist_phases"] = list(dict.fromkeys(
+                p for p in (phases if isinstance(phases, list) else [])
+                if isinstance(p, str) and p in CSF_SUBCATEGORIES
+            ))
             return result
     except (json.JSONDecodeError, AttributeError):
         pass

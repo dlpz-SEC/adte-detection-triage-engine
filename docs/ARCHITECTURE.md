@@ -2,7 +2,7 @@
 
 ## Pipeline Overview
 
-ADTE follows the **NIST SP 800-61 Rev. 2** incident response lifecycle, implementing the Detection & Analysis phase as a deterministic, auditable pipeline:
+ADTE implements the Detection & Analysis phase of the incident response life cycle as a deterministic, auditable pipeline. **NIST SP 800-61 Rev. 3** (April 2025, superseding Rev. 2) maps that phase to the CSF 2.0 DETECT Function; ADTE's reports cite the DE.CM and DE.AE subcategories each incident involved:
 
 ```
                           NIST 800-61: Detection & Analysis

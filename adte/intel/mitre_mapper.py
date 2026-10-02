@@ -211,11 +211,19 @@ def get_technique_map() -> dict[str, dict[str, str]]:
 
 
 def get_nist_phase(verdict: str) -> str:
-    """Map a triage verdict string to a single NIST 800-61 phase label.
+    """Map a triage verdict string to a single incident-handling phase label.
 
-    ``high_risk`` maps to the Containment phase of NIST SP 800-61 Rev. 2.
-    All other verdicts (``medium_risk``, ``low_risk``, or unknown) map to
-    Detection & Analysis, reflecting that the incident is still being assessed.
+    The labels are the familiar life-cycle phase names from NIST SP 800-61.
+    Rev. 3 (April 2025, which superseded Rev. 2) keeps them only as a mapping
+    onto the CSF 2.0 Functions (its Table 1): Detection & Analysis → DETECT,
+    and Containment, Eradication & Recovery → RESPOND and RECOVER (both also
+    list IDENTIFY's Improvement Category).  The strings are stored in every
+    audit row, so they stay unchanged.
+
+    ``high_risk`` maps to Containment: ADTE recommends containment and never
+    performs it.  All other verdicts (``medium_risk``, ``low_risk``, or
+    unknown) map to Detection & Analysis, reflecting that the incident is
+    still being assessed.
 
     Args:
         verdict: Verdict string from the triage engine, e.g. ``"high_risk"``.

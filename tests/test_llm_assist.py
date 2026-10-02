@@ -131,12 +131,21 @@ class TestDeterministicSummary:
             assert key in summary, f"Missing key: {key}"
 
     def test_deterministic_summary_nist_phases(self) -> None:
-        """Deterministic summary always includes baseline NIST CSF 2.0 phases."""
+        """NIST CSF 2.0 subcategories are derived from this incident.
+
+        Re-pinned 2026-10-01: this used to assert a constant list
+        (DE.CM-1, DE.CM-7, RS.AN-1) that every incident received, two of
+        whose IDs CSF 2.0 does not define.  The helper's fired signals are
+        impossible_travel (T1078.004) and mfa_fatigue (T1621), seen by
+        identity monitoring (DE.CM-03), and ip_reputation (T1071, network
+        monitoring DE.CM-01, and threat intel integrated, DE.AE-07); the
+        verdict is high_risk (DE.AE-08).
+        """
         output = _make_decision_output()
         summary = _build_deterministic_summary(output)
-        assert "DE.CM-1" in summary["nist_phases"]
-        assert "DE.CM-7" in summary["nist_phases"]
-        assert "RS.AN-1" in summary["nist_phases"]
+        assert summary["nist_phases"] == [
+            "DE.CM-01", "DE.CM-03", "DE.AE-02", "DE.AE-07", "DE.AE-08",
+        ]
 
 
 class TestClaudeAPIPath:
@@ -151,7 +160,7 @@ class TestClaudeAPIPath:
                 {"id": "T1078.004", "name": "Valid Accounts: Cloud Accounts"},
                 {"id": "T1621", "name": "Multi-Factor Authentication Request Generation"},
             ],
-            "nist_phases": ["DE.CM-1", "RS.AN-1"],
+            "nist_phases": ["DE.CM-03", "DE.AE-02"],
             "confidence_note": "High confidence in MITRE mappings for this pattern.",
         }
 

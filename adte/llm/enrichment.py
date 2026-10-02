@@ -136,7 +136,10 @@ def enrich_alert(normalized_alert: dict[str, Any]) -> dict[str, Any] | None:
             "mitre_tactic": entry["mitre_tactic"] if entry else "Unknown",
             "mitre_technique_id": primary,
             "technique_ids": native_ids,
-            "nist_category": entry["nist_detect"] if entry else "DE.CM-1",
+            # No map entry → no CSF subcategory to claim.  Empty, the same
+            # convention mitre_details uses for an unmapped ID; this used to
+            # guess "DE.CM-1" (CSF 1.1 numbering) for every unmapped technique.
+            "nist_category": entry["nist_detect"] if entry else "",
             "confidence": 1.0,
             "analyst_recommendation": (
                 f"Log source labeled this {entry['mitre_technique_name']}"

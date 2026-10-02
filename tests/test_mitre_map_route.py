@@ -20,6 +20,7 @@ import yaml
 from adte import case_policy
 from adte.intel import mitre_mapper
 from adte.intel.mitre_mapper import MitreMapper, get_technique_details
+from adte.intel.nist_csf import CSF_SUBCATEGORIES
 from adte.store.audit_log import init_db
 
 _YAML_PATH = (
@@ -105,8 +106,10 @@ class TestShape:
     """Exact response contract shared with the SPA."""
 
     def test_top_level_keys(self, anon_client) -> None:
-        """Only the technique table and the tactic order are exposed."""
-        assert set(_get_map(anon_client)) == {"techniques", "kill_chain_order"}
+        """Only the technique table, the tactic order and the CSF text are exposed."""
+        assert set(_get_map(anon_client)) == {
+            "techniques", "kill_chain_order", "csf_subcategories",
+        }
 
     def test_kill_chain_order_matches_case_policy(self, anon_client) -> None:
         """Tactic order is the case layer's canonical 14-tactic list."""
@@ -269,4 +272,6 @@ class TestMapperFunction:
         assert body == {
             "techniques": {},
             "kill_chain_order": list(case_policy.KILL_CHAIN_ORDER),
+            # The CSF text does not come from the YAML, so it survives.
+            "csf_subcategories": dict(CSF_SUBCATEGORIES),
         }

@@ -141,47 +141,51 @@ import OverviewPage from './overview.jsx';
       ]},
     ];
 
+    // nist: the CSF 2.0 subcategory each signal stands for. Identity signals
+    // analyse what identity monitoring sees (DE.CM-03); the two reputation
+    // signals integrate threat intel (DE.AE-07); cluster_context correlates
+    // (DE.AE-03). The text is resolved from /api/mitre/map, never copied here.
     const SIGNAL_META = {
       impossible_travel: {
         description: "Detects authentication from two geographically distant locations within a timeframe physically impossible for human travel. Threshold: >500 km/hr implied velocity.",
         mitre: "T1078.004 — Valid Accounts: Cloud Accounts",
-        nist: "DE.CM-1 — Network monitoring",
+        nist: "DE.CM-03",
         example: "Login from New York at 09:00 and Moscow at 09:30 UTC (7,500 km in 30 min).",
       },
       mfa_fatigue: {
         description: "Detects repeated MFA push denials followed by approval — a pattern consistent with MFA bombing where the user eventually approves to stop notifications.",
         mitre: "T1621 — MFA Request Generation",
-        nist: "DE.CM-3 — Personnel activity monitoring",
+        nist: "DE.CM-03",
         example: "12 MFA denials over 10 minutes followed by 1 approval.",
       },
       ip_reputation: {
         description: "Cross-references source IPs against AbuseIPDB, VirusTotal, and AlienVault OTX. Flags known C2 infrastructure, Tor exit nodes, and scanners.",
         mitre: "T1071 — Application Layer Protocol",
-        nist: "DE.CM-1 — Network monitoring",
+        nist: "DE.AE-07",
         example: "Source IP 198.51.100.23 tagged as C2/Cobalt-Strike infrastructure.",
       },
       device_novelty: {
         description: "Identifies authentication from a device not previously seen in the user's baseline. First-seen devices carry higher risk than recognised endpoints.",
         mitre: "T1078 — Valid Accounts",
-        nist: "DE.CM-3 — Personnel activity monitoring",
+        nist: "DE.CM-03",
         example: "User authenticates from device ID 'unknown-mobile-7f3a' — no prior history.",
       },
       login_hour_anomaly: {
         description: "Compares authentication timestamp against the user's historical login hour distribution. Logins outside the 95th percentile window are flagged.",
         mitre: "T1078 — Valid Accounts",
-        nist: "DE.CM-7 — Monitoring for unauthorised access",
+        nist: "DE.CM-03",
         example: "User typically logs in 08:00–18:00; authentication at 03:47 UTC is flagged.",
       },
       cluster_context: {
         description: "Correlated-case context — the alert is part of an active case (same source IP, user, or file hash within the 60-minute correlation window). Points ramp with sibling count (1 → 5, 2 → 8, 3+ → 10), plus +5 when an ascending ATT&CK kill-chain spans the siblings. Additive on top of the 100-point core score — context aggravates, never mitigates; solo alerts are unaffected.",
         mitre: "— (meta-context; sibling alerts carry their own techniques)",
-        nist: "DE.AE-3 — Event data are correlated",
+        nist: "DE.AE-03",
         example: "2 related alerts in the last 60 min, kill-chain detected → +13 points.",
       },
       file_reputation: {
         description: "Multi-engine file-hash malware verdict. The embedded source verdict (Wazuh's VirusTotal integration), an ADTE VirusTotal /files lookup, and a confirmed-malware floor are scored independently — the strongest evidence wins. A detection ratio at or above 0.5 adds the full weight; a partial ratio adds 20; a source-confirmed file keeps a 15-point floor even when the scan comes back clean, because absence of a VirusTotal record is what a novel binary looks like. A clean scan registers 0 (negative evidence). Additive on top of the 100-point core score — malware aggravates, never mitigates; non-file alerts are unaffected.",
         mitre: "T1204 — User Execution / T1105 — Ingress Tool Transfer",
-        nist: "DE.CM-4 — Malicious code is detected",
+        nist: "DE.AE-07",
         example: "VirusTotal 58/72 engines flag /tmp/malware/eicar.com → +40 points → high risk.",
       },
     };
@@ -578,8 +582,10 @@ import OverviewPage from './overview.jsx';
     // the triage output's mitre_details resolve against) once on mount and
     // hands it down through this context. `status` is explicit so a view can
     // tell "this ID is not in the map" apart from "the map has not arrived"
-    // ('loading') or "the map could not be fetched" ('error').
-    const EMPTY_MITRE_MAP = { status: 'loading', techniques: {}, killChainOrder: [] };
+    // ('loading') or "the map could not be fetched" ('error'). The same
+    // response carries the official NIST CSF 2.0 text for every subcategory
+    // ADTE cites (adte/intel/nist_csf.py), so no framework text lives here.
+    const EMPTY_MITRE_MAP = { status: 'loading', techniques: {}, killChainOrder: [], csfSubcategories: {} };
     const MitreMapContext = createContext(EMPTY_MITRE_MAP);
     const useMitreMap = () => useContext(MitreMapContext);
 
@@ -604,7 +610,15 @@ import OverviewPage from './overview.jsx';
       const info = lookupTechnique(mitreMap, id);
       if (!info) return `${id} — ${techniqueMissingText(mitreMap)}`;
       const nist = info.nist_csf ? `${info.nist_csf}${info.nist_csf_name ? ` · ${info.nist_csf_name}` : ''}` : '—';
-      return `${id} — ${info.name || id}\nTactic: ${info.tactic || '—'}\nNIST CSF: ${nist}`;
+      return `${id} — ${info.name || id}\nTactic: ${info.tactic || '—'}\nCSF 2.0 monitoring: ${nist}`;
+    }
+
+    // Official CSF 2.0 text for a subcategory ID ('' when unknown or the map
+    // has not arrived). Own-property check: IDs reach here from responses.
+    function csfText(mitreMap, id) {
+      const table = mitreMap.csfSubcategories;
+      if (typeof id !== 'string' || !table) return '';
+      return Object.prototype.hasOwnProperty.call(table, id) ? table[id] : '';
     }
 
     // External ATT&CK reference, DERIVED from a validated ID — never a URL
@@ -653,8 +667,8 @@ import OverviewPage from './overview.jsx';
             );
           })}
           {phase && (
-            <span className="badge badge-medium" title={phaseInfo ? phaseInfo.desc : phase} style={{ fontSize: 'var(--fs-caption)' }}>
-              {phaseInfo ? `NIST 800-61 Phase ${phaseInfo.num}: ${phase}` : phase}
+            <span className="badge badge-medium" title={phaseInfo ? `${NIST_PHASE_LABEL[phase]}\n\n${phaseInfo.desc}` : phase} style={{ fontSize: 'var(--fs-caption)' }}>
+              {phaseInfo ? `${phase} · ${phaseInfo.fn}` : phase}
             </span>
           )}
         </div>
@@ -1251,8 +1265,11 @@ import OverviewPage from './overview.jsx';
               </div>
             )}
             {phases.length > 0 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {phases.map(p => <span key={p} className="badge badge-medium">{p}</span>)}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="micro-label">CSF 2.0</span>
+                {phases.map(p => (
+                  <span key={p} className="badge badge-medium" title={csfText(mitreMap, p) || p}>{p}</span>
+                ))}
               </div>
             )}
           </div>
@@ -1741,6 +1758,7 @@ import OverviewPage from './overview.jsx';
     /* ------------------------------------------------------------------ */
 
     function SignalsLastTriageTab({ result, onGoTriage }) {
+      const mitreMap = useMitreMap();
       const summary = result?.report?.signal_summary || {};
       const rationale = result?.rationale || [];
 
@@ -1804,7 +1822,7 @@ import OverviewPage from './overview.jsx';
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10 }}>
                     {[
                       { label: 'MITRE', value: meta.mitre },
-                      { label: 'NIST', value: meta.nist },
+                      { label: 'NIST CSF 2.0', value: csfText(mitreMap, meta.nist) ? `${meta.nist} · ${csfText(mitreMap, meta.nist)}` : meta.nist },
                       { label: 'Example', value: meta.example },
                     ].map(({ label, value }) => (
                       <div key={label} style={{ background: 'var(--bg-elevated)', padding: '8px 10px', borderRadius: 4 }}>
@@ -1825,22 +1843,31 @@ import OverviewPage from './overview.jsx';
     /* VIEW: MitreView                                                      */
     /* ------------------------------------------------------------------ */
 
+    // Incident-handling phases. The names are the familiar SP 800-61 life-cycle
+    // phases (stored in every audit row as nist_phase). SP 800-61 Rev. 3
+    // (April 2025) superseded Rev. 2 and keeps those phases only as a mapping
+    // onto the CSF 2.0 Functions, its Table 1, which `fn` and `csf` follow.
+    // Rev. 3 numbers no phases, so neither does this table.
     const NIST_800_61_PHASES = {
       'Detection & Analysis': {
-        num: 2,
+        fn: 'DETECT',
+        csf: 'CSF 2.0 DETECT (DE.AE Adverse Event Analysis)',
         desc: 'Identify, analyze, and prioritize events. Determine whether the event constitutes an incident, assess scope and impact, and assign initial severity.',
       },
       'Containment': {
-        num: 3,
         fullName: 'Containment, Eradication & Recovery',
-        desc: 'Limit damage and prevent further exploitation. Disable accounts, revoke sessions, isolate affected systems. Then eradicate the threat root cause and restore systems to normal operation.',
+        fn: 'RESPOND · RECOVER',
+        csf: 'CSF 2.0 RESPOND (RS.MI Incident Mitigation) and RECOVER',
+        desc: 'Limit damage and prevent further exploitation. Disable accounts, revoke sessions, isolate affected systems. Then eradicate the threat root cause and restore systems to normal operation. ADTE recommends these steps; it never performs them.',
       },
       'Preparation': {
-        num: 1,
+        fn: 'GOVERN · IDENTIFY · PROTECT',
+        csf: 'CSF 2.0 GOVERN, IDENTIFY and PROTECT',
         desc: 'Establish incident response capability before incidents occur: define policies, assemble tools, conduct training, and set up communication channels.',
       },
       'Post-Incident Activity': {
-        num: 4,
+        fn: 'IDENTIFY',
+        csf: 'CSF 2.0 IDENTIFY (ID.IM Improvement)',
         desc: 'Review the incident handling process, document lessons learned, update detection rules, and improve defenses to prevent recurrence.',
       },
     };
@@ -1967,7 +1994,7 @@ import OverviewPage from './overview.jsx';
                               <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{(known && meta.tactic) || '—'}</div>
                             </div>
                             <div>
-                              <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }}>NIST CSF DETECT</div>
+                              <div className="mono" style={{ fontSize: 'var(--fs-micro)', color: 'var(--text-muted)', marginBottom: 3, letterSpacing: '0.06em' }} title="The CSF 2.0 Continuous Monitoring subcategory whose monitoring would surface this technique">CSF 2.0 MONITORING</div>
                               <div>
                                 <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{(known && meta.nist_csf) || '—'}</span>
                                 {known && meta.nist_csf_name && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--fs-small)' }}>· {meta.nist_csf_name}</span>}
@@ -2004,7 +2031,7 @@ import OverviewPage from './overview.jsx';
                           <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
                             {t.tactic || '—'}
                             {t.nist_csf && (
-                              <> · NIST CSF <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{t.nist_csf}</span>{t.nist_csf_name ? ` ${t.nist_csf_name}` : ''}</>
+                              <> · CSF 2.0 <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{t.nist_csf}</span>{t.nist_csf_name ? ` ${t.nist_csf_name}` : ''}</>
                             )}
                           </span>
                           {!known && mitreMap.status !== 'loading' && <AttackLink id={t.id} />}
@@ -2053,7 +2080,7 @@ import OverviewPage from './overview.jsx';
 
             {/* RIGHT — NIST */}
             <div id="mitre-nist-section">
-              <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>NIST SP 800-61 Rev. 2</h3>
+              <h3 className="heading" style={{ fontSize: 'var(--fs-title)', fontWeight: 700, marginBottom: 12 }}>Incident handling: NIST SP 800-61 Rev. 3 and CSF 2.0</h3>
 
               {/* Phase reference cards — one per phase, shown when arriving from audit log NIST badge */}
               {focusNistPhases && focusNistPhases.length > 0 && (
@@ -2064,18 +2091,25 @@ import OverviewPage from './overview.jsx';
                     </div>
                   )}
                   {focusNistPhases.map(phase => {
-                    const ph = NIST_800_61_PHASES[phase] || { num: '?', desc: '' };
+                    const ph = NIST_800_61_PHASES[phase] || { fn: '', csf: '', desc: '' };
                     return (
                       <div key={phase} className="panel" style={{ borderLeft: '3px solid var(--medium)', marginBottom: 8 }}>
                         {focusNistPhases.length === 1 && (
                           <div className="panel-header" style={{ color: 'var(--medium)' }}>INCIDENT HANDLING PHASE</div>
                         )}
                         <div className="panel-body">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                            <span className="badge badge-medium" style={{ fontSize: 'var(--fs-caption)', padding: '3px 10px' }}>Phase {ph.num}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 'var(--fs-lead)', fontWeight: 700 }}>{ph.fullName || phase}</span>
+                            {ph.fn && (
+                              <span className="badge badge-medium" title={ph.csf} style={{ fontSize: 'var(--fs-caption)', padding: '3px 10px' }}>{ph.fn}</span>
+                            )}
                           </div>
                           <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.65 }}>{ph.desc}</div>
+                          {ph.csf && (
+                            <div style={{ fontSize: 'var(--fs-small)', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: 8 }}>
+                              SP 800-61 Rev. 3 maps this phase to {ph.csf}.
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -2085,27 +2119,36 @@ import OverviewPage from './overview.jsx';
 
               <div className="panel" style={{ borderLeft: '3px solid var(--accent)', marginBottom: 14 }}>
                 <div className="panel-body">
-                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>DETECT Function — NIST CSF 2.0</div>
-                  <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)' }}>ADTE's primary coverage area — identifying and analyzing security events in real time.</div>
+                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>DETECT Function · NIST CSF 2.0</div>
+                  <div style={{ fontSize: 'var(--fs-body)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    CSF 2.0 splits detection in two. Monitoring (DE.CM, Continuous Monitoring) is the SIEM's job: it watches networks, identities and hosts and raises the alert. Analysis (DE.AE, Adverse Event Analysis) is ADTE's: it analyzes the alert, correlates it with related alerts, brings in threat intelligence, and declares an incident when the verdict is high risk.
+                  </div>
                 </div>
               </div>
 
-              {nistPhases.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>FIRED CATEGORIES</div>
-                  {nistPhases.map(phase => (
-                    <div key={phase} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', marginBottom: 4 }}>
-                      <span className="badge badge-accent">{phase}</span>
-                      <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)' }}>
-                        {phase.startsWith('DE.CM-1') ? 'Network monitoring'
-                          : phase.startsWith('DE.CM-3') ? 'Personnel activity monitoring'
-                          : phase.startsWith('DE.CM-7') ? 'Monitoring for unauthorised access'
-                          : phase}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {nistPhases.length > 0 && (() => {
+                const groups = [
+                  { key: 'cm', label: 'WHERE IT WOULD BE SEEN · DE.CM', ids: nistPhases.filter(p => typeof p === 'string' && p.startsWith('DE.CM-')) },
+                  { key: 'ae', label: 'WHAT ADTE DID · DE.AE', ids: nistPhases.filter(p => typeof p === 'string' && p.startsWith('DE.AE-')) },
+                ].filter(g => g.ids.length > 0);
+                if (groups.length === 0) return null;   // e.g. a pre-CSF-2.0 result in memory
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>THIS INCIDENT · CSF 2.0 SUBCATEGORIES</div>
+                    {groups.map(g => (
+                      <div key={g.key} style={{ marginBottom: 10 }}>
+                        <div className="micro-label" style={{ marginBottom: 4 }}>{g.label}</div>
+                        {g.ids.map(id => (
+                          <div key={id} className="panel" style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '8px 14px', marginBottom: 4 }}>
+                            <span className="badge badge-accent" style={{ flexShrink: 0 }}>{id}</span>
+                            <span style={{ fontSize: 'var(--fs-small)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{csfText(mitreMap, id) || id}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               <div className="mono" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-muted)', marginBottom: 8 }}>CSF 2.0 FUNCTIONS</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -2557,12 +2600,10 @@ import OverviewPage from './overview.jsx';
       );
     }
 
-    const NIST_PHASE_LABEL = {
-      'Containment':          'NIST SP 800-61 Rev. 2 — Phase 3: Containment, Eradication & Recovery',
-      'Detection & Analysis': 'NIST SP 800-61 Rev. 2 — Phase 2: Detection & Analysis',
-      'Preparation':          'NIST SP 800-61 Rev. 2 — Phase 1: Preparation',
-      'Post-Incident Activity': 'NIST SP 800-61 Rev. 2 — Phase 4: Post-Incident Activity',
-    };
+    // Hover label per phase, derived from the one phase table above.
+    const NIST_PHASE_LABEL = Object.fromEntries(
+      Object.entries(NIST_800_61_PHASES).map(([phase, info]) => [phase, `${phase} · ${info.csf}`])
+    );
 
     /* ------------------------------------------------------------------ */
     /* VIEW: VerdictHistoryView                                             */
@@ -2795,7 +2836,7 @@ import OverviewPage from './overview.jsx';
                     {row.nist_phase ? (
                       <span className="badge badge-medium badge-clickable"
                         onClick={() => onNav('view:mitre', { section: 'nist', nistPhase: row.nist_phase })}
-                        title={`${NIST_PHASE_LABEL[row.nist_phase] || 'NIST SP 800-61 Rev. 2 — ' + row.nist_phase}\n\nClick to jump to NIST section in MITRE view`}
+                        title={`${NIST_PHASE_LABEL[row.nist_phase] || row.nist_phase}\n\nClick to jump to NIST section in MITRE view`}
                         style={{ fontSize: 'var(--fs-caption)', justifySelf: 'start' }}>
                         {row.nist_phase}
                       </span>
@@ -3197,11 +3238,15 @@ import OverviewPage from './overview.jsx';
             .then(d => {
               const techniques = d && d.techniques;
               const order = d && d.kill_chain_order;
+              const csf = d && d.csf_subcategories;
               if (!techniques || typeof techniques !== 'object' || Array.isArray(techniques) || !Array.isArray(order)) {
                 throw new Error('Malformed /api/mitre/map response');
               }
+              // CSF text only labels IDs; a missing or odd table degrades to
+              // bare IDs rather than failing the whole technique map.
+              const csfSubcategories = csf && typeof csf === 'object' && !Array.isArray(csf) ? csf : {};
               if (!cancelled) {
-                setMitreMap({ status: 'ready', techniques, killChainOrder: order.filter(t => typeof t === 'string' && t) });
+                setMitreMap({ status: 'ready', techniques, killChainOrder: order.filter(t => typeof t === 'string' && t), csfSubcategories });
               }
             })
             .catch(() => {

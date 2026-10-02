@@ -49,6 +49,7 @@ from adte.intel.mitre_mapper import (
     get_technique_map,
     get_techniques,
 )
+from adte.intel.nist_csf import csf_subcategory_table
 from adte.intel.sigma_fp_registry import FPRegistry, add_fp_entry
 from adte.models import NormalizedIncident, SentinelIncident
 from adte.store import session_store
@@ -618,14 +619,21 @@ def mitre_map() -> Any:
     Flask JSON provider sorts keys, which would discard the YAML first-seen
     order of ``techniques``.
 
+    ``csf_subcategories`` carries the official text of every NIST CSF 2.0
+    subcategory ADTE cites (``adte/intel/nist_csf.py``), so the SPA labels
+    both a technique's ``nist_csf`` and the report's ``nist_phases`` without
+    a client-side copy of the framework text.
+
     Returns:
         JSON ``{"techniques": {id: {"id", "name", "tactic", "nist_csf",
-        "nist_csf_name"}}, "kill_chain_order": [14 tactic names]}``.
-        ``techniques`` is empty if the mapping YAML is missing.
+        "nist_csf_name"}}, "kill_chain_order": [14 tactic names],
+        "csf_subcategories": {subcategory_id: text}}``.  ``techniques`` is
+        empty if the mapping YAML is missing.
     """
     payload = {
         "techniques": get_technique_map(),
         "kill_chain_order": list(KILL_CHAIN_ORDER),
+        "csf_subcategories": csf_subcategory_table(),
     }
     return Response(json.dumps(payload), mimetype="application/json")
 

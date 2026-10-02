@@ -591,7 +591,7 @@ Every item below is implemented in this repository and covered by the test suite
 | Skill | Where it lives |
 |-------|----------------|
 | **MITRE ATT&CK mapping** — technique *and* sub-technique IDs, native ingestion from `rule.mitre.id`, explicit per-technique provenance (`signal` / `native` / `rule_text`) | `adte/intel/mitre_mapper.py`, `adte/data/mitre_technique_map.yaml` (42 entries) |
-| **NIST SP 800-61 Rev. 2 lifecycle** — verdicts carry the IR phase; audit trail satisfies non-repudiation (soft-delete only) | `adte/report.py`, `adte/store/audit_log.py` |
+| **NIST SP 800-61 Rev. 3 + CSF 2.0** — verdicts carry the familiar IR life-cycle phase, which Rev. 3 maps onto the CSF 2.0 Functions; each report lists the CSF 2.0 subcategories derived from that incident (DE.CM: the monitoring that would surface it; DE.AE: the analysis ADTE performed), quoted from NIST CSWP 29; audit trail satisfies non-repudiation (soft-delete only) | `adte/intel/nist_csf.py`, `adte/llm/assist.py`, `adte/report.py`, `adte/store/audit_log.py` |
 | **Kill-chain detection** — longest-increasing-subsequence over ATT&CK tactic ordering, gap-tolerant, ≥3 tactics across ≥2 alerts | `adte/case_policy.py` |
 | **Alert correlation / case management** — rolling-window entity correlation on IP, user, and file hash; campaign detection across hosts | `adte/store/case_store.py` |
 | **Risk scoring model design** — weighted signals with proportional redistribution for non-evaluable inputs; additive aggravators that provably never mitigate | `adte/engine.py`, `adte/decision_policy.py` |
