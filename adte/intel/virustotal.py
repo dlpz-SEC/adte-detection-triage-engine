@@ -171,8 +171,9 @@ class VirusTotalClient:
 
         # Rate-limit window still closed → SKIP, never sleep.  enrich() runs
         # this on the request thread and loops observables sequentially, so
-        # sleeping the window blocks the worker (N observables x 15s) and
-        # gunicorn's --timeout kills the request outright.  A skipped lookup
+        # sleeping the window would pin that thread for N observables x 15s
+        # (under the old sync workers, gunicorn's --timeout killed the whole
+        # worker instead).  A skipped lookup
         # is a "-error" source, which the aggregator excludes from the
         # average, so VirusTotal simply abstains for this observable.
         if self._throttled(self._rate_limit_sleep):

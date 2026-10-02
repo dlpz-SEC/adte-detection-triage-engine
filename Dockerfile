@@ -9,7 +9,8 @@
 #
 # Mirrors the original Render build (Render is now parked; Railway is live):
 #   build : pip install . && cd frontend && npm install && npm run build
-#   start : gunicorn adte.server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+#   start : gunicorn adte.server:app --bind 0.0.0.0:$PORT --workers 1 --threads 8
+#           --worker-class gthread --timeout 60
 
 # ---- Stage 1: build the frontend bundle (esbuild) -------------------------
 FROM node:20-slim AS frontend
@@ -48,5 +49,14 @@ ENV ADTE_DRY_RUN=true \
     ADTE_KILL_SWITCH=false
 
 # Railway injects $PORT at runtime; default to 8080 for local `docker run`.
+#
+# One worker process with 8 threads (gthread), not several processes. ADTE
+# keeps rate-limit counters, threat-intel quotas and spacing, and its caches
+# in process memory; with --workers 2 each process kept its own copy, so every
+# documented rate limit and quota was really up to 2x. One process makes them
+# exact. The work is I/O-bound (threat-intel HTTP, Claude, SQLite), so threads
+# carry the concurrency. Under gthread, --timeout only catches a wedged worker,
+# it no longer ends a slow request: every outbound call sets its own timeout
+# (threat intel 10 s, Wazuh and Sentinel 30 s, Claude 30 s).
 EXPOSE 8080
-CMD ["sh", "-c", "gunicorn adte.server:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 60"]
+CMD ["sh", "-c", "gunicorn adte.server:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --worker-class gthread --timeout 60"]

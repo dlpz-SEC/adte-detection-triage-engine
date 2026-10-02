@@ -8,17 +8,18 @@ join-or-create decision.
 Design notes:
 
 - **Zero module-level mutable state.**  Sessions taught this lesson the hard
-  way (commit ``731600d``): gunicorn runs 2 worker processes, so any Python
+  way (commit ``731600d``): gunicorn ran 2 worker processes (one threaded
+  worker since 2026-10-01, but nothing here may assume that), so any Python
   dict/cache here would be per-worker and correlation would randomly miss
   cases created by the other worker.  Every public function opens a fresh
   connection to the shared SQLite file — the only cross-worker store in ADTE.
-- **Race-safe join-or-create.**  Two workers ingesting related alerts at the
-  same instant must not create duplicate cases.  ``_connect`` opens with
-  ``isolation_level=None`` (a deliberate deviation from ``session_store``) so
-  ``ingest_alert`` can wrap SELECT-then-INSERT in an explicit
-  ``BEGIN IMMEDIATE`` transaction, which takes the write lock up front and
-  serialises the two workers.  ``PRAGMA busy_timeout`` makes the loser wait
-  briefly instead of erroring.
+- **Race-safe join-or-create.**  Two writers (threads or worker processes)
+  ingesting related alerts at the same instant must not create duplicate
+  cases.  ``_connect`` opens with ``isolation_level=None`` (a deliberate
+  deviation from ``session_store``) so ``ingest_alert`` can wrap
+  SELECT-then-INSERT in an explicit ``BEGIN IMMEDIATE`` transaction, which
+  takes the write lock up front and serialises the two writers.
+  ``PRAGMA busy_timeout`` makes the loser wait briefly instead of erroring.
 - **Fail-open ingest.**  Correlation is a non-blocking enrichment: a broken
   case store must never block a verdict.  ``ingest_alert`` catches every
   exception and returns ``None`` (the route renders ``"case": null``).  Reads

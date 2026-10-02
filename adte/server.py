@@ -910,8 +910,10 @@ def triage() -> Any:
 # Batch triage — accept a whole OpenSearch export (array / wrapper of alerts)
 # ---------------------------------------------------------------------------
 
-# Cap chosen against gunicorn's 60 s worker timeout: the TI TTL cache makes
-# repeated/private IPs near-free, but each cold public IP costs live HTTP.
+# Cap chosen to keep a batch inside a minute.  Under the threaded gunicorn
+# worker, --timeout no longer ends a slow request, so this deadline is the
+# batch's only bound: the TI TTL cache makes repeated/private IPs near-free,
+# but each cold public IP costs live HTTP.
 _BATCH_MAX_ALERTS: int = 25
 _BATCH_DEADLINE_SECS: int = 45
 
@@ -964,7 +966,7 @@ def triage_batch() -> Any:
     per-item ``ok`` carrying the truth.  Alerts run sequentially under a
     ``_BATCH_DEADLINE_SECS`` budget — elements not started before the
     deadline are skipped with an explanatory error entry rather than
-    risking the gunicorn worker timeout.
+    holding the request thread open without bound.
 
     The LLM narrative is deliberately skipped for batches (the ``use_llm``
     query parameter is ignored): N sequential Claude calls would blow the

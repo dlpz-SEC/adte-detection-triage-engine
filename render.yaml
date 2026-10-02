@@ -8,7 +8,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install . && cd frontend && npm install && npm run build
-    startCommand: gunicorn adte.server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    startCommand: gunicorn adte.server:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --worker-class gthread --timeout 60
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
