@@ -817,3 +817,146 @@ analysis.** The deterministic report returned `["DE.CM-1", "DE.CM-7", "RS.AN-1"]
 incident, labelled "CSF 2.0" — and 15 of the YAML's 42 NIST IDs point at subcategories CSF 2.0
 doesn't have. Checking a framework citation against the publisher's own text (here NIST CSWP 29)
 is the same four-minute check as 2026-08-29.
+
+---
+
+### 2026-09-27 — A background workflow is only as durable as the session running it
+
+**Rule:** Before any restart, power-off, or wrap, export a running workflow's finished agent
+results from its `journal.jsonl` to a durable file. And when one stage runs far past its peers,
+read that agent's transcript timestamps instead of waiting: silence is not progress.
+
+Two failures in one session. After an app restart, `Workflow({scriptPath, resumeFromRunId})`
+was refused: the tool no longer recognised its own persisted script, so the review had to be
+re-authored from scratch with the implementers' results pasted in. Later, one of two drafting
+agents hung on a single tool call for eleven hours (01:52 to 12:59) while its sibling finished
+in twenty minutes; nothing times out an agent, and the only symptom was a quiet session. The
+research and the finished draft survived only because the journal is on disk; they were exported
+beside the plan before the wrap, so a continuation run can take them as `args`.
+
+---
+
+### 2026-09-27 — Worktrees share the stash: a "read-only" verifier's `git stash` lands in the main repo
+
+**Rule:** When a review agent needs a scratch worktree, tell it to discard changes there with
+`git checkout -- .` or `git worktree remove --force`, never `git stash`. Stash refs are shared by
+every worktree of a repository.
+
+A backend reviewer applied the Phase 1 patch inside a temp worktree at the parent commit, then
+`git stash`ed it to revert. The worktree was removed cleanly, but `stash@{0}` appeared in the main
+repo, and dropping it was then blocked as irreversible, leaving it for David. Extends 2026-08-28
+(a read-only reviewer that runs mutation tests leaves mutants in the tree): "read-only" has to
+name the git operations it forbids, not just the files.
+
+---
+
+### 2026-09-27 — The in-app Overview is public copy; audit it with the claim ledger like the README
+
+**Rule:** Any change to `frontend/src/overview.jsx` goes through portfolio-sync's claim audit
+(`verify_claims.py` plus a per-claim check against code), the same as the README. Its STATS are
+not the only claims on the page.
+
+A four-agent claim audit of the live Overview found 53 inaccurate or overstated statements. It
+said the Sentinel adapter used "a least-privilege reader app registration", which no artifact
+supports. It claimed "malformed input returns 422, never 500", while an IPv6 `ip_address` 500s.
+It said the injection corpus "runs in CI", but there is no CI, and it cited 30 payloads where the
+test file defines 28. The page had been checked only for its four stat tiles, because
+portfolio-sync's downstream table lists the README and RUNDOWN but not the page every visitor
+sees first.
+
+---
+
+### 2026-09-28 — Cutting a verified sentence can re-create the claim the verification removed
+
+**Rule:** After condensing or merging copy that already passed a claim audit, run the accuracy
+check again on the shortened text. A dropped qualifier is an added claim. And when critics from
+different lenses propose fixes to the same sentence, reconcile them against the accuracy evidence
+before applying any: each verifier judges only its own lens.
+
+The Overview went through two critic rounds (105 confirmed defects) and was then condensed by
+about a fifth. A third round found 10 new defects, all created by the cutting: "OCSF-inspired"
+had become "modeled on OCSF", "the same scenario, noise level and seed" had become "the same
+choices" (the seed is optional), and "169.254.169.254, metadata.google.internal" had become "the
+cloud metadata endpoints" (others get through). Separately, a style verifier confirmed the
+rewrite "a clean file scan leaves the score unchanged" in the same round an accuracy critic
+showed a confirmed-FIM alert still gets a 15-point floor on a clean scan.
+
+---
+
+### 2026-09-28 — A layout measurement of something not rendered reads as a pass
+
+**Rule:** Before trusting a fit or overflow number from the Browser pane, assert the measured
+element is rendered at the size you expect: `display` is not `none`, its box is non-zero, and
+`innerWidth` equals the viewport you emulated. Take the reading after the resize settles, not in
+the same batch as `resize_window`.
+
+A `getBBox()` check on the wide pipeline SVG returned exactly 0 slack for all 31 labels, which
+reads as "everything fits". The SVG was `display: none` at the pane's current width, so every
+box was zero-sized. Separately, right after emulating a 375px phone, `innerWidth` read 573 and a
+container read 129px wide, which looked like an overflow bug; a later reading at a settled 375px
+showed none. Same family as 2026-08-19 (hidden-pane computed styles) and the user-level fan-out
+lesson: a measurement that could not have failed is not evidence.
+
+Addendum 2026-10-01: a custom 375x812 size did not take at all (`innerWidth` stayed 616); the
+`mobile` preset followed by a page reload did. Read `innerWidth` before every phone-width check.
+
+---
+
+### 2026-10-01 — A superseding banner does not retire the sentence it supersedes
+
+**Rule:** When new work contradicts a claim in CLAUDE.md or another doctrine file, edit or strike
+the old passage itself, and grep the file for the old claim's keywords before writing the update.
+A banner at the top saying "now true" does not stop a reader from acting on the body text that
+still says "false".
+
+Phase 29 (2026-07-09) wired `llm_enrich()`, and the CLAUDE.md banner said so. Two body passages
+kept saying "intentionally left unwired" and "`llm_enrichment` is always `null`" for twelve
+weeks, and the second sat under Architecture Notes, the section a session reads as current
+fact. An exploration agent found the contradiction only because it read the route. Both
+passages were corrected on 2026-10-01 (`server.py:887`, `:1048`).
+
+---
+
+### 2026-10-01 — When one HTML file ships to two hosts, carry your own reset
+
+**Rule:** If the same page is both opened locally and published somewhere that wraps it (an
+Artifact skeleton, a CMS template), put every base rule it depends on in the page itself. The
+most common one is `[hidden] { display: none !important; }`, because any class that sets
+`display` otherwise overrides the `hidden` attribute.
+
+The interactive ADTE system map hid its inspector and trace bar with `el.hidden`. The Artifact
+skeleton injects the `[hidden]` rule, but the standalone kit file did not have it, so locally an
+empty details panel sat over the page on load. The page looked correct in one host and broken in
+the other, and only a render of the standalone copy showed it.
+
+---
+
+### 2026-10-01 — A review that names a failure class has not listed its instances; enumerate them
+
+**Rule:** When outside advice names a class of defect ("in-memory state breaks under N
+workers"), grep the code for EVERY instance of that class and rank them by consequence before
+accepting the prescription. The instance that matters most may be one the advice never named,
+and the prescribed fix may not exist as described.
+
+A recommendation said to move ADTE's rate-limit counters and "queue" to SQLite. Enumerating
+module-level state found six instances. The two it named were the mildest: the "queue" was a
+5-minute results cache, and the rate limiter's `limits` library has no SQLite backend at all. The
+one that changed verdicts went unnamed: the FP registry cache, which never saw a promotion made in
+the other gunicorn worker. That was fixed (`e36d27e`), and the worker model was changed so the
+rest became exact (`66ac020`). Same family as 2026-08-02 in `~/.claude/CLAUDE.md`: the advice
+bounds what it looked at, not what is there.
+
+---
+
+### 2026-10-01 — A layout fix is verified only across every state of the component
+
+**Rule:** When fixing an overflow or overlap, measure every state the component can be in, with
+and without each optional child (here: Back link shown or not, LIVE badge shown or not, the
+longest title), at each breakpoint you touched. Measuring only the state you fixed proves the fix,
+not the absence of a regression.
+
+The Phase 3 header pushed the settings gear off-screen at 375px when the new Back link appeared.
+The first fix (title `flex-shrink: 0` + `nowrap`, controls `flex-shrink: 0`) was measured with the
+Back link up and after pressing Back, and both read clean. With NO Back link and the LIVE badge up,
+the same rules made the title paint over the session counter, where HEAD had let it wrap. Only the
+adversarial review caught it, by building the header markup and measuring the states I skipped.
