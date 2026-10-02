@@ -519,7 +519,9 @@ def _csrf_origin_check() -> Any:
 # ---------------------------------------------------------------------------
 # Queue triage cache — keyed by incident_id, TTL 300 s.
 # Eliminates redundant enrich/score/decide calls for alerts already seen in
-# the current session.  TTL ensures FP registry updates propagate within 5 min.
+# the current session.  FPRegistry.load() reparses the registry whenever the
+# file changes, so the TTL bounds how long a cached queue row can predate an
+# FP registry update: 5 min at most.
 # ---------------------------------------------------------------------------
 _QUEUE_CACHE_TTL: float = 300.0
 _queue_cache: dict[str, dict[str, Any]] = {}   # incident_id → {"row": ..., "ts": float}
