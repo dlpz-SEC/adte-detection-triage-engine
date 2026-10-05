@@ -43,6 +43,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from adte.case_policy import KILL_CHAIN_ORDER
 from adte.engine import TriageEngine
+from adte.intel.aggregator import env_key
 from adte.intel.mitre_mapper import (
     get_nist_phase,
     get_technique_details,
@@ -329,9 +330,11 @@ if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
 # Per-key presence/absence is available to operators via GET /api/config
 # (masked) and must not appear in application logs where it would reveal
 # intel coverage gaps to anyone with log access.
+# Counted with the aggregator's own rule (blank or whitespace = not set), so
+# the log can never say "configured" while the aggregator runs on the mock.
 _intel_key_count = sum(
     1 for k in ("ADTE_ABUSEIPDB_KEY", "ADTE_VT_API_KEY", "ADTE_OTX_KEY")
-    if os.environ.get(k)
+    if env_key(k)
 )
 _log.info("ADTE startup — %d/3 threat intel sources configured", _intel_key_count)
 
@@ -1864,15 +1867,17 @@ def config() -> Any:
         val = os.environ.get(key, default)
         return [x.strip() for x in val.split(",") if x.strip()]
 
-    def _mask_key(env_var: str) -> str:
+    def _mask_value(val: str | None) -> str:
         # Show first-4/last-4 for keys longer than 8 chars so analysts can
         # confirm which key is active without exposing the full secret.
-        val = os.environ.get(env_var, "")
         if not val:
             return ""
         if len(val) <= 8:
             return "****"
         return val[:4] + "****" + val[-4:]
+
+    def _mask_key(env_var: str) -> str:
+        return _mask_value(os.environ.get(env_var, ""))
 
     return jsonify({
         "kill_switch":       _b("ADTE_KILL_SWITCH"),
@@ -1888,9 +1893,10 @@ def config() -> Any:
             "readonly": _mask_key("ADTE_API_KEY_READONLY"),
         },
         "intel_keys": {
-            "abuseipdb": _mask_key("ADTE_ABUSEIPDB_KEY"),
-            "virustotal": _mask_key("ADTE_VT_API_KEY"),
-            "otx": _mask_key("ADTE_OTX_KEY"),
+            # Read like the aggregator reads them: a blank key shows as unset.
+            "abuseipdb": _mask_value(env_key("ADTE_ABUSEIPDB_KEY")),
+            "virustotal": _mask_value(env_key("ADTE_VT_API_KEY")),
+            "otx": _mask_value(env_key("ADTE_OTX_KEY")),
         },
         "llm_available": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
     }), 200

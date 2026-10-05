@@ -32,6 +32,12 @@ from adte.models import FileReputationResult, ThreatIntelResult
 # RFC 6598 Shared Address Space (CGNAT — not publicly routable):
 #   100.64.0.0/16  — used here to represent residential proxy space.
 #
+# The aggregator answers the three TEST-NETs from this mock even when live
+# keys are configured (aggregator._DOCUMENTATION_NETWORKS), so those entries
+# hold in every mode.  With live keys, 100.64.0.0/10 gets a neutral answer
+# instead (real CGNAT hosts use it), and the two realistic ranges below go to
+# the real providers.
+#
 # Realistic-looking ranges included for demo fidelity only:
 #   185.220.101.0/24 — frequently cited as a Tor exit range in threat feeds;
 #                       NOT guaranteed to be non-routable in production.

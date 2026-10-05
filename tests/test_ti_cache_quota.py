@@ -122,7 +122,7 @@ class TestQuotaAwareAggregation:
         fresh, spent = _StubClient("fresh"), _StubClient("spent")
         q_fresh, q_spent = _DailyQuota(limit=100), _DailyQuota(limit=0)
         agg = _live_aggregator([spent, fresh], [q_spent, q_fresh])
-        result = agg.check("203.0.113.10")
+        result = agg.check("1.2.3.10")
         assert spent.calls == 0
         assert fresh.calls == 1
         assert result.source == "fresh"
@@ -134,7 +134,7 @@ class TestQuotaAwareAggregation:
         client = _StubClient()
         agg = _live_aggregator([client], [_DailyQuota(limit=0)])
         with caplog.at_level("WARNING", logger="adte.intel.aggregator"):
-            result = agg.check("203.0.113.11")
+            result = agg.check("1.2.3.11")
         assert client.calls == 0
         assert result.source.startswith("synthetic")
         assert any("daily quotas exhausted" in r.message for r in caplog.records)
@@ -144,8 +144,8 @@ class TestQuotaAwareAggregation:
         client = _StubClient()
         quota = _DailyQuota(limit=1)
         agg = _live_aggregator([client], [quota])
-        first = agg.check("203.0.113.12")
-        second = agg.check("203.0.113.12")
+        first = agg.check("1.2.3.12")
+        second = agg.check("1.2.3.12")
         assert client.calls == 1
         assert second == first
 

@@ -79,8 +79,9 @@ All five signals fired. `impossible_travel` (30/30) triggered because
 triggered because 11 pushes were denied before one was approved — the approval is
 what the engine treats as the capitulation event. `ip_reputation` (20/20) fired
 because the deterministic synthetic feed pins `198.51.100.23` as known C2
-infrastructure (with live threat-intel keys this signal reflects what the real
-feeds say — see the intel-mode note in the README's Test Coverage section).
+infrastructure. That address is an RFC 5737 documentation address, so it answers
+from the synthetic feed even with live threat-intel keys (see the intel-mode note
+in the README's Test Coverage section).
 `device_novelty` (15/15) fired on the unrecognised `DESKTOP-UNKNOWN` device from
 Moscow, and `login_hour_anomaly` (8.6/10) fired because 12 of 14 events fell
 outside Alice's baseline hours. Combined score 99/100 with 85% confidence →

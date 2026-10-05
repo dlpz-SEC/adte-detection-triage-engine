@@ -385,6 +385,9 @@ When multiple sources are configured:
 - **Source**: comma-joined provider names (e.g. `"abuseipdb,virustotal,otx"`).
 - **Fallback**: if all configured sources return errors, the synthetic lookup is used and a warning is logged.
 - **Private IPs**: `127.x`, `10.x`, `172.16.x`, `192.168.x` are short-circuited without any API call.
+- **Documentation IPs**: the RFC 5737 blocks (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) always answer from the synthetic feed, even with live keys, and spend no quota. They are not publicly routable, so a live feed has no reputation to report for them.
+- **Shared address space**: RFC 6598 `100.64.0.0/10` (carrier-grade NAT, overlay networks such as Tailscale) is never sent to a live provider. With live keys it gets a neutral `shared-address-space` result; without keys the synthetic feed answers it.
+- **Blank keys**: a key variable that is set but empty counts as not configured.
 
 ### Rate Limits
 
@@ -440,12 +443,14 @@ Example verdicts (fresh clone, no API keys — deterministic synthetic intel):
 > point fails CI. They are the parity contract that lets additive signals ship
 > without touching the core 100-point math.
 >
-> **They are intel-mode dependent.** With live threat-intel keys configured, the
-> IP-reputation signal reflects what the real feeds say about the fixture's IPs
-> — e.g. the impossible-travel example scores **79** with live keys (its IP is
-> not currently flagged) versus **99** against the synthetic feed, which pins
-> `198.51.100.23` as known C2. The scores above are what a fresh clone and CI
-> reproduce.
+> **Reserved addresses score the same in every mode; real public IPs do not.**
+> The impossible-travel example's attacker IP `198.51.100.23` is an RFC 5737
+> documentation address, so it always answers from the synthetic feed (pinned as
+> known C2) and the example scores **99** with or without live threat-intel keys.
+> The account-takeover and needs-human examples carry real public IPs (for example
+> the Tor exit `185.220.101.45`), whose live reputation can move their scores when
+> keys are configured. The benign VPN example uses only private addresses, which are
+> never looked up. The scores above are what a fresh clone and CI reproduce.
 
 ## Example Output
 

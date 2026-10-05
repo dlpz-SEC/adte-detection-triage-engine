@@ -8,11 +8,21 @@ returns a single normalised ``ThreatIntelResult`` (IP lookups via
 environment.
 
 Fallback behaviour (IP lookups):
-  - If no keys at all are set, the deterministic mock lookup is used.
+  - If no keys at all are set, the deterministic mock lookup is used.  A
+    key variable that is set but blank counts as not set.
   - If at least one key is set, only live API clients are queried.
   - If all live clients return errors, the mock lookup is used as a last
     resort and a warning is logged.
   - Private and loopback IPs are short-circuited without any API call.
+  - RFC 5737 documentation addresses (the three TEST-NETs) always answer
+    from the deterministic mock, even with live keys.  They are not publicly
+    routable, so a live provider has no reputation to report, and the
+    bundled examples that use them must score the same in every mode.
+  - RFC 6598 shared address space (100.64.0.0/10, carrier-grade NAT and
+    overlay networks such as Tailscale) is never sent to a live provider.
+    With live keys it gets a neutral result rather than the mock's synthetic
+    label, because real hosts do use these addresses; with no keys it is
+    answered by the mock like any other address.
 
 Fallback behaviour (file-hash lookups): hash reputation is VirusTotal-only
 (AbuseIPDB and OTX are IP-only feeds), so there is no multi-source
@@ -62,6 +72,62 @@ def _is_private(ip: str) -> bool:
     """
     addr = ipaddress.IPv4Address(ip)
     return any(addr in net for net in _PRIVATE_NETWORKS)
+
+
+# Explicit lists, not ipaddress.is_private/is_reserved: those flags differ
+# across Python versions (3.11 in production) and would route the TEST-NETs
+# into the neutral private branch, which is not the mock.
+#
+# RFC 5737 documentation addresses: answered by the mock in every mode.
+_DOCUMENTATION_NETWORKS: list[ipaddress.IPv4Network] = [
+    ipaddress.IPv4Network("192.0.2.0/24"),     # TEST-NET-1
+    ipaddress.IPv4Network("198.51.100.0/24"),  # TEST-NET-2
+    ipaddress.IPv4Network("203.0.113.0/24"),   # TEST-NET-3
+]
+# RFC 6598 shared address space: never sent to a live provider.
+_SHARED_ADDRESS_NETWORK = ipaddress.IPv4Network("100.64.0.0/10")
+
+
+def _is_documentation(ip: str) -> bool:
+    """Return True if *ip* is an RFC 5737 documentation address.
+
+    Args:
+        ip: Pre-validated IPv4 address string.
+
+    Returns:
+        ``True`` if the address is in ``_DOCUMENTATION_NETWORKS``.
+    """
+    addr = ipaddress.IPv4Address(ip)
+    return any(addr in net for net in _DOCUMENTATION_NETWORKS)
+
+
+def _is_shared_address(ip: str) -> bool:
+    """Return True if *ip* is in RFC 6598 shared address space.
+
+    Args:
+        ip: Pre-validated IPv4 address string.
+
+    Returns:
+        ``True`` if the address is in ``100.64.0.0/10``.
+    """
+    return ipaddress.IPv4Address(ip) in _SHARED_ADDRESS_NETWORK
+
+
+def env_key(name: str) -> str | None:
+    """Read an API key variable, treating blank as not set.
+
+    Without this, a variable that exists with an empty or whitespace value
+    switches the aggregator into live mode with no usable key.  The startup
+    log and ``/api/config`` read the keys through this same function, so
+    they always agree with what the aggregator actually does.
+
+    Args:
+        name: Environment variable name.
+
+    Returns:
+        The stripped value, or ``None`` when unset or blank.
+    """
+    return (os.environ.get(name) or "").strip() or None
 
 
 class _TTLCache:
@@ -255,15 +321,15 @@ class ThreatIntelAggregator:
         """Create an aggregator populated from ADTE environment variables.
 
         Reads ``ADTE_ABUSEIPDB_KEY``, ``ADTE_VT_API_KEY``, and
-        ``ADTE_OTX_KEY``.
+        ``ADTE_OTX_KEY``; a blank value counts as not set.
 
         Returns:
             A configured ``ThreatIntelAggregator``.
         """
         return cls(
-            abuseipdb_key=os.environ.get("ADTE_ABUSEIPDB_KEY"),
-            vt_key=os.environ.get("ADTE_VT_API_KEY"),
-            otx_key=os.environ.get("ADTE_OTX_KEY"),
+            abuseipdb_key=env_key("ADTE_ABUSEIPDB_KEY"),
+            vt_key=env_key("ADTE_VT_API_KEY"),
+            otx_key=env_key("ADTE_OTX_KEY"),
         )
 
     def check(self, ip: str) -> ThreatIntelResult:
@@ -273,8 +339,13 @@ class ThreatIntelAggregator:
           1. Return cached result if this IP was already queried.
           2. Return a neutral result for private/loopback IPs without
              making any API calls.
-          3. Return the deterministic mock result if no keys are configured.
-          4. Query live API clients, aggregate, and cache the result.
+          3. Return the deterministic mock result, uncached, for RFC 5737
+             documentation IPs, in every mode.  Not cached, so lookups of
+             synthetic addresses never evict live entries from the cache.
+          4. Return the deterministic mock result if no keys are configured.
+          5. Live mode, RFC 6598 shared address space: return a neutral
+             result, uncached, without calling any provider.
+          6. Query live API clients, aggregate, and cache the result.
              Falls back to the mock if all clients return errors.
 
         Args:
@@ -301,13 +372,30 @@ class ThreatIntelAggregator:
             self._cache[ip] = result
             return result
 
-        # 3. Mock-only mode.
+        # 3. Documentation addresses: deterministic mock in every mode, no
+        #    API call, no quota, not cached.
+        if _is_documentation(ip):
+            return _mock_lookup(ip)
+
+        # 4. Mock-only mode.
         if self._use_mock:
             result = _mock_lookup(ip)
             self._cache[ip] = result
             return result
 
-        # 4. Live API clients — queried in parallel to minimise latency.
+        # 5. Live mode, shared address space: no provider has a reputation
+        #    for a non-routable address, so answer neutrally (not cached).
+        if _is_shared_address(ip):
+            return ThreatIntelResult(
+                ip=ip,
+                is_malicious=False,
+                confidence=0.0,
+                source="shared-address-space",
+                tags=["cgnat"],
+                queried_at=datetime.now(timezone.utc),
+            )
+
+        # 6. Live API clients — queried in parallel to minimise latency.
         # Providers whose daily quota is exhausted are skipped for the day
         # (tolerate hand-constructed aggregators without _quotas — tests
         # build instances via __new__).

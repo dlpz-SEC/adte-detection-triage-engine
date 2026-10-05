@@ -354,6 +354,8 @@ There is no execution layer today, so these gates enforce nothing — the table 
 - Confidence: averaged across all responding sources
 - Tags: merged and deduplicated
 - Private IPs (`10.x`, `172.16.x`, `192.168.x`, `127.x`) are short-circuited — no API call made
+- Documentation IPs (RFC 5737 `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) always answer from the synthetic feed, even with live keys — no API call, no quota spent
+- Shared address space (RFC 6598 `100.64.0.0/10`) is never sent to a live provider — a neutral `shared-address-space` result with live keys, the synthetic feed without
 
 **LLM Narrative Summaries:**
 - Powered by Anthropic Claude SDK (`ANTHROPIC_API_KEY` env var)
