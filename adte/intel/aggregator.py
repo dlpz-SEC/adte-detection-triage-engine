@@ -332,6 +332,23 @@ class ThreatIntelAggregator:
             otx_key=env_key("ADTE_OTX_KEY"),
         )
 
+    def needs_live_lookup(self, ip: str) -> bool:
+        """Return True if ``check(ip)`` would call a live provider now.
+
+        False in mock mode, for private, documentation and shared-address
+        IPs, and for an IP already cached.  ``threat_intel`` uses it to
+        charge the per-alert lookup budget only for real provider calls.
+
+        Args:
+            ip: Pre-validated IPv4 address string.
+
+        Returns:
+            ``True`` when a live provider call would be made.
+        """
+        if self._use_mock or _is_private(ip) or _is_documentation(ip) or _is_shared_address(ip):
+            return False
+        return self._cache.get(ip) is None
+
     def check(self, ip: str) -> ThreatIntelResult:
         """Query all configured providers and return an aggregated result.
 

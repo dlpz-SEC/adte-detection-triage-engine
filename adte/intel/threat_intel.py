@@ -14,18 +14,62 @@ threat context to support triage decisions.
 
 from __future__ import annotations
 
+import contextvars
 import ipaddress
+import logging
 import re
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Literal
 
 from adte.intel.aggregator import ThreatIntelAggregator
 from adte.models import FileReputationResult, ThreatIntelResult
 
+_log = logging.getLogger(__name__)
+
 # Module-level singleton — reused across requests so the per-IP result cache
 # persists and clients are not re-instantiated on every triage call.
 _aggregator: ThreatIntelAggregator | None = None
 _aggregator_lock = threading.Lock()
+
+# Most distinct IPs one alert may send to live providers.  Without a cap, a
+# single request listing hundreds of public IPs spends every provider's daily
+# quota and holds a server thread while the lookups run one after another.
+MAX_LIVE_LOOKUPS_PER_ALERT: int = 25
+
+# [live lookups left, IPs skipped] for the alert triaged in the current
+# context.  None (the default) means uncapped: the CLI, and /api/intel's
+# single lookup.
+_lookup_budget: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "adte_ti_lookup_budget", default=None
+)
+
+
+@contextmanager
+def lookup_budget(limit: int = MAX_LIVE_LOOKUPS_PER_ALERT) -> Iterator[None]:
+    """Cap live threat-intel lookups for the alert triaged inside this block.
+
+    Only calls that would reach a live provider are charged (see
+    ``ThreatIntelAggregator.needs_live_lookup``); cached, private and
+    reserved IPs are free.  An IP over the cap gets a neutral ``lookup-cap``
+    result, visible in the triage evidence, and counts as not malicious.
+    Context-local: enter it in the thread that runs the engine, because a
+    context variable does not follow work into another thread.
+
+    Args:
+        limit: Live lookups allowed inside the block.
+
+    Yields:
+        Nothing; the previous budget is restored when the block exits.
+    """
+    token = _lookup_budget.set([limit, 0])
+    try:
+        yield
+    finally:
+        _lookup_budget.reset(token)
+
 
 # Hex-digest length -> digest algorithm name.
 _HASH_TYPE_BY_LENGTH: dict[int, Literal["md5", "sha1", "sha256"]] = {
@@ -75,7 +119,23 @@ def check_threat_intel(ip: str) -> ThreatIntelResult:
     except ipaddress.AddressValueError as exc:
         raise ValueError(f"Invalid IPv4 address: {ip!r}") from exc
 
-    return _get_aggregator().check(ip)
+    aggregator = _get_aggregator()
+    budget = _lookup_budget.get()
+    if budget is not None and aggregator.needs_live_lookup(ip):
+        if budget[0] <= 0:
+            budget[1] += 1
+            if budget[1] == 1:  # once per alert, so the log cannot be flooded
+                _log.info("Threat-intel lookup cap reached; further IPs in this alert are not looked up")
+            return ThreatIntelResult(
+                ip=ip,
+                is_malicious=False,
+                confidence=0.0,
+                source="lookup-cap",
+                tags=["not-looked-up"],
+                queried_at=datetime.now(timezone.utc),
+            )
+        budget[0] -= 1
+    return aggregator.check(ip)
 
 
 def check_file_hash(file_hash: str) -> FileReputationResult:

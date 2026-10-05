@@ -52,6 +52,8 @@ from adte.intel.mitre_mapper import (
 )
 from adte.intel.nist_csf import csf_subcategory_table
 from adte.intel.sigma_fp_registry import FPRegistry, add_fp_entry
+import adte.intel.threat_intel as _ti
+from adte.intel.threat_intel import lookup_budget
 from adte.models import NormalizedIncident, SentinelIncident
 from adte.store import session_store
 from adte.store.audit_log import (
@@ -805,6 +807,21 @@ def _finalize_output(output: dict[str, Any], incident: NormalizedIncident) -> di
     output["mitre_techniques"] = techniques
     output["mitre_details"] = get_technique_details(techniques, sources)
     output["nist_phase"] = get_nist_phase(output["verdict"])
+    capped = sorted(
+        ip for ip, intel in ((output.get("evidence") or {}).get("threat_intel") or {}).items()
+        if isinstance(intel, dict) and intel.get("source") == "lookup-cap"
+    )
+    if capped:
+        # Present only when the per-alert lookup cap skipped IPs, so every
+        # other alert's output is unchanged.
+        output["threat_intel_coverage"] = {
+            "complete": False,
+            "not_looked_up": capped,
+            "reason": (
+                f"Per-alert live lookup cap ({_ti.MAX_LIVE_LOOKUPS_PER_ALERT}) reached: "
+                "these IPs were not checked and count as not malicious."
+            ),
+        }
     return output
 
 
@@ -897,7 +914,10 @@ def triage() -> Any:
             )
             # llm_enrich() populates the advisory llm_enrichment field only —
             # it runs after decide(), so it cannot influence the verdict.
-            return engine.enrich().score().decide().llm_enrich().to_output(use_llm=use_llm)
+            with lookup_budget():  # bound live threat-intel calls per alert
+                _prewarm_threat_intel(incident)  # newest IPs first
+                engine.enrich()
+            return engine.score().decide().llm_enrich().to_output(use_llm=use_llm)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
             _future = _pool.submit(_run)
@@ -927,6 +947,30 @@ def triage() -> Any:
 # but each cold public IP costs live HTTP.
 _BATCH_MAX_ALERTS: int = 25
 _BATCH_DEADLINE_SECS: int = 45
+
+
+def _prewarm_threat_intel(incident: NormalizedIncident) -> None:
+    """Spend an alert's live-lookup budget on its newest events first.
+
+    ``engine.enrich()`` looks IPs up in stored event order, and Sentinel
+    incidents are stored oldest first, so under the per-alert cap
+    (``threat_intel.lookup_budget``) an incident with many IPs would always
+    leave its latest, usually decisive, IPs unchecked.  Looking them up here,
+    newest first and inside the same budget, puts their results in the
+    aggregator cache, where ``enrich()`` reads them back at no cost.
+
+    Args:
+        incident: The alert about to be enriched.
+    """
+    seen: set[str] = set()
+    for event in reversed(incident.events):
+        ip = event.ip_address
+        if ip and ip not in seen:
+            seen.add(ip)
+            try:
+                _ti.check_threat_intel(ip)
+            except ValueError:
+                pass  # enrich() raises the same error itself
 
 
 def _extract_batch_items(payload: Any) -> list[Any]:
@@ -1059,9 +1103,10 @@ def triage_batch() -> Any:
                 engine = TriageEngine(
                     incident, user_profile, fp_registry, cluster_context=cluster_ctx
                 )
-                output = (
-                    engine.enrich().score().decide().llm_enrich().to_output(use_llm=False)
-                )
+                with lookup_budget():  # bound live threat-intel calls per alert
+                    _prewarm_threat_intel(incident)  # newest IPs first
+                    engine.enrich()
+                output = engine.score().decide().llm_enrich().to_output(use_llm=False)
             except Exception as exc:
                 _log.error(
                     "Batch triage failed for element %d (%s)", i, type(exc).__name__
@@ -1250,7 +1295,10 @@ def queue() -> Any:
             engine = TriageEngine(
                 incident, user_profile, fp_registry, cluster_context=cluster_ctx
             )
-            output = engine.enrich().score().decide().to_output()
+            with lookup_budget():  # bound live threat-intel calls per alert
+                _prewarm_threat_intel(incident)  # newest IPs first
+                engine.enrich()
+            output = engine.score().decide().to_output()
         except Exception as exc:
             _log.error("Queue triage failed for incident %s (%s)", iid, type(exc).__name__)
             continue
