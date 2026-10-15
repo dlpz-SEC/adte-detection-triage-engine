@@ -434,6 +434,11 @@ if not _CORS_ORIGINS:
 CORS(app, origins=_CORS_ORIGINS)
 
 # --- Rate limiting ---
+# Decorator order matters: on every route @limiter.limit goes directly under
+# @app.route, OUTSIDE @require_role. flask-limiter counts a decorated limit only
+# when its own wrapper runs, so a limit inside require_role never sees a request
+# that failed authentication, and keys could be guessed without bound.
+# tests/test_rate_limits.py pins the order on every route.
 limiter = Limiter(
     get_remote_address,
     app=app,
@@ -825,9 +830,33 @@ def _finalize_output(output: dict[str, Any], incident: NormalizedIncident) -> di
     return output
 
 
+def _unsupported_ip_error(incident: NormalizedIncident) -> str | None:
+    """Return a 422 message if an event's ``ip_address`` cannot be looked up.
+
+    Threat-intel enrichment accepts IPv4 only (``threat_intel.is_lookup_ip``)
+    and raises on anything else from inside the engine, which surfaced as a
+    500.  Checking here, at the route boundary, makes it a clear client error
+    before any scoring, audit write or case ingest.  An empty ``ip_address``
+    passes: the engine skips it.
+
+    Args:
+        incident: The coerced incident.
+
+    Returns:
+        The error message, or None when every event IP is usable.
+    """
+    for i, event in enumerate(incident.events):
+        if event.ip_address and not _ti.is_lookup_ip(event.ip_address):
+            return (
+                f"Unsupported ip_address in events[{i}]: threat-intel enrichment "
+                "accepts IPv4 addresses only (IPv6 and hostnames are not supported)."
+            )
+    return None
+
+
 @app.route("/api/triage", methods=["POST"])
-@require_role("analyst")
 @limiter.limit("10/minute")
+@require_role("analyst")
 def triage() -> Any:
     """Run the ADTE triage pipeline on a posted incident.
 
@@ -896,6 +925,9 @@ def triage() -> Any:
                 f"payload ({type(exc).__name__})."
             )
         }), 422
+    ip_error = _unsupported_ip_error(incident)
+    if ip_error:
+        return jsonify({"error": ip_error}), 422
 
     # --- Run triage pipeline (30 s hard timeout) ---
     _TRIAGE_TIMEOUT_SECS = 30
@@ -1005,8 +1037,8 @@ def _extract_batch_items(payload: Any) -> list[Any]:
 
 
 @app.route("/api/triage/batch", methods=["POST"])
-@require_role("analyst")
 @limiter.limit("5/minute")
+@require_role("analyst")
 def triage_batch() -> Any:
     """Triage every alert in a posted batch with per-alert error isolation.
 
@@ -1093,6 +1125,10 @@ def triage_batch() -> Any:
                         f"alert payload ({type(exc).__name__})."
                     ),
                 })
+                continue
+            ip_error = _unsupported_ip_error(incident)
+            if ip_error:
+                results.append({"index": i, "ok": False, "error": ip_error})
                 continue
             try:
                 user_profile = get_user_profile(incident.user)
@@ -1197,8 +1233,8 @@ def _demo_incidents() -> list[NormalizedIncident]:
 
 
 @app.route("/api/queue")
-@require_role("analyst")
 @limiter.limit("20/minute")
+@require_role("analyst")
 def queue() -> Any:
     """Return a triage-scored summary of recent alerts for the queue view.
 
@@ -1346,8 +1382,8 @@ def queue() -> Any:
 
 
 @app.route("/api/verdicts")
-@require_role("analyst")
 @limiter.limit("60/minute")
+@require_role("analyst")
 def verdicts() -> Any:
     """Return audit log entries for past triage verdicts, newest first.
 
@@ -1396,8 +1432,8 @@ _EXPORT_COLUMNS: list[str] = [
 
 
 @app.route("/api/verdicts/export")
-@require_role("analyst")
 @limiter.limit("10/minute")
+@require_role("analyst")
 def export_verdicts() -> Any:
     """Export audit-log verdict rows as a downloadable CSV or JSON file.
 
@@ -1485,8 +1521,8 @@ def _parse_since_param() -> tuple[str | None, Any | None]:
 
 
 @app.route("/api/stats/verdicts")
-@require_role("analyst")
 @limiter.limit("10/minute")
+@require_role("analyst")
 def stats_verdicts_route() -> Any:
     """Return the verdict distribution over the audit log (P13 aggregation).
 
@@ -1507,8 +1543,8 @@ def stats_verdicts_route() -> Any:
 
 
 @app.route("/api/stats/mitre")
-@require_role("analyst")
 @limiter.limit("10/minute")
+@require_role("analyst")
 def stats_mitre_route() -> Any:
     """Return MITRE ATT&CK technique frequency across logged verdicts.
 
@@ -1531,8 +1567,8 @@ def stats_mitre_route() -> Any:
 
 
 @app.route("/api/stats/feedback")
-@require_role("analyst")
 @limiter.limit("10/minute")
+@require_role("analyst")
 def stats_feedback_route() -> Any:
     """Return the analyst feedback FP/TP split and ratio.
 
@@ -1554,8 +1590,8 @@ def stats_feedback_route() -> Any:
 
 
 @app.route("/api/feedback", methods=["GET"])
-@require_role("analyst")
 @limiter.limit("60/minute")
+@require_role("analyst")
 def get_feedback() -> Any:
     """Return analyst feedback rows, newest first.
 
@@ -1578,8 +1614,8 @@ def get_feedback() -> Any:
 
 
 @app.route("/api/feedback", methods=["POST"])
-@require_role("analyst")
 @limiter.limit("30/minute")
+@require_role("analyst")
 def feedback() -> Any:
     """Record analyst FP/TP feedback and optionally promote FP IPs to the registry.
 
@@ -1600,13 +1636,16 @@ def feedback() -> Any:
     Returns:
         ``{"status": "ok", "label": label, "incident_id": incident_id,
         "registry_updated": bool}`` on success (200).
-        ``{"error": "..."}`` on bad label (400) or unexpected error (500).
+        ``{"error": "..."}`` on a non-object body, bad label or non-string
+        field (400), or unexpected error (500).
     """
     if not request.is_json:
         return jsonify({"error": "Content-Type must be application/json"}), 415
     payload = request.get_json(silent=True)
     if payload is None:
         return jsonify({"error": "Request body must be valid JSON"}), 400
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
 
     incident_id: str = payload.get("incident_id") or ""
     label: str = payload.get("label") or ""
@@ -1614,6 +1653,8 @@ def feedback() -> Any:
 
     if label not in ("fp", "tp"):
         return jsonify({"error": "label must be 'fp' or 'tp'"}), 400
+    if not isinstance(incident_id, str) or not isinstance(ip, (str, type(None))):
+        return jsonify({"error": "incident_id and ip must be strings"}), 400
 
     try:
         log_feedback(incident_id, label, ip, DB_PATH)
@@ -1641,8 +1682,8 @@ def feedback() -> Any:
 
 
 @app.route("/api/verdicts", methods=["DELETE"])
-@require_role("admin")
 @limiter.limit("5/minute")
+@require_role("admin")
 def delete_verdicts() -> Any:
     """Soft-delete all active verdict rows from the audit table.
 
@@ -1662,8 +1703,8 @@ def delete_verdicts() -> Any:
 
 
 @app.route("/api/feedback", methods=["DELETE"])
-@require_role("admin")
 @limiter.limit("5/minute")
+@require_role("admin")
 def delete_feedback() -> Any:
     """Soft-delete all active feedback rows from the audit table.
 
@@ -1687,8 +1728,8 @@ def delete_feedback() -> Any:
 
 
 @app.route("/api/cases")
-@require_role("analyst")
 @limiter.limit("60/minute")
+@require_role("analyst")
 def cases() -> Any:
     """Return correlation case summaries, newest activity first.
 
@@ -1718,8 +1759,8 @@ def cases() -> Any:
 
 
 @app.route("/api/cases/<case_id>")
-@require_role("analyst")
 @limiter.limit("60/minute")
+@require_role("analyst")
 def case_detail(case_id: str) -> Any:
     """Return one case with its escalation rationale and member alerts.
 
@@ -1740,8 +1781,8 @@ def case_detail(case_id: str) -> Any:
 
 
 @app.route("/api/cases", methods=["DELETE"])
-@require_role("admin")
 @limiter.limit("5/minute")
+@require_role("admin")
 def delete_cases() -> Any:
     """Soft-delete all active correlation cases.
 
@@ -1762,8 +1803,8 @@ def delete_cases() -> Any:
 
 
 @app.route("/api/intel")
-@require_role("analyst")
 @limiter.limit("30/minute")
+@require_role("analyst")
 def intel() -> Any:
     """Enrich a single IP address against configured threat intelligence sources.
 
@@ -1803,6 +1844,7 @@ def intel() -> Any:
 
 
 @app.route("/api/auth-check")
+@limiter.limit("30/minute")
 @require_role("readonly")
 def auth_check() -> Any:
     """Verify the caller's API key and return their resolved role.
@@ -1827,21 +1869,29 @@ def auth_check() -> Any:
 
 
 @app.route("/api/auth/login", methods=["POST"])
+@limiter.limit("10/minute")
 def auth_login() -> Any:
     """Exchange an API key for an HttpOnly session cookie.
 
     Accepts a JSON body ``{"api_key": "<key>"}`` and, if the key is valid,
     sets an ``adte_session`` cookie that is HttpOnly (not readable by JS)
     and SameSite=Strict.  The raw API key is never stored in the browser.
+    Every attempt counts toward the per-IP limit, successful ones included,
+    which also bounds how fast the public recruiter key can mint sessions.
 
     NIST 800-61 Phase: Detection & Analysis — credential exchange for
     browser-based operator sessions.
 
     Returns:
         ``{"authenticated": true, "role": "<role>"}`` on success (200),
-        or an error dict on failure (400/401).
+        or an error dict on failure (400 bad body, 401 bad key, 429 over
+        the rate limit).
     """
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
     api_key = str(body.get("api_key", "")).strip()
     if not api_key:
         return jsonify({"error": "api_key is required"}), 400
@@ -1885,8 +1935,8 @@ def auth_logout() -> Any:
 
 
 @app.route("/api/config")
-@require_role("senior_analyst")
 @limiter.limit("10/minute")
+@require_role("senior_analyst")
 def config() -> Any:
     """Return sanitised safety-gate configuration from environment variables.
 

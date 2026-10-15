@@ -96,6 +96,27 @@ def _get_aggregator() -> ThreatIntelAggregator:
     return _aggregator
 
 
+def is_lookup_ip(ip: str) -> bool:
+    """Return True if *ip* is an address ``check_threat_intel`` accepts.
+
+    The one definition of a lookup-able address: IPv4 only.  The triage
+    routes call it to reject an unsupported ``ip_address`` with a 422 before
+    the engine runs, so the two checks cannot drift apart.
+
+    Args:
+        ip: Candidate address string.
+
+    Returns:
+        True for a valid IPv4 address; False for IPv6, hostnames and any
+        other string.
+    """
+    try:
+        ipaddress.IPv4Address(ip)
+    except ipaddress.AddressValueError:
+        return False
+    return True
+
+
 def check_threat_intel(ip: str) -> ThreatIntelResult:
     """Look up an IP address against threat intelligence feeds.
 
@@ -114,10 +135,8 @@ def check_threat_intel(ip: str) -> ThreatIntelResult:
     Raises:
         ValueError: If *ip* is not a valid IPv4 address.
     """
-    try:
-        ipaddress.IPv4Address(ip)
-    except ipaddress.AddressValueError as exc:
-        raise ValueError(f"Invalid IPv4 address: {ip!r}") from exc
+    if not is_lookup_ip(ip):
+        raise ValueError(f"Invalid IPv4 address: {ip!r}")
 
     aggregator = _get_aggregator()
     budget = _lookup_budget.get()
