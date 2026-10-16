@@ -77,6 +77,7 @@ from adte.store.case_store import (
     peek_correlation_context,
 )
 from adte.store.user_history import get_user_profile
+from adte.version import get_version
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +588,19 @@ def health() -> Any:
         JSON ``{"status": "ok"}``.
     """
     return jsonify({"status": "ok"})
+
+
+@app.route("/version")
+def version() -> Any:
+    """Which commit is running, for the deploy-truth check.
+
+    Public like ``/health``: it carries only a commit SHA. Railway sets
+    ``RAILWAY_GIT_COMMIT_SHA`` on deploy; see ``adte/version.py``.
+
+    Returns:
+        JSON ``{"commit": ..., "source": "railway" | "git" | "unknown"}``.
+    """
+    return jsonify(get_version())
 
 
 @app.route("/api/examples")
