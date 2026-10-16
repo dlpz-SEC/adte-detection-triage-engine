@@ -631,7 +631,7 @@ Every item below is implemented in this repository and covered by the test suite
 | **Databases** — SQLite with `BEGIN IMMEDIATE` race-safe upserts, lazy schema migrations, indexing, retention pruning | `adte/store/case_store.py` |
 | **API design** — 24 REST routes, RBAC per route, structured errors (422 never 500), CSV/JSON export | `adte/server.py` |
 | **Frontend** — React SPA (9 views), esbuild bundling, Chart.js, dark/light theming, zero-dependency-CDN CSP compliance | `frontend/src/app.jsx` |
-| **DevOps** — multi-stage Docker (Node build → Python runtime), Railway CI/CD auto-deploy, 12-factor env config | `Dockerfile`, `railway.json` |
+| **DevOps** — multi-stage Docker (Node build → Python runtime), Railway CI/CD auto-deploy, 12-factor env config | `Dockerfile`, `.railway/railway.ts`, `.github/workflows/ci.yml` |
 | **AI/LLM integration** — Anthropic SDK, prompt caching, response caching, deterministic fallback, advisory-only isolation from the verdict | `adte/llm/` |
 
 ---

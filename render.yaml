@@ -1,6 +1,6 @@
 # PARKED (2026-07-10): Render's GitHub auto-deploy link was severed by the
 # 2026-06-17 repo recreation and was never reconnected — the Render service is
-# stale. Railway (Dockerfile + railway.json) is the live deployment target.
+# stale. Railway (Dockerfile + .railway/railway.ts) is the live deployment target.
 # This file remains as inert, reconnectable config.
 services:
   - type: web

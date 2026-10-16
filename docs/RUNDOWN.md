@@ -506,7 +506,7 @@ The ADTE bearer token is ADTE's own credential — it authenticates the user to 
 
 ### Current State
 
-ADTE is **live on Railway only**, at [https://autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app) (`Dockerfile` + `railway.json`, auto-deploying on every push to `main`). **Render is parked** — `render.yaml` remains in the repo but is inert (the GitHub link is severed and the service is out of the deployment picture). ADTE can also be run locally as a single `python -m adte.server` process on port 5000 serving both the Flask API and the static frontend SPA.
+ADTE is **live on Railway only**, at [https://autonomousdetection.up.railway.app](https://autonomousdetection.up.railway.app) (`Dockerfile` + `.railway/railway.ts`, auto-deploying each push to `main` once CI passes). **Render is parked** — `render.yaml` remains in the repo but is inert (the GitHub link is severed and the service is out of the deployment picture). ADTE can also be run locally as a single `python -m adte.server` process on port 5000 serving both the Flask API and the static frontend SPA.
 
 ### Deployment Steps (when ready)
 

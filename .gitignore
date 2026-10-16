@@ -38,3 +38,6 @@ _live_capture_raw.json
 # Frontend build artifacts
 frontend/node_modules/
 frontend/bundle.js
+
+# Railway IaC SDK, installed locally with --no-save for `railway config plan`
+node_modules/
