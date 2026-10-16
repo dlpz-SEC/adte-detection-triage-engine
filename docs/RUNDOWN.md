@@ -628,9 +628,9 @@ pip install -e ".[dev]"
 
 ---
 
-### Tests Fail or Drop Below 766
+### Tests Fail or Drop Below the Floor
 
-The project enforces a 766-test minimum. If `pytest` reports fewer than 766 passing tests after any change, something regressed. Run:
+The project enforces a test-count minimum, stored in `tests/.min_count` (952 as of 2026-10-16). In CI, `tests/conftest.py` fails the run if fewer tests pass than that. If you see fewer passing tests after any change, something regressed. Run:
 ```powershell
 pytest -v --tb=short
 ```
