@@ -16,7 +16,9 @@
 FROM node:20-slim AS frontend
 WORKDIR /build
 COPY frontend/package*.json ./
-RUN npm install
+# npm ci installs exactly what package-lock.json records (and fails if it is
+# out of step with package.json); npm install could resolve newer versions.
+RUN npm ci
 COPY frontend/ ./
 # esbuild src/app.jsx --bundle --minify -> bundle.js (gitignored, so it MUST
 # be rebuilt here; the GitHub clone Railway builds from has no bundle.js).

@@ -107,3 +107,38 @@ def incident_ambiguous(raw_ambiguous: dict[str, Any]) -> NormalizedIncident:
 def fp_registry() -> FPRegistry:
     """Load the default false-positive registry."""
     return FPRegistry.load()
+
+
+# ------------------------------------------------------------------ #
+# CI test-count floor                                                  #
+# ------------------------------------------------------------------ #
+# A run that silently collects fewer tests (a deleted file, an import that
+# skips a module, a bad -k) still exits green. In CI the number of passed
+# tests must reach the floor in tests/.min_count; raise it when tests are
+# added. Not enforced locally, where -m/-k selection is normal.
+
+_MIN_COUNT_FILE = Path(__file__).with_name(".min_count")
+_passed_count = 0
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    global _passed_count
+    if report.when == "call" and report.passed:
+        _passed_count += 1
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    if not os.environ.get("CI"):
+        return
+    floor = int(_MIN_COUNT_FILE.read_text(encoding="utf-8").strip())
+    if _passed_count < floor:
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        message = (
+            f"test-count floor: {_passed_count} passed, below the {floor} in {_MIN_COUNT_FILE.name}"
+        )
+        if reporter is not None:
+            reporter.write("\n")
+            reporter.write_sep("=", message, red=True, bold=True)
+        else:
+            print(message)
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED

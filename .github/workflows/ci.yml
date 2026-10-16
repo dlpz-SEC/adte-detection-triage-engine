@@ -1,0 +1,107 @@
+# CI gate (lifecycle plan B3). Railway's "Wait for CI" holds every deploy of
+# main until this workflow is green, so a push to any other branch tests
+# without deploying.
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel on main: a cancelled run there could let an untested commit
+  # through to the deploy gate.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  python:
+    name: pre-commit, tests, public claims
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: python -m pip install -e ".[dev]" "pre-commit>=4.0,<5.0"
+
+      - name: pre-commit (all files)
+        # gitleaks scans staged changes, and CI has none; GitHub secret
+        # scanning covers pushes to this public repo.
+        env:
+          SKIP: gitleaks-system
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: pytest (floor in tests/.min_count)
+        run: python -m pytest -q -p no:cacheprovider
+
+      - name: Public test-count claims
+        run: python tools/check_public_claims.py
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  reports:
+    # Non-blocking: these never fail the run (each step continues on error),
+    # they only report. S hits are candidates for review, never verdicts.
+    name: mypy and ruff B/S report (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: mypy (strict, report only)
+        continue-on-error: true
+        run: |
+          python -m mypy adte > mypy.txt 2>&1 || true
+          tail -n 1 mypy.txt
+          { echo "### mypy"; echo; echo '```'; tail -n 1 mypy.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat mypy.txt
+
+      - name: ruff bugbear and security (report only)
+        continue-on-error: true
+        run: |
+          python -m ruff check . --select B,S --exit-zero --statistics > ruff-bs.txt
+          { echo "### ruff B/S"; echo; echo '```'; cat ruff-bs.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          python -m ruff check . --select B,S --exit-zero --output-format concise
