@@ -76,9 +76,7 @@ class TestLoginLimit:
     def test_successful_logins_count_too(self, limited_client) -> None:
         """Valid logins count, so the public recruiter key cannot mint sessions unbounded."""
         codes = _statuses(
-            lambda: limited_client.post(
-                "/api/auth/login", json={"api_key": "analyst-test-key"}
-            ),
+            lambda: limited_client.post("/api/auth/login", json={"api_key": "analyst-test-key"}),
             11,
         )
         assert codes == [200] * 10 + [429]
@@ -89,9 +87,7 @@ class TestFailedAuthIsCounted:
 
     def test_bad_key_triage_hits_429_after_ten(self, limited_client) -> None:
         """POST /api/triage (10/min): ten bad-key 401s, then 429."""
-        codes = _statuses(
-            lambda: limited_client.post("/api/triage", json={}, headers=_BAD), 11
-        )
+        codes = _statuses(lambda: limited_client.post("/api/triage", json={}, headers=_BAD), 11)
         assert codes == [401] * 10 + [429]
 
     def test_missing_key_counts_on_a_read_route(self, limited_client) -> None:
@@ -101,9 +97,7 @@ class TestFailedAuthIsCounted:
 
     def test_valid_requests_are_counted_once(self, limited_client) -> None:
         """Moving the limiter outward must not double-count: exactly 10 x 200 first."""
-        codes = _statuses(
-            lambda: limited_client.get("/api/stats/verdicts", headers=_GOOD), 11
-        )
+        codes = _statuses(lambda: limited_client.get("/api/stats/verdicts", headers=_GOOD), 11)
         assert codes == [200] * 10 + [429]
 
 
@@ -112,9 +106,7 @@ class TestAuthCheckLimit:
 
     def test_bad_key_auth_check_hits_429_after_thirty(self, limited_client) -> None:
         """Thirty bad-key 401s, then 429."""
-        codes = _statuses(
-            lambda: limited_client.get("/api/auth-check", headers=_BAD), 31
-        )
+        codes = _statuses(lambda: limited_client.get("/api/auth-check", headers=_BAD), 31)
         assert codes == [401] * 30 + [429]
 
 

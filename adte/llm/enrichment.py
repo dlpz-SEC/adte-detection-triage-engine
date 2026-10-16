@@ -160,9 +160,7 @@ def enrich_alert(normalized_alert: dict[str, Any]) -> dict[str, Any] | None:
             "technique_ids": [mitre_mapping["mitre_technique_id"]],
             "nist_category": mitre_mapping["nist_detect"],
             "confidence": 1.0,
-            "analyst_recommendation": (
-                f"Matches {mitre_mapping['mitre_technique_name']}"
-            ),
+            "analyst_recommendation": (f"Matches {mitre_mapping['mitre_technique_name']}"),
         }
 
     # 3. No enrichment found — stay null instead of emitting a placeholder.

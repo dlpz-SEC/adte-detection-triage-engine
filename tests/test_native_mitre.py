@@ -149,9 +149,7 @@ class TestTriageRouteUnion:
         self, triage_client, incident_true_positive: NormalizedIncident
     ) -> None:
         """A native ID not derivable from signals shows up in the output."""
-        payload = self._payload_with_native_ids(
-            incident_true_positive, ["T1105"], [0]
-        )
+        payload = self._payload_with_native_ids(incident_true_positive, ["T1105"], [0])
         resp = triage_client.post("/api/triage", json=payload)
         assert resp.status_code == 200
         assert "T1105" in resp.get_json()["mitre_techniques"]
@@ -161,9 +159,7 @@ class TestTriageRouteUnion:
     ) -> None:
         """The same native ID on two events appears exactly once."""
         assert len(incident_true_positive.events) >= 2
-        payload = self._payload_with_native_ids(
-            incident_true_positive, ["T1105"], [0, 1]
-        )
+        payload = self._payload_with_native_ids(incident_true_positive, ["T1105"], [0, 1])
         resp = triage_client.post("/api/triage", json=payload)
         assert resp.status_code == 200
         assert resp.get_json()["mitre_techniques"].count("T1105") == 1
@@ -172,9 +168,7 @@ class TestTriageRouteUnion:
         self, triage_client, incident_true_positive: NormalizedIncident
     ) -> None:
         """Signal-derived IDs precede native additions in the output list."""
-        payload = self._payload_with_native_ids(
-            incident_true_positive, ["T1105"], [0]
-        )
+        payload = self._payload_with_native_ids(incident_true_positive, ["T1105"], [0])
         resp = triage_client.post("/api/triage", json=payload)
         assert resp.status_code == 200
         techniques = resp.get_json()["mitre_techniques"]

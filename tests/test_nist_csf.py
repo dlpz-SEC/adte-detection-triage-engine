@@ -119,9 +119,9 @@ class TestTechniqueYaml:
     def test_nist_category_is_the_official_text(self) -> None:
         """The label is NIST's wording for that exact ID, not a paraphrase."""
         for entry in _yaml_entries():
-            assert entry["nist_category"] == DE_CM[entry["nist_detect"]], (
-                entry["mitre_technique_id"]
-            )
+            assert entry["nist_category"] == DE_CM[entry["nist_detect"]], entry[
+                "mitre_technique_id"
+            ]
 
     def test_repeated_technique_ids_agree(self) -> None:
         """Lookups take the FIRST entry, so a disagreeing duplicate is dead data."""
@@ -172,9 +172,12 @@ class TestDeriveNistPhases:
 
     def test_fired_ip_reputation_means_intel_integrated(self) -> None:
         """A fired ip_reputation implies intel ran even without an evidence block."""
-        out = {"verdict": "medium_risk", "rationale": [
-            {"signal": "ip_reputation", "score": 20.0, "detail": "1 malicious IP"},
-        ]}
+        out = {
+            "verdict": "medium_risk",
+            "rationale": [
+                {"signal": "ip_reputation", "score": 20.0, "detail": "1 malicious IP"},
+            ],
+        }
         assert "DE.AE-07" in derive_nist_phases(out, [])
 
     def test_quiet_ip_reputation_alone_is_not_intel(self) -> None:
@@ -214,12 +217,15 @@ class TestDeriveNistPhases:
         """No map entry, no subcategory: never a guess."""
         assert derive_nist_phases(_output(), ["T9999"]) == ["DE.AE-02"]
 
-    @pytest.mark.parametrize("enrich", [
-        "not-a-dict",
-        {"technique_ids": "T1090.003"},
-        {"technique_ids": [None, 7, {"id": "T1090.003"}]},
-        {},
-    ])
+    @pytest.mark.parametrize(
+        "enrich",
+        [
+            "not-a-dict",
+            {"technique_ids": "T1090.003"},
+            {"technique_ids": [None, 7, {"id": "T1090.003"}]},
+            {},
+        ],
+    )
     def test_malformed_enrichment_is_ignored(self, enrich: Any) -> None:
         """Odd llm_enrichment shapes contribute nothing and never raise."""
         assert derive_nist_phases(_output(llm_enrichment=enrich), []) == ["DE.AE-02"]
@@ -235,8 +241,13 @@ class TestDeriveNistPhases:
         )
         phases = derive_nist_phases(out, ["T1621", "T1071", "T1071"])
         assert phases == [
-            "DE.CM-01", "DE.CM-03", "DE.CM-09",
-            "DE.AE-02", "DE.AE-03", "DE.AE-07", "DE.AE-08",
+            "DE.CM-01",
+            "DE.CM-03",
+            "DE.CM-09",
+            "DE.AE-02",
+            "DE.AE-03",
+            "DE.AE-07",
+            "DE.AE-08",
         ]
         assert all(p in CSF_SUBCATEGORIES for p in phases)
 
@@ -258,7 +269,9 @@ class TestLlmPath:
     def test_invented_and_legacy_ids_are_dropped(self) -> None:
         """A 1.1 ID, a RESPOND ID, junk and duplicates never reach the report."""
         raw = {
-            "narrative": "n", "mitre_tactics": [], "mitre_techniques": [],
+            "narrative": "n",
+            "mitre_tactics": [],
+            "mitre_techniques": [],
             "confidence_note": "c",
             "nist_phases": ["DE.CM-1", "DE.AE-02", "RS.AN-1", 7, "DE.AE-02", "DE.CM-03"],
         }
@@ -269,8 +282,11 @@ class TestLlmPath:
     def test_non_list_phases_become_empty(self) -> None:
         """A string where a list belongs is not iterated character by character."""
         raw = {
-            "narrative": "n", "mitre_tactics": [], "mitre_techniques": [],
-            "confidence_note": "c", "nist_phases": "DE.AE-02",
+            "narrative": "n",
+            "mitre_tactics": [],
+            "mitre_techniques": [],
+            "confidence_note": "c",
+            "nist_phases": "DE.AE-02",
         }
         parsed = _parse_llm_response(json.dumps(raw))
         assert parsed is not None and parsed["nist_phases"] == []
@@ -326,7 +342,11 @@ def _route_phases(client, key: str) -> list[str]:
 def test_account_takeover_example_phases(triage_client) -> None:
     """Identity + network monitoring, intel integrated, incident declared."""
     assert _route_phases(triage_client, "critical") == [
-        "DE.CM-01", "DE.CM-03", "DE.AE-02", "DE.AE-07", "DE.AE-08",
+        "DE.CM-01",
+        "DE.CM-03",
+        "DE.AE-02",
+        "DE.AE-07",
+        "DE.AE-08",
     ]
 
 

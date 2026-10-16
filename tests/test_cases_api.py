@@ -147,20 +147,14 @@ class TestBatchIngestHook:
         assert body["results"][2]["case"]["alert_count"] == 3
 
     def test_wazuh_fixture_batch_summary_consistent(self, cases_client) -> None:
-        data = json.loads(
-            (FIXTURES_DIR / "wazuh_alerts.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((FIXTURES_DIR / "wazuh_alerts.json").read_text(encoding="utf-8"))
         resp = cases_client.post("/api/triage/batch", json=data)
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["succeeded"] == len(data["hits"]["hits"])
         # Every correlated element's index appears in exactly one summary.
-        indexed = sorted(
-            i for s in body["cases"] for i in s["member_indices"]
-        )
-        expected = sorted(
-            r["index"] for r in body["results"] if r.get("ok") and r.get("case")
-        )
+        indexed = sorted(i for s in body["cases"] for i in s["member_indices"])
+        expected = sorted(r["index"] for r in body["results"] if r.get("ok") and r.get("case"))
         assert indexed == expected
 
     def test_batch_of_25_within_deadline(self, cases_client) -> None:
@@ -232,13 +226,9 @@ class TestCasesRBAC:
         init_db(db_path)
 
         with srv.app.test_client() as client:
-            denied = client.delete(
-                "/api/cases", headers={"X-ADTE-Key": "analyst-test-key"}
-            )
+            denied = client.delete("/api/cases", headers={"X-ADTE-Key": "analyst-test-key"})
             assert denied.status_code == 403
-            allowed = client.delete(
-                "/api/cases", headers={"X-ADTE-Key": "admin-test-key"}
-            )
+            allowed = client.delete("/api/cases", headers={"X-ADTE-Key": "admin-test-key"})
             assert allowed.status_code == 200
 
     def test_get_cases_requires_auth_in_secured_mode(

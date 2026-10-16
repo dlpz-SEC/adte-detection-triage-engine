@@ -80,9 +80,9 @@ def _is_private(ip: str) -> bool:
 #
 # RFC 5737 documentation addresses: answered by the mock in every mode.
 _DOCUMENTATION_NETWORKS: list[ipaddress.IPv4Network] = [
-    ipaddress.IPv4Network("192.0.2.0/24"),     # TEST-NET-1
+    ipaddress.IPv4Network("192.0.2.0/24"),  # TEST-NET-1
     ipaddress.IPv4Network("198.51.100.0/24"),  # TEST-NET-2
-    ipaddress.IPv4Network("203.0.113.0/24"),   # TEST-NET-3
+    ipaddress.IPv4Network("203.0.113.0/24"),  # TEST-NET-3
 ]
 # RFC 6598 shared address space: never sent to a live provider.
 _SHARED_ADDRESS_NETWORK = ipaddress.IPv4Network("100.64.0.0/10")
@@ -542,8 +542,7 @@ class ThreatIntelAggregator:
         live_result = vt_client.check_hash(file_hash, hash_type)
         if live_result.source.endswith("-error"):
             _log.warning(
-                "ThreatIntelAggregator: VirusTotal hash lookup failed for %s; "
-                "falling back to mock",
+                "ThreatIntelAggregator: VirusTotal hash lookup failed for %s; falling back to mock",
                 file_hash,
             )
             result = _mock_hash_lookup(file_hash, hash_type)

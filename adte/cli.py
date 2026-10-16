@@ -22,7 +22,10 @@ import json
 
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # always finds repo-root .env regardless of CWD
+
+load_dotenv(
+    Path(__file__).resolve().parent.parent / ".env"
+)  # always finds repo-root .env regardless of CWD
 from enum import Enum
 from typing import Annotated, Any, Optional
 
@@ -67,6 +70,7 @@ class SourceType(str, Enum):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _print_pretty(output: dict[str, Any], *, explain: bool) -> None:
     """Render triage output as formatted text to stdout.
 
@@ -83,9 +87,9 @@ def _print_pretty(output: dict[str, Any], *, explain: bool) -> None:
 
     # Colour the verdict banner.
     colour_map = {
-        "high_risk": "\033[91m",    # red
+        "high_risk": "\033[91m",  # red
         "medium_risk": "\033[93m",  # yellow
-        "low_risk": "\033[92m",     # green
+        "low_risk": "\033[92m",  # green
     }
     reset = "\033[0m"
     colour = colour_map.get(verdict, "")
@@ -227,12 +231,14 @@ def _load_normalized_incident(path: Path) -> NormalizedIncident:
 # Commands
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def triage(
     input_file: Annotated[
         Optional[Path],
         typer.Option(
-            "--input", "-i",
+            "--input",
+            "-i",
             help="Path to incident JSON file (SentinelIncident schema). Required when --source mock.",
         ),
     ] = None,
@@ -241,8 +247,8 @@ def triage(
         typer.Option(
             "--source",
             help="Alert source: 'mock' reads from --input file (default); "
-                 "'wazuh' fetches live from the Wazuh Indexer; 'sentinel' "
-                 "fetches live from a Microsoft Sentinel workspace.",
+            "'wazuh' fetches live from the Wazuh Indexer; 'sentinel' "
+            "fetches live from a Microsoft Sentinel workspace.",
         ),
     ] = SourceType.mock,
     hours: Annotated[
@@ -258,7 +264,7 @@ def triage(
         typer.Option(
             "--limit",
             help="Maximum number of Wazuh alerts to retrieve (default: 500). "
-                 "A warning is printed when results are truncated.",
+            "A warning is printed when results are truncated.",
             min=1,
         ),
     ] = 500,
@@ -273,21 +279,24 @@ def triage(
     output_format: Annotated[
         OutputFormat,
         typer.Option(
-            "--format", "-f",
+            "--format",
+            "-f",
             help="Output format.",
         ),
     ] = OutputFormat.json,
     explain: Annotated[
         bool,
         typer.Option(
-            "--explain", "-e",
+            "--explain",
+            "-e",
             help="Include signal breakdown in output.",
         ),
     ] = False,
     save: Annotated[
         Optional[Path],
         typer.Option(
-            "--save", "-s",
+            "--save",
+            "-s",
             help="Save JSON output to file.",
         ),
     ] = None,
@@ -317,9 +326,7 @@ def triage(
         try:
             from adte.adapters.sentinel import SentinelAdapter
 
-            incidents = SentinelAdapter.from_env().fetch_incidents(
-                hours=hours, limit=limit
-            )
+            incidents = SentinelAdapter.from_env().fetch_incidents(hours=hours, limit=limit)
         except EnvironmentError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=2)

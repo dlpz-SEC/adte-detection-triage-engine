@@ -110,9 +110,7 @@ class TestNonFileParity:
         assert len(output["rationale"]) == 5
         assert "file_reputation" not in output["report"]["signal_summary"]
 
-    def test_non_file_alert_has_no_file_evidence_keys(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_non_file_alert_has_no_file_evidence_keys(self, fp_registry: FPRegistry) -> None:
         """Evidence must not gain file keys on a non-file alert (parity trap)."""
         output = _run(_incident([_auth_event()]), fp_registry)
         assert "files" not in output["evidence"]
@@ -128,19 +126,19 @@ class TestPointsCurve:
     @pytest.mark.parametrize(
         ("kwargs", "expected_points"),
         [
-            (dict(vt_positives=58, vt_total=72), 40.0),          # ratio 0.8 ≥ .5
+            (dict(vt_positives=58, vt_total=72), 40.0),  # ratio 0.8 ≥ .5
             # Re-pinned by the F2 fix (Waiver #2).  This row used to assert
             # 40.0 with the comment "flag wins" — that WAS the defect: an
             # unvalidated caller-supplied boolean short-circuited the
             # graduated tiers, so a 1/72 false positive scored identically to
             # a 58/72 conviction.  Tiers are now ratio-driven: 1/72 = 0.014.
             (dict(vt_positives=1, vt_total=72, vt_malicious=True), 20.0),
-            (dict(vt_positives=10, vt_total=72), 20.0),          # 0 < ratio < .5
-            (dict(vt_positives=0, vt_total=72), 0.0),            # clean, registered
-            (dict(sha256=_EICAR_SHA256), 40.0),                  # lookup malicious
-            (dict(sha256=_SUSPICIOUS_SHA256), 20.0),             # lookup 0.45
-            (dict(sha256=_CLEAN_SHA256), 0.0),                   # lookup clean
-            (dict(event_risk="confirmed"), 15.0),                # confirmed, no hash
+            (dict(vt_positives=10, vt_total=72), 20.0),  # 0 < ratio < .5
+            (dict(vt_positives=0, vt_total=72), 0.0),  # clean, registered
+            (dict(sha256=_EICAR_SHA256), 40.0),  # lookup malicious
+            (dict(sha256=_SUSPICIOUS_SHA256), 20.0),  # lookup 0.45
+            (dict(sha256=_CLEAN_SHA256), 0.0),  # lookup clean
+            (dict(event_risk="confirmed"), 15.0),  # confirmed, no hash
         ],
     )
     def test_tier_points(
@@ -155,17 +153,15 @@ class TestPointsCurve:
     def test_best_evidence_across_events(self, fp_registry: FPRegistry) -> None:
         """The strongest file event drives the score (best-of)."""
         events = [
-            _file_event(path="/a", vt_positives=10, vt_total=72),   # 20
-            _file_event(path="/b", vt_positives=58, vt_total=72),   # 40
+            _file_event(path="/a", vt_positives=10, vt_total=72),  # 20
+            _file_event(path="/b", vt_positives=58, vt_total=72),  # 40
         ]
         output = _run(_incident(events), fp_registry)
         assert _entry(output, "file_reputation")["score"] == 40.0
 
     def test_points_capped_at_weight(self, fp_registry: FPRegistry) -> None:
         """A 100% ratio never exceeds the 40-point weight."""
-        output = _run(
-            _incident([_file_event(vt_positives=72, vt_total=72)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=72, vt_total=72)]), fp_registry)
         assert _entry(output, "file_reputation")["score"] == 40.0
 
 
@@ -178,9 +174,7 @@ class TestConfirmedFloorBestEvidence:
     ``event_risk="confirmed"`` FIM alert therefore scored 0.
     """
 
-    def test_confirmed_with_clean_embedded_scan_hits_floor(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_confirmed_with_clean_embedded_scan_hits_floor(self, fp_registry: FPRegistry) -> None:
         """N1: confirmed + embedded 0/72 → 15, not 0 (the F1b defect)."""
         output = _run(
             _incident([_file_event(event_risk="confirmed", vt_positives=0, vt_total=72)]),
@@ -194,9 +188,7 @@ class TestConfirmedFloorBestEvidence:
         assert "did not corroborate" in entry["detail"]
         assert "0/72" in entry["detail"]
 
-    def test_confirmed_with_clean_lookup_hits_floor(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_confirmed_with_clean_lookup_hits_floor(self, fp_registry: FPRegistry) -> None:
         """N2: confirmed + a clean hash lookup → 15.
 
         The zero-day shape: a novel binary is precisely what VirusTotal has no
@@ -223,16 +215,12 @@ class TestConfirmedFloorBestEvidence:
         self, fp_registry: FPRegistry
     ) -> None:
         """With no scan to contradict, the original rationale is still true."""
-        output = _run(
-            _incident([_file_event(event_risk="confirmed")]), fp_registry
-        )
+        output = _run(_incident([_file_event(event_risk="confirmed")]), fp_registry)
         entry = _entry(output, "file_reputation")
         assert entry["detail"].endswith("(no hash to verify)")
         assert "did not corroborate" not in entry["detail"]
 
-    def test_floor_confidence_is_pinned_at_zero_point_four(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_floor_confidence_is_pinned_at_zero_point_four(self, fp_registry: FPRegistry) -> None:
         """The floor's 0.4 confidence is load-bearing, so pin it.
 
         It is why a confirmed-FIM alert's incident confidence FALLS (43 -> 35)
@@ -241,9 +229,7 @@ class TestConfirmedFloorBestEvidence:
         that number; without this test it could drift silently and take the
         documented behaviour with it.
         """
-        output = _run(
-            _incident([_file_event(event_risk="confirmed")]), fp_registry
-        )
+        output = _run(_incident([_file_event(event_risk="confirmed")]), fp_registry)
         summary = output["report"]["signal_summary"]["file_reputation"]
         assert summary["confidence"] == 0.4
 
@@ -260,12 +246,8 @@ class TestConfirmedFloorBestEvidence:
         """
         from adte.models import FileReputationResult
 
-        incident = _incident(
-            [_file_event(sha256=_EICAR_SHA256, vt_positives=58, vt_total=72)]
-        )
-        engine = TriageEngine(
-            incident, get_user_profile(incident.user), fp_registry
-        )
+        incident = _incident([_file_event(sha256=_EICAR_SHA256, vt_positives=58, vt_total=72)])
+        engine = TriageEngine(incident, get_user_profile(incident.user), fp_registry)
         engine.enrich()
         # Both candidates now score the full 40; only the tie-break decides
         # which confidence and rationale get reported.
@@ -320,9 +302,7 @@ class TestMalformedEmbeddedVerdict:
     def test_flag_cannot_promote_a_low_ratio(self, fp_registry: FPRegistry) -> None:
         """N4: a flagged 1/72 scores the graduated tier, not a conviction."""
         output = _run(
-            _incident(
-                [_file_event(vt_positives=1, vt_total=72, vt_malicious=True)]
-            ),
+            _incident([_file_event(vt_positives=1, vt_total=72, vt_malicious=True)]),
             fp_registry,
         )
         assert _entry(output, "file_reputation")["score"] == 20.0
@@ -330,9 +310,7 @@ class TestMalformedEmbeddedVerdict:
     def test_flag_cannot_veto_a_high_ratio(self, fp_registry: FPRegistry) -> None:
         """The flag is ignored in BOTH directions — the ratio decides."""
         output = _run(
-            _incident(
-                [_file_event(vt_positives=58, vt_total=72, vt_malicious=False)]
-            ),
+            _incident([_file_event(vt_positives=58, vt_total=72, vt_malicious=False)]),
             fp_registry,
         )
         assert _entry(output, "file_reputation")["score"] == 40.0
@@ -340,10 +318,10 @@ class TestMalformedEmbeddedVerdict:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            dict(vt_positives=100, vt_total=72),                    # N5: > total
+            dict(vt_positives=100, vt_total=72),  # N5: > total
             dict(vt_positives=-70, vt_total=70, vt_malicious=True),  # N6: negative
-            dict(vt_positives=5, vt_total=0),                        # zero total
-            dict(vt_positives=5, vt_total=-72),                      # negative total
+            dict(vt_positives=5, vt_total=0),  # zero total
+            dict(vt_positives=5, vt_total=-72),  # negative total
         ],
     )
     def test_malformed_counts_are_ignored_not_scored(
@@ -384,31 +362,23 @@ class TestMalformedEmbeddedVerdict:
         assert entry["score"] == 15.0
         assert 0.0 <= output["confidence"] / 100 <= 1.0
 
-    def test_ratio_boundary_exactly_half_is_a_conviction(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_ratio_boundary_exactly_half_is_a_conviction(self, fp_registry: FPRegistry) -> None:
         """Pins the `>=` in the tier check the F2 fix rewrote.
 
         Ratio exactly 0.5 is the boundary the whole fix turns on; with `>`
         instead of `>=` this is the only input in the suite that would notice.
         """
-        output = _run(
-            _incident([_file_event(vt_positives=36, vt_total=72)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=36, vt_total=72)]), fp_registry)
         assert _entry(output, "file_reputation")["score"] == 40.0
 
-    def test_zero_total_does_not_divide_by_zero(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_zero_total_does_not_divide_by_zero(self, fp_registry: FPRegistry) -> None:
         """Pins the `vt_total > 0` conjunct of the guard.
 
         Without it, `0/0` reaches the ratio expression and raises
         ZeroDivisionError on the /api/triage request thread — a 500 from
         caller-controlled JSON.
         """
-        output = _run(
-            _incident([_file_event(vt_positives=0, vt_total=0)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=0, vt_total=0)]), fp_registry)
         assert _entry(output, "file_reputation") is None
 
     def test_malformed_verdict_also_suppresses_the_hash_lookup(
@@ -425,9 +395,7 @@ class TestMalformedEmbeddedVerdict:
         Pre-fix this same input scored the full 40 off the malformed counts.
         """
         output = _run(
-            _incident(
-                [_file_event(sha256=_EICAR_SHA256, vt_positives=100, vt_total=72)]
-            ),
+            _incident([_file_event(sha256=_EICAR_SHA256, vt_positives=100, vt_total=72)]),
             fp_registry,
         )
         assert _entry(output, "file_reputation") is None
@@ -439,18 +407,14 @@ class TestMalformedEmbeddedVerdict:
         the embedded branch requires ``vt_positives``/``vt_total``, so a
         provider conviction arriving as a bare flag is invisible to scoring.
         """
-        output = _run(
-            _incident([_file_event(vt_malicious=True)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_malicious=True)]), fp_registry)
         assert _entry(output, "file_reputation") is None
 
 
 class TestAdditiveUplift:
     def test_confirmed_malware_reaches_high_risk(self, fp_registry: FPRegistry) -> None:
         """Canonical 87105 case: core 33 (in-hours) + 40 = 73 → high_risk."""
-        output = _run(
-            _incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry)
         assert output["risk_score"] == 73
         assert output["verdict"] == "high_risk"
 
@@ -478,9 +442,7 @@ class TestAdditiveUplift:
 
     def test_clean_file_does_not_lower_score(self, fp_registry: FPRegistry) -> None:
         """Monotonicity: a clean scan registers 0 points, never a reduction."""
-        with_clean = _run(
-            _incident([_file_event(sha256=_CLEAN_SHA256)]), fp_registry
-        )
+        with_clean = _run(_incident([_file_event(sha256=_CLEAN_SHA256)]), fp_registry)
         # The core-only score for the same skip profile is 33 (device 15/45).
         assert with_clean["risk_score"] == 33
         entry = _entry(with_clean, "file_reputation")
@@ -498,9 +460,7 @@ class TestBothAdditives:
             max_sibling_risk_score=60.0,
             window_minutes=60,
         )
-        output = _run(
-            _incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry, ctx
-        )
+        output = _run(_incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry, ctx)
         assert output["risk_score"] == 78
         assert _entry(output, "cluster_context") is not None
         assert _entry(output, "file_reputation") is not None
@@ -510,9 +470,7 @@ class TestBothAdditives:
 class TestActions:
     def test_high_risk_malware_actions(self, fp_registry: FPRegistry) -> None:
         """High-risk malware appends all four recommendations incl. isolate."""
-        output = _run(
-            _incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry)
         for action in (
             "quarantine_file",
             "preserve_forensic_copy",
@@ -523,9 +481,7 @@ class TestActions:
 
     def test_non_high_malware_omits_isolate_host(self, fp_registry: FPRegistry) -> None:
         """A 20-point suspicious file that stays below high_risk: no isolate."""
-        output = _run(
-            _incident([_file_event(vt_positives=10, vt_total=72)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=10, vt_total=72)]), fp_registry)
         assert output["verdict"] != "high_risk"
         assert "quarantine_file" in output["actions"]
         assert "isolate_host" not in output["actions"]
@@ -537,9 +493,7 @@ class TestActions:
 
     def test_base_actions_preserved(self, fp_registry: FPRegistry) -> None:
         """The verdict-keyed base action list is unchanged, then extended."""
-        output = _run(
-            _incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry
-        )
+        output = _run(_incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry)
         # high_risk base list still leads.
         assert output["actions"][:4] == [
             "disable_account",
@@ -550,9 +504,7 @@ class TestActions:
 
 
 class TestEvidence:
-    def test_files_key_present_with_file_evidence(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_files_key_present_with_file_evidence(self, fp_registry: FPRegistry) -> None:
         """A file incident emits evidence.files with path + hashes."""
         output = _run(
             _incident([_file_event(vt_positives=58, vt_total=72, path="/tmp/x")]),
@@ -562,13 +514,9 @@ class TestEvidence:
         assert output["evidence"]["files"][0]["path"] == "/tmp/x"
         assert output["evidence"]["files"][0]["vt_positives"] == 58
 
-    def test_file_reputation_key_only_when_looked_up(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_file_reputation_key_only_when_looked_up(self, fp_registry: FPRegistry) -> None:
         """evidence.file_reputation appears only when a lookup ran."""
-        embedded = _run(
-            _incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry
-        )
+        embedded = _run(_incident([_file_event(vt_positives=58, vt_total=72)]), fp_registry)
         assert "file_reputation" not in embedded["evidence"]  # embedded → no lookup
 
         looked_up = _run(_incident([_file_event(sha256=_EICAR_SHA256)]), fp_registry)
@@ -583,9 +531,7 @@ class TestEnrichHashLookup:
         """An embedded VT verdict costs zero check_file_hash calls."""
         calls: list[str] = []
         real = eng.check_file_hash
-        monkeypatch.setattr(
-            eng, "check_file_hash", lambda h: calls.append(h) or real(h)
-        )
+        monkeypatch.setattr(eng, "check_file_hash", lambda h: calls.append(h) or real(h))
         _run(
             _incident([_file_event(sha256=_EICAR_SHA256, vt_positives=58, vt_total=72)]),
             fp_registry,
@@ -598,9 +544,7 @@ class TestEnrichHashLookup:
         """No embedded verdict → exactly one lookup for the hash."""
         calls: list[str] = []
         real = eng.check_file_hash
-        monkeypatch.setattr(
-            eng, "check_file_hash", lambda h: calls.append(h) or real(h)
-        )
+        monkeypatch.setattr(eng, "check_file_hash", lambda h: calls.append(h) or real(h))
         _run(_incident([_file_event(sha256=_EICAR_SHA256)]), fp_registry)
         assert calls == [_EICAR_SHA256]
 
@@ -610,12 +554,9 @@ class TestEnrichHashLookup:
         """More than _MAX_HASH_LOOKUPS distinct hashes → capped lookups."""
         calls: list[str] = []
         real = eng.check_file_hash
-        monkeypatch.setattr(
-            eng, "check_file_hash", lambda h: calls.append(h) or real(h)
-        )
+        monkeypatch.setattr(eng, "check_file_hash", lambda h: calls.append(h) or real(h))
         events = [
-            _file_event(path=f"/f{i}", sha256=f"{i:064x}")
-            for i in range(eng._MAX_HASH_LOOKUPS + 1)
+            _file_event(path=f"/f{i}", sha256=f"{i:064x}") for i in range(eng._MAX_HASH_LOOKUPS + 1)
         ]
         _run(_incident(events), fp_registry)
         assert len(calls) == eng._MAX_HASH_LOOKUPS
@@ -626,9 +567,7 @@ class TestEnrichHashLookup:
         """A non-hex/short hash is never looked up and never raises."""
         calls: list[str] = []
         real = eng.check_file_hash
-        monkeypatch.setattr(
-            eng, "check_file_hash", lambda h: calls.append(h) or real(h)
-        )
+        monkeypatch.setattr(eng, "check_file_hash", lambda h: calls.append(h) or real(h))
         output = _run(_incident([_file_event(sha256="xyz123")]), fp_registry)
         assert calls == []
         # No hash, no embedded verdict, not confirmed → signal not applicable.

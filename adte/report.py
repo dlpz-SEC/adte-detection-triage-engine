@@ -58,11 +58,11 @@ def generate_report(
         llm_result = _build_deterministic_summary(decision_output)
 
     report["one_paragraph_summary"] = llm_result["narrative"]
-    report["mitre_tactics"]         = llm_result["mitre_tactics"]
-    report["mitre_techniques"]      = llm_result["mitre_techniques"]
-    report["nist_phases"]           = llm_result["nist_phases"]
-    report["confidence_note"]       = llm_result["confidence_note"]
-    report["analyst_notes"]         = _build_analyst_notes(decision_output)
+    report["mitre_tactics"] = llm_result["mitre_tactics"]
+    report["mitre_techniques"] = llm_result["mitre_techniques"]
+    report["nist_phases"] = llm_result["nist_phases"]
+    report["confidence_note"] = llm_result["confidence_note"]
+    report["analyst_notes"] = _build_analyst_notes(decision_output)
 
     return report
 
@@ -83,22 +83,15 @@ def _build_analyst_notes(decision_output: dict[str, Any]) -> list[str]:
     fired = [r for r in rationale if r.get("score", 0) > 0]
 
     if verdict == "high_risk":
-        notes.append(
-            "HIGH RISK — immediate containment recommended per NIST 800-61."
-        )
+        notes.append("HIGH RISK — immediate containment recommended per NIST 800-61.")
     elif verdict == "medium_risk":
-        notes.append(
-            "MEDIUM RISK — escalate for analyst review within SLA."
-        )
+        notes.append("MEDIUM RISK — escalate for analyst review within SLA.")
     else:
-        notes.append(
-            "LOW RISK — consider auto-closing and updating baselines."
-        )
+        notes.append("LOW RISK — consider auto-closing and updating baselines.")
 
     for signal in fired:
         notes.append(
-            f"Signal '{signal['signal']}' fired (score {signal['score']}): "
-            f"{signal['detail']}"
+            f"Signal '{signal['signal']}' fired (score {signal['score']}): {signal['detail']}"
         )
 
     if not fired:

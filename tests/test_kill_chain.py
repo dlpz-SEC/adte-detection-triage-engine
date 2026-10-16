@@ -45,9 +45,7 @@ class TestKillChainDetection:
 
     def test_single_member_three_tactics_not_detected(self) -> None:
         """One alert with three techniques is breadth, not progression."""
-        result = detect_kill_chain(
-            [(1, ["Credential Access", "Lateral Movement", "Exfiltration"])]
-        )
+        result = detect_kill_chain([(1, ["Credential Access", "Lateral Movement", "Exfiltration"])])
         assert result["detected"] is False
 
     def test_two_members_three_tactics_detected(self) -> None:

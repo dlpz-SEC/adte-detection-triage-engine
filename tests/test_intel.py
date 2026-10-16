@@ -103,7 +103,9 @@ class TestAbuseIPDBClient:
         resp.add(
             resp.GET,
             "https://api.abuseipdb.com/api/v2/check",
-            json={"data": {"abuseConfidenceScore": 10, "isTor": False, "usageType": "", "domain": ""}},
+            json={
+                "data": {"abuseConfidenceScore": 10, "isTor": False, "usageType": "", "domain": ""}
+            },
             status=200,
         )
         result = AbuseIPDBClient(api_key="fake-key").check("8.8.8.8")
@@ -117,7 +119,9 @@ class TestAbuseIPDBClient:
         resp.add(
             resp.GET,
             "https://api.abuseipdb.com/api/v2/check",
-            json={"data": {"abuseConfidenceScore": 85, "isTor": True, "usageType": "", "domain": ""}},
+            json={
+                "data": {"abuseConfidenceScore": 85, "isTor": True, "usageType": "", "domain": ""}
+            },
             status=200,
         )
         result = AbuseIPDBClient(api_key="fake-key").check("185.220.101.1")
@@ -129,7 +133,14 @@ class TestAbuseIPDBClient:
         resp.add(
             resp.GET,
             "https://api.abuseipdb.com/api/v2/check",
-            json={"data": {"abuseConfidenceScore": 50, "isTor": False, "usageType": "", "domain": "badactor.ru"}},
+            json={
+                "data": {
+                    "abuseConfidenceScore": 50,
+                    "isTor": False,
+                    "usageType": "",
+                    "domain": "badactor.ru",
+                }
+            },
             status=200,
         )
         result = AbuseIPDBClient(api_key="fake-key").check("5.6.7.8")
@@ -148,6 +159,7 @@ class TestAbuseIPDBClient:
     def test_network_error_returns_neutral_result(self) -> None:
         """requests.ConnectionError returns a neutral result without raising."""
         import requests as _req
+
         resp.add(
             resp.GET,
             "https://api.abuseipdb.com/api/v2/check",
@@ -377,7 +389,13 @@ class TestOTXClient:
 # ---------------------------------------------------------------------------
 
 
-def _make_result(ip: str, source: str, confidence: float = 0.0, is_malicious: bool = False, tags: list[str] | None = None) -> ThreatIntelResult:
+def _make_result(
+    ip: str,
+    source: str,
+    confidence: float = 0.0,
+    is_malicious: bool = False,
+    tags: list[str] | None = None,
+) -> ThreatIntelResult:
     """Helper to build a ThreatIntelResult for test assertions."""
     return ThreatIntelResult(
         ip=ip,
@@ -454,9 +472,13 @@ class TestThreatIntelAggregator:
     def test_any_malicious_overrides_low_average(self) -> None:
         """is_malicious=True if any source reports malicious, even if avg < 0.5."""
         mock_a = MagicMock()
-        mock_a.check.return_value = _make_result("1.2.3.4", "abuseipdb", confidence=0.9, is_malicious=True)
+        mock_a.check.return_value = _make_result(
+            "1.2.3.4", "abuseipdb", confidence=0.9, is_malicious=True
+        )
         mock_b = MagicMock()
-        mock_b.check.return_value = _make_result("1.2.3.4", "virustotal", confidence=0.0, is_malicious=False)
+        mock_b.check.return_value = _make_result(
+            "1.2.3.4", "virustotal", confidence=0.0, is_malicious=False
+        )
         agg = ThreatIntelAggregator.__new__(ThreatIntelAggregator)
         agg._use_mock = False
         agg._clients = [mock_a, mock_b]
@@ -499,7 +521,9 @@ class TestThreatIntelAggregator:
     def test_cache_deduplicates_client_calls(self) -> None:
         """Two calls with the same IP trigger exactly one round of client.check()."""
         mock_client = MagicMock()
-        mock_client.check.return_value = _make_result("1.2.3.4", "abuseipdb", confidence=0.8, is_malicious=True)
+        mock_client.check.return_value = _make_result(
+            "1.2.3.4", "abuseipdb", confidence=0.8, is_malicious=True
+        )
         agg = ThreatIntelAggregator.__new__(ThreatIntelAggregator)
         agg._use_mock = False
         agg._clients = [mock_client]

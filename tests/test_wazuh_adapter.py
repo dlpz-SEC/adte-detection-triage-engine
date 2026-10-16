@@ -219,7 +219,7 @@ class TestNormalizeAlert:
         """SSH brute force alert maps to correct event_risk, ip, user, source."""
         inc = WazuhAdapter.normalize_alert(ssh_alert)
         assert inc.source == "wazuh"
-        assert inc.events[0].event_risk == "high"   # level 10
+        assert inc.events[0].event_risk == "high"  # level 10
         assert inc.events[0].type == "authentication"
         assert inc.events[0].ip_address == "198.51.100.23"
         assert inc.user == "admin"
@@ -229,7 +229,7 @@ class TestNormalizeAlert:
         """Windows auth alert extracts targetUserName."""
         inc = WazuhAdapter.normalize_alert(windows_alert)
         assert inc.user == "jsmith"
-        assert inc.events[0].event_risk == "suspicious"   # level 7
+        assert inc.events[0].event_risk == "suspicious"  # level 7
 
     def test_location_is_none(self, ssh_alert: dict[str, Any]) -> None:
         """location is None for all Wazuh alerts (no geo data)."""
@@ -268,9 +268,7 @@ class TestNormalizeAlert:
         assert len(account_entities) == 1
         assert account_entities[0].identifier == "admin"
 
-    def test_no_account_entity_for_fallback_user(
-        self, level0_alert: dict[str, Any]
-    ) -> None:
+    def test_no_account_entity_for_fallback_user(self, level0_alert: dict[str, Any]) -> None:
         """No Account entity when only the agent.name\\system fallback was used."""
         # Modify to have no user fields.
         alert = {**level0_alert, "rule": {"level": 5, "description": "test"}}
@@ -299,9 +297,7 @@ class TestNormalizeAlert:
         output = engine.enrich().score().decide().to_output()
         assert _OUTPUT_KEYS.issubset(output.keys())
 
-    def test_wazuh_incident_high_risk_reachable(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_wazuh_incident_high_risk_reachable(self, fp_registry: FPRegistry) -> None:
         """Wazuh alert with malicious IP + unknown device reaches high_risk.
 
         Both impossible_travel and mfa_fatigue are skipped (no geo, no MFA).
@@ -430,9 +426,7 @@ class TestFromEnv:
 
     def test_indexer_uses_basic_auth(self) -> None:
         """WazuhAdapter sets HTTP Basic Auth on the session at construction."""
-        adapter = WazuhAdapter(
-            url="https://localhost:9200", user="admin", password="pass"
-        )
+        adapter = WazuhAdapter(url="https://localhost:9200", user="admin", password="pass")
         assert adapter._session.auth == ("admin", "pass")
 
 
@@ -504,15 +498,10 @@ class TestSSRFProtection:
 class TestFetchAlerts:
     """Tests for WazuhAdapter.fetch_alerts."""
 
-    def _make_page(
-        self, items: list[dict[str, Any]], total: int
-    ) -> MagicMock:
+    def _make_page(self, items: list[dict[str, Any]], total: int) -> MagicMock:
         """Return a mock HTTP response for a page of OpenSearch hits."""
         resp = MagicMock()
-        hits = [
-            {"_id": item.get("id", str(i)), "_source": item}
-            for i, item in enumerate(items)
-        ]
+        hits = [{"_id": item.get("id", str(i)), "_source": item} for i, item in enumerate(items)]
         resp.json.return_value = {
             "hits": {
                 "total": {"value": total, "relation": "eq"},
@@ -638,9 +627,7 @@ class TestVerifySSLEnforcement:
     """from_env() must raise EnvironmentError when ADTE_WAZUH_VERIFY_SSL=false
     is combined with a non-localhost ADTE_WAZUH_HOST."""
 
-    def test_verify_ssl_false_for_remote_host_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_verify_ssl_false_for_remote_host_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """VERIFY_SSL=false + remote host must raise EnvironmentError."""
         monkeypatch.setenv("ADTE_WAZUH_HOST", "https://wazuh.internal:9200")
         monkeypatch.setenv("ADTE_WAZUH_USER", "admin")
@@ -718,8 +705,7 @@ def _vt_conviction_alert() -> dict[str, Any]:
             "id": "87105",
             "level": 12,
             "description": (
-                "VirusTotal: Alert - /tmp/malware/eicar.com - "
-                "58 engines detected this file"
+                "VirusTotal: Alert - /tmp/malware/eicar.com - 58 engines detected this file"
             ),
             "groups": ["virustotal"],
         },
@@ -737,9 +723,7 @@ def _vt_conviction_alert() -> dict[str, Any]:
                     "md5": _EICAR_MD5,
                     "sha1": _EICAR_SHA1,
                 },
-                "permalink": (
-                    "https://www.virustotal.com/gui/file/" + _EICAR_SHA256
-                ),
+                "permalink": ("https://www.virustotal.com/gui/file/" + _EICAR_SHA256),
             }
         },
         "location": "virustotal",
@@ -862,9 +846,7 @@ class TestFileArtifactExtraction:
         assert artifact is not None
         assert artifact.fim_action is None
 
-    def test_extract_returns_none_without_evidence(
-        self, ssh_alert: dict[str, Any]
-    ) -> None:
+    def test_extract_returns_none_without_evidence(self, ssh_alert: dict[str, Any]) -> None:
         """The helper itself returns None when neither field family exists."""
         assert _extract_file_artifact(ssh_alert) is None
 

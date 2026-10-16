@@ -77,9 +77,19 @@ class TestRateLimitNeverBlocks:
         resp.add(
             resp.GET,
             f"https://www.virustotal.com/api/v3/files/{_EICAR_SHA256}",
-            json={"data": {"attributes": {"last_analysis_stats": {
-                "malicious": 58, "suspicious": 0, "undetected": 14,
-                "harmless": 0, "timeout": 0}}}},
+            json={
+                "data": {
+                    "attributes": {
+                        "last_analysis_stats": {
+                            "malicious": 58,
+                            "suspicious": 0,
+                            "undetected": 14,
+                            "harmless": 0,
+                            "timeout": 0,
+                        }
+                    }
+                }
+            },
             status=200,
         )
         result = VirusTotalClient("key").check_hash(_EICAR_SHA256, "sha256")
@@ -237,9 +247,7 @@ class TestVirusTotalClientHash:
 
     def test_no_api_key_returns_neutral_without_http_call(self) -> None:
         """Missing API key returns neutral result without making HTTP calls."""
-        result = VirusTotalClient(api_key=None, rate_limit_sleep=0).check_hash(
-            _EICAR_MD5, "md5"
-        )
+        result = VirusTotalClient(api_key=None, rate_limit_sleep=0).check_hash(_EICAR_MD5, "md5")
         assert result.source == "virustotal-error"
         assert result.file_hash == _EICAR_MD5
         assert result.hash_type == "md5"

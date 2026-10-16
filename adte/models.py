@@ -347,9 +347,7 @@ class NormalizedIncident(BaseModel):
             ValueError: If a top-level ``severity`` key is supplied.
         """
         if isinstance(data, dict) and "severity" in data:
-            raise ValueError(
-                "severity is engine-assigned and must not be provided on input"
-            )
+            raise ValueError("severity is engine-assigned and must not be provided on input")
         return data
 
     @classmethod
@@ -406,14 +404,8 @@ class NormalizedIncident(BaseModel):
                         auth_status=si.get("auth_status"),
                         app_display_name=si.get("app_display_name", ""),
                         event_risk=si.get("event_risk", "none"),
-                        technique_ids=[
-                            str(t) for t in (si.get("technique_ids") or []) if t
-                        ],
-                        file=(
-                            FileArtifact.model_validate(si["file"])
-                            if si.get("file")
-                            else None
-                        ),
+                        technique_ids=[str(t) for t in (si.get("technique_ids") or []) if t],
+                        file=(FileArtifact.model_validate(si["file"]) if si.get("file") else None),
                         timestamp=datetime.fromisoformat(si["timestamp"]),
                     )
                 )

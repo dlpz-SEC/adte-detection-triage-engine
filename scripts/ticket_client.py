@@ -172,10 +172,7 @@ def create_linear_ticket(verdict: dict[str, Any]) -> str | None:
             return None
         data = resp.json()
         url: str | None = (
-            (data.get("data") or {})
-            .get("issueCreate", {})
-            .get("issue", {})
-            .get("url")
+            (data.get("data") or {}).get("issueCreate", {}).get("issue", {}).get("url")
         )
         if not url:
             _log.warning("Linear response missing issue URL: %s", data)

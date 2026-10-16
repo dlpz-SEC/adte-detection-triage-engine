@@ -202,6 +202,7 @@ class TestEngineSignals:
 # Signal skip & weight redistribution tests
 # ---------------------------------------------------------------------------
 
+
 def _make_sign_in(
     *,
     ip: str,
@@ -251,11 +252,15 @@ class TestSignalSkipAndRedistribution:
 
     def test_no_mfa_events_skips_mfa_signal(self, fp_registry: FPRegistry) -> None:
         """No authentication event carries an MFA outcome → mfa_fatigue skipped."""
-        incident = _make_incident([_make_sign_in(
-            ip="10.0.0.1",
-            auth_status=None,
-            location=GeoLocation(lat=40.0, lon=-74.0, city="New York", country="US"),
-        )])
+        incident = _make_incident(
+            [
+                _make_sign_in(
+                    ip="10.0.0.1",
+                    auth_status=None,
+                    location=GeoLocation(lat=40.0, lon=-74.0, city="New York", country="US"),
+                )
+            ]
+        )
         profile = get_user_profile(incident.user)
         engine = TriageEngine(incident, profile, fp_registry)
         engine.enrich().score()
@@ -271,12 +276,16 @@ class TestSignalSkipAndRedistribution:
         available_weight = 100 - 30 (travel) - 25 (mfa) = 45
         round(35 * 100 / 45) = round(77.78) = 78
         """
-        incident = _make_incident([_make_sign_in(
-            ip="198.51.100.23",    # malicious C2 IP → IP rep fires (20 pts)
-            device_id="unknown-wazuh-device-xyz",  # unknown → device novelty fires (15 pts)
-            auth_status=None,
-            location=None,
-        )])
+        incident = _make_incident(
+            [
+                _make_sign_in(
+                    ip="198.51.100.23",  # malicious C2 IP → IP rep fires (20 pts)
+                    device_id="unknown-wazuh-device-xyz",  # unknown → device novelty fires (15 pts)
+                    auth_status=None,
+                    location=None,
+                )
+            ]
+        )
         profile = get_user_profile(incident.user)  # unknown user, empty known_devices
         engine = TriageEngine(incident, profile, fp_registry)
         output = engine.enrich().score().decide().to_output()

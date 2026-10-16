@@ -144,7 +144,10 @@ class TestStatsFeedbackStore:
     def test_empty_database_ratio_zero(self, stats_db: Path) -> None:
         """No feedback → zero ratio, not a division error."""
         assert stats_feedback(stats_db) == {
-            "fp": 0, "tp": 0, "total": 0, "fp_ratio": 0.0,
+            "fp": 0,
+            "tp": 0,
+            "total": 0,
+            "fp_ratio": 0.0,
         }
 
     def test_soft_deleted_feedback_excluded(self, stats_db: Path) -> None:

@@ -44,9 +44,7 @@ def make_incident(
         )
         for ip in ips
     ]
-    return NormalizedIncident(
-        incident_id=incident_id, user=user, source="wazuh", events=events
-    )
+    return NormalizedIncident(incident_id=incident_id, user=user, source="wazuh", events=events)
 
 
 def make_output(
@@ -77,9 +75,7 @@ def _backdate_case(db_path: Path, case_id: str, delta: timedelta) -> None:
     """Rewind a case's last_activity by delta (raw connection)."""
     stale = (datetime.now(timezone.utc) - delta).isoformat()
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "UPDATE cases SET last_activity = ? WHERE case_id = ?", (stale, case_id)
-        )
+        conn.execute("UPDATE cases SET last_activity = ? WHERE case_id = ?", (stale, case_id))
         conn.commit()
 
 
@@ -113,10 +109,7 @@ class TestIngest:
         assert ingest_alert(make_output(), make_incident("INC-2"), db_path) is not None
         with sqlite3.connect(str(db_path)) as conn:
             tables = {
-                r[0]
-                for r in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
+                r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
         assert {"cases", "case_members"} <= tables
 
@@ -162,12 +155,8 @@ class TestIngest:
         assert second["related_incident_ids"] == ["INC-1"]
 
     def test_same_user_different_ip_joins_case(self, db_path: Path) -> None:
-        first = ingest_alert(
-            make_output(), make_incident("INC-1", ips=("10.0.0.5",)), db_path
-        )
-        second = ingest_alert(
-            make_output(), make_incident("INC-2", ips=("203.0.113.9",)), db_path
-        )
+        first = ingest_alert(make_output(), make_incident("INC-1", ips=("10.0.0.5",)), db_path)
+        second = ingest_alert(make_output(), make_incident("INC-2", ips=("203.0.113.9",)), db_path)
         assert second["case_id"] == first["case_id"]
 
     def test_disjoint_keys_create_separate_cases(self, db_path: Path) -> None:
@@ -273,14 +262,10 @@ class TestIngest:
             db_path,
         )
         with sqlite3.connect(str(db_path)) as conn:
-            remaining = [
-                r[0] for r in conn.execute("SELECT case_id FROM cases").fetchall()
-            ]
+            remaining = [r[0] for r in conn.execute("SELECT case_id FROM cases").fetchall()]
         assert first["case_id"] not in remaining
 
-    def test_related_ids_capped(
-        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_related_ids_capped(self, db_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(case_store, "CASE_MAX_RELATED_IDS", 2)
         blob = None
         for i in range(4):
@@ -294,9 +279,7 @@ class TestIngest:
         for i, tactic in enumerate(tactic_seq):
             blob = ingest_alert(
                 make_output(risk=55.0, tactics=(tactic,)),
-                make_incident(
-                    f"INC-{i}", event_time=_T0 + timedelta(minutes=i)
-                ),
+                make_incident(f"INC-{i}", event_time=_T0 + timedelta(minutes=i)),
                 db_path,
             )
         assert blob["kill_chain"]["detected"] is True
@@ -311,9 +294,7 @@ class TestIngest:
         broken.mkdir()
         assert ingest_alert(make_output(), make_incident(), broken) is None
 
-    def test_same_incident_reingest_refreshes_not_duplicates(
-        self, db_path: Path
-    ) -> None:
+    def test_same_incident_reingest_refreshes_not_duplicates(self, db_path: Path) -> None:
         """Replaying one alert must not inflate the case or fake a chain:
         two copies of a single 3-tactic alert would otherwise satisfy the
         cross-member kill-chain rule."""
@@ -331,9 +312,7 @@ class TestIngest:
         assert len(detail["members"]) == 1
         assert detail["members"][0]["risk_score"] == 62.0  # refreshed in place
 
-    def test_ipv4_mapped_ipv6_correlates_with_plain_ipv4(
-        self, db_path: Path
-    ) -> None:
+    def test_ipv4_mapped_ipv6_correlates_with_plain_ipv4(self, db_path: Path) -> None:
         first = ingest_alert(
             make_output(),
             make_incident("INC-1", user="alice@contoso.com", ips=("198.51.100.7",)),
@@ -341,9 +320,7 @@ class TestIngest:
         )
         second = ingest_alert(
             make_output(),
-            make_incident(
-                "INC-2", user="bob@contoso.com", ips=("::ffff:198.51.100.7",)
-            ),
+            make_incident("INC-2", user="bob@contoso.com", ips=("::ffff:198.51.100.7",)),
             db_path,
         )
         assert second["case_id"] == first["case_id"]
@@ -355,9 +332,7 @@ class TestIngest:
         """A same-day 6-hex ID collision retries with a fresh token instead
         of aborting the ingest."""
         tokens = iter(["c0ffee", "c0ffee", "def123"])
-        monkeypatch.setattr(
-            case_store.secrets, "token_hex", lambda n: next(tokens)
-        )
+        monkeypatch.setattr(case_store.secrets, "token_hex", lambda n: next(tokens))
         first = ingest_alert(make_output(), make_incident("INC-1"), db_path)
         assert first["case_id"].endswith("c0ffee")
         # Disjoint keys -> new case; first token collides, retry succeeds.
@@ -369,9 +344,7 @@ class TestIngest:
         assert second is not None
         assert second["case_id"].endswith("def123")
 
-    def test_ips_capped_per_member(
-        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ips_capped_per_member(self, db_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(case_store, "CASE_MAX_IPS_PER_MEMBER", 3)
         many_ips = tuple(f"203.0.113.{i}" for i in range(10))
         blob = ingest_alert(make_output(), make_incident(ips=many_ips), db_path)
@@ -379,18 +352,12 @@ class TestIngest:
         detail = get_case(blob["case_id"], db_path)
         assert len(detail["members"][0]["ips"]) == 3
 
-    def test_case_ip_union_capped(
-        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_case_ip_union_capped(self, db_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(case_store, "CASE_MAX_CASE_IPS", 4)
-        ingest_alert(
-            make_output(), make_incident("INC-1", ips=("203.0.113.1",)), db_path
-        )
+        ingest_alert(make_output(), make_incident("INC-1", ips=("203.0.113.1",)), db_path)
         blob = ingest_alert(
             make_output(),
-            make_incident(
-                "INC-2", ips=tuple(f"203.0.113.{i}" for i in range(1, 10))
-            ),
+            make_incident("INC-2", ips=tuple(f"203.0.113.{i}" for i in range(1, 10))),
             db_path,
         )
         cases = list_cases(db_path)
@@ -467,9 +434,7 @@ class TestQueries:
 
     def test_list_status_filter(self, db_path: Path) -> None:
         blob = ingest_alert(make_output(), make_incident(), db_path)
-        assert [c["case_id"] for c in list_cases(db_path, status="open")] == [
-            blob["case_id"]
-        ]
+        assert [c["case_id"] for c in list_cases(db_path, status="open")] == [blob["case_id"]]
         assert list_cases(db_path, status="closed") == []
         _backdate_case(
             db_path,
@@ -482,9 +447,7 @@ class TestQueries:
         assert closed[0]["status"] == "closed"
 
     def test_get_case_detail_shape(self, db_path: Path) -> None:
-        blob = ingest_alert(
-            make_output(tactics=("Credential Access",)), make_incident(), db_path
-        )
+        blob = ingest_alert(make_output(tactics=("Credential Access",)), make_incident(), db_path)
         detail = get_case(blob["case_id"], db_path)
         assert detail["escalation_rationale"] == blob["escalation_rationale"]
         member = detail["members"][0]
@@ -572,9 +535,7 @@ def make_file_incident(
         file=FileArtifact(path="/tmp/malware/x", sha256=sha256, sha1=sha1, md5=md5),
         timestamp=_T0,
     )
-    return NormalizedIncident(
-        incident_id=incident_id, user=user, source="wazuh", events=[event]
-    )
+    return NormalizedIncident(incident_id=incident_id, user=user, source="wazuh", events=[event])
 
 
 class TestHashCorrelationKeys:
@@ -621,9 +582,7 @@ class TestHashCorrelationKeys:
 class TestHashCaseCorrelation:
     def test_same_hash_different_ip_joins_case(self, db_path: Path) -> None:
         """Two hosts, different IPs + non-correlatable users, same hash → 1 case."""
-        first = ingest_alert(
-            make_output(), make_file_incident("INC-A", ip="192.168.1.77"), db_path
-        )
+        first = ingest_alert(make_output(), make_file_incident("INC-A", ip="192.168.1.77"), db_path)
         second = ingest_alert(
             make_output(),
             make_file_incident("INC-B", ip="10.0.0.55", user="host-b\\system"),
@@ -644,14 +603,10 @@ class TestHashCaseCorrelation:
 
     def test_different_hash_no_correlation(self, db_path: Path) -> None:
         """Distinct hashes on distinct IPs/users open separate cases."""
-        first = ingest_alert(
-            make_output(), make_file_incident("INC-A", sha256="a" * 64), db_path
-        )
+        first = ingest_alert(make_output(), make_file_incident("INC-A", sha256="a" * 64), db_path)
         second = ingest_alert(
             make_output(),
-            make_file_incident(
-                "INC-B", sha256="b" * 64, ip="10.0.0.55", user="host-b\\system"
-            ),
+            make_file_incident("INC-B", sha256="b" * 64, ip="10.0.0.55", user="host-b\\system"),
             db_path,
         )
         assert second["case_id"] != first["case_id"]
@@ -707,8 +662,6 @@ class TestLazyHashMigration:
         assert blob["correlation_keys"]["hashes"] == [_EICAR_SHA256]
         with sqlite3.connect(str(db_path)) as conn:
             case_cols = {r[1] for r in conn.execute("PRAGMA table_info(cases)")}
-            member_cols = {
-                r[1] for r in conn.execute("PRAGMA table_info(case_members)")
-            }
+            member_cols = {r[1] for r in conn.execute("PRAGMA table_info(case_members)")}
         assert "hashes" in case_cols
         assert "hashes" in member_cols

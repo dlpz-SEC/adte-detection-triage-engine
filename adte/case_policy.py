@@ -217,9 +217,9 @@ def detect_kill_chain(
                 parent_multi[i] = j
                 multi_via_single[i] = True
 
-    candidates = multi if KILL_CHAIN_MIN_MEMBERS >= 2 else [
-        max(s, m) for s, m in zip(single, multi)
-    ]
+    candidates = (
+        multi if KILL_CHAIN_MIN_MEMBERS >= 2 else [max(s, m) for s, m in zip(single, multi)]
+    )
     best_end = max(range(n), key=lambda i: candidates[i])
     if candidates[best_end] < KILL_CHAIN_MIN_TACTICS:
         return {"detected": False, "tactics_in_order": []}

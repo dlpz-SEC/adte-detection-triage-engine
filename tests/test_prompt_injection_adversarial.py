@@ -73,7 +73,9 @@ CONTAINED_PAYLOADS = [
 class TestRedactedPayloads:
     """Every REDACTED payload must have its trigger phrase neutralized."""
 
-    @pytest.mark.parametrize("label,payload", REDACTED_PAYLOADS, ids=[p[0] for p in REDACTED_PAYLOADS])
+    @pytest.mark.parametrize(
+        "label,payload", REDACTED_PAYLOADS, ids=[p[0] for p in REDACTED_PAYLOADS]
+    )
     def test_trigger_phrase_is_redacted(self, label: str, payload: str) -> None:
         """The sanitized output carries the [REDACTED] marker."""
         out = sanitize_alert_field(payload)
@@ -95,7 +97,9 @@ class TestRedactedPayloads:
 class TestContainedPayloads:
     """CONTAINED payloads slip the regex — assert we don't over-claim redaction."""
 
-    @pytest.mark.parametrize("label,payload", CONTAINED_PAYLOADS, ids=[p[0] for p in CONTAINED_PAYLOADS])
+    @pytest.mark.parametrize(
+        "label,payload", CONTAINED_PAYLOADS, ids=[p[0] for p in CONTAINED_PAYLOADS]
+    )
     def test_not_redacted_by_regex(self, label: str, payload: str) -> None:
         """These are contained by the delimiter layer, not the regex."""
         out = sanitize_alert_field(payload)

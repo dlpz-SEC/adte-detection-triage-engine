@@ -54,9 +54,19 @@ _MALICIOUS_RANGES: list[tuple[ipaddress.IPv4Network, float, str, list[str]]] = [
     # Demo-only: realistic Tor exit range — may match real traffic in staging
     (ipaddress.IPv4Network("185.220.101.0/24"), 0.85, "synthetic-tor-list", ["tor-exit"]),
     # Demo-only: realistic hosting/scanner range — may match real traffic in staging
-    (ipaddress.IPv4Network("45.33.32.0/24"), 0.75, "synthetic-scanner-feed", ["scanner", "brute-force"]),
+    (
+        ipaddress.IPv4Network("45.33.32.0/24"),
+        0.75,
+        "synthetic-scanner-feed",
+        ["scanner", "brute-force"],
+    ),
     # RFC 5737 TEST-NET-3 — crypto-mining proxies (safe in production: never real traffic)
-    (ipaddress.IPv4Network("203.0.113.0/24"), 0.70, "synthetic-mining-feed", ["cryptominer", "proxy"]),
+    (
+        ipaddress.IPv4Network("203.0.113.0/24"),
+        0.70,
+        "synthetic-mining-feed",
+        ["cryptominer", "proxy"],
+    ),
 ]
 
 _SUSPICIOUS_RANGES: list[tuple[ipaddress.IPv4Network, float, str, list[str]]] = [

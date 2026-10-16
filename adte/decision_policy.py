@@ -152,6 +152,7 @@ def classify_verdict(risk_score: int) -> Verdict:
 # Confidence scoring
 # ---------------------------------------------------------------------------
 
+
 def compute_confidence(
     signals_present: int,
     signals_total: int,
@@ -196,6 +197,7 @@ def compute_confidence(
 # ---------------------------------------------------------------------------
 # Cluster (correlated-case) context
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class ClusterContext:

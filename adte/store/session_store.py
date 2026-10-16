@@ -148,8 +148,6 @@ def delete_session(token: str, db_path: Path) -> None:
     """
     try:
         with _connect(db_path) as conn:
-            conn.execute(
-                "DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),)
-            )
+            conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),))
     except sqlite3.Error as exc:
         _log.warning("Session delete failed (%s)", type(exc).__name__)

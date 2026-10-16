@@ -144,14 +144,11 @@ def log_verdict(output: dict[str, Any], db_path: str | Path) -> None:
         confidence: float | None = output.get("confidence")
         recommended_action: str | None = output.get("recommended_action")
         mitre_raw: list[str] | None = output.get("mitre_techniques")
-        mitre_techniques: str | None = (
-            json.dumps(mitre_raw) if mitre_raw is not None else None
-        )
+        mitre_techniques: str | None = json.dumps(mitre_raw) if mitre_raw is not None else None
         nist_phase: str | None = output.get("nist_phase")
         source: str | None = output.get("source")
-        timestamp: str | None = (
-            (output.get("report") or {}).get("timestamp")
-            or output.get("timestamp")
+        timestamp: str | None = (output.get("report") or {}).get("timestamp") or output.get(
+            "timestamp"
         )
         logged_at: str = datetime.now(timezone.utc).isoformat()
 
@@ -159,9 +156,16 @@ def log_verdict(output: dict[str, Any], db_path: str | Path) -> None:
             conn.execute(
                 _INSERT_SQL,
                 (
-                    incident_id, verdict, risk_score, confidence,
-                    recommended_action, mitre_techniques, nist_phase,
-                    source, timestamp, logged_at,
+                    incident_id,
+                    verdict,
+                    risk_score,
+                    confidence,
+                    recommended_action,
+                    mitre_techniques,
+                    nist_phase,
+                    source,
+                    timestamp,
+                    logged_at,
                 ),
             )
             conn.commit()
@@ -384,9 +388,7 @@ def stats_mitre(db_path: str | Path, since: str | None = None) -> dict[str, Any]
                 clauses.append("logged_at >= ?")
                 params.append(since)
             where = "WHERE " + " AND ".join(clauses)
-            cursor = conn.execute(
-                f"SELECT mitre_techniques FROM verdicts {where}", params
-            )
+            cursor = conn.execute(f"SELECT mitre_techniques FROM verdicts {where}", params)
             counter: Counter[str] = Counter()
             total_rows = 0
             for (raw,) in cursor.fetchall():
@@ -401,9 +403,7 @@ def stats_mitre(db_path: str | Path, since: str | None = None) -> dict[str, Any]
                     counter.update(t for t in techniques if isinstance(t, str) and t)
         ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
         return {
-            "techniques": [
-                {"technique_id": tid, "count": count} for tid, count in ranked
-            ],
+            "techniques": [{"technique_id": tid, "count": count} for tid, count in ranked],
             "total_rows": total_rows,
         }
     except Exception as exc:

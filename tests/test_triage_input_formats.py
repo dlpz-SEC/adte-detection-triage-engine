@@ -81,9 +81,7 @@ class TestBatchWrappers:
         assert resp.status_code == 200, resp.get_data(as_text=True)
         assert "verdict" in resp.get_json()
 
-    def test_alerts_wrapper_multiple_rejected_with_count(
-        self, triage_client, wazuh_hits
-    ) -> None:
+    def test_alerts_wrapper_multiple_rejected_with_count(self, triage_client, wazuh_hits) -> None:
         """A multi-alert {"alerts": [...]} doc gets a 422 naming the count."""
         resp = triage_client.post("/api/triage", json={"alerts": wazuh_hits})
         assert resp.status_code == 422
@@ -146,9 +144,7 @@ class TestHardening:
 
     def test_wazuh_nonstring_timestamp_422_not_500(self, triage_client) -> None:
         """Wazuh-shaped doc with an integer @timestamp is a clean 422."""
-        resp = triage_client.post(
-            "/api/triage", json={"rule": {"level": 5}, "@timestamp": 123}
-        )
+        resp = triage_client.post("/api/triage", json={"rule": {"level": 5}, "@timestamp": 123})
         assert resp.status_code == 422
 
     def test_canonical_with_stray_title_keeps_user(

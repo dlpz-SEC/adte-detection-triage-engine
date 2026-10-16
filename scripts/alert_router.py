@@ -227,9 +227,7 @@ def run_loop(base_url: str, interval: int, webhook_url: str | None) -> None:
                 else:
                     _log.warning("Ticket creation skipped or failed for %s", incident_id)
 
-            _log.info(
-                "Polled queue: %d rows, %d new high-risk", len(rows), new_high_risk
-            )
+            _log.info("Polled queue: %d rows, %d new high-risk", len(rows), new_high_risk)
             time.sleep(interval)
     except KeyboardInterrupt:
         _log.info("Alert router stopped by user.")
@@ -243,9 +241,7 @@ def _parse_args() -> argparse.Namespace:
         Parsed argument namespace with ``url`` and ``interval`` attributes.
     """
     parser = argparse.ArgumentParser(
-        description=(
-            "Poll the ADTE triage queue and route HIGH RISK verdicts to Slack."
-        ),
+        description=("Poll the ADTE triage queue and route HIGH RISK verdicts to Slack."),
     )
     parser.add_argument(
         "--url",
@@ -279,11 +275,7 @@ def main() -> None:
     interval: int = args.interval
     webhook_url: str | None = os.environ.get("ADTE_SLACK_WEBHOOK") or None
 
-    slack_status = (
-        "configured"
-        if webhook_url
-        else "stdout fallback (ADTE_SLACK_WEBHOOK not set)"
-    )
+    slack_status = "configured" if webhook_url else "stdout fallback (ADTE_SLACK_WEBHOOK not set)"
     print(
         "ADTE Alert Router\n"
         f"  ADTE URL:      {base_url}\n"

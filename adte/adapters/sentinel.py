@@ -575,18 +575,12 @@ class SentinelAdapter:
         events: list[SignInMetadata] = []
         for row in rows:
             row_entities = _parse_entities(row.get("Entities"))
-            ip_address = next(
-                (e.identifier for e in row_entities if e.entity_type == "IP"), ""
-            )
+            ip_address = next((e.identifier for e in row_entities if e.entity_type == "IP"), "")
             row_user = next(
                 (e.identifier for e in row_entities if e.entity_type == "Account"),
                 user,
             )
-            ts = (
-                _parse_api_timestamp(row.get("AlertTime"))
-                or created
-                or epoch
-            )
+            ts = _parse_api_timestamp(row.get("AlertTime")) or created or epoch
             events.append(
                 SignInMetadata(
                     user_principal_name=row_user or user,

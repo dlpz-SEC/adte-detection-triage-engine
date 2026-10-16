@@ -59,9 +59,7 @@ _ENV_VARS = {
 @pytest.fixture()
 def sentinel_fixture() -> dict[str, Any]:
     """Load the sentinel_incidents.json fixture (Query API response)."""
-    return json.loads(
-        (FIXTURES_DIR / "sentinel_incidents.json").read_text(encoding="utf-8")
-    )
+    return json.loads((FIXTURES_DIR / "sentinel_incidents.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture()
@@ -157,9 +155,7 @@ class TestFromEnv:
         assert isinstance(adapter, SentinelAdapter)
 
     @pytest.mark.parametrize("missing", list(_ENV_VARS))
-    def test_each_missing_var_raises(
-        self, monkeypatch: pytest.MonkeyPatch, missing: str
-    ) -> None:
+    def test_each_missing_var_raises(self, monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
         """Each unset variable raises an error naming exactly that variable."""
         for var, value in _ENV_VARS.items():
             if var == missing:
@@ -389,9 +385,7 @@ class TestNormalizeIncident:
         assert inc.events[1].technique_ids == ["T1110", "T1078"]
         assert inc.events[0].ip_address == "203.0.113.50"
 
-    def test_location_is_none_not_null_island(
-        self, fixture_rows: list[dict[str, Any]]
-    ) -> None:
+    def test_location_is_none_not_null_island(self, fixture_rows: list[dict[str, Any]]) -> None:
         """No geo at alert level → location None (engine skips travel).
 
         Regression guard for the from_sentinel default that would have
@@ -408,9 +402,7 @@ class TestNormalizeIncident:
         inc = SentinelAdapter.normalize_incident(rows)
         assert all(e.auth_status is None for e in inc.events)
 
-    def test_entities_merged_and_deduped(
-        self, fixture_rows: list[dict[str, Any]]
-    ) -> None:
+    def test_entities_merged_and_deduped(self, fixture_rows: list[dict[str, Any]]) -> None:
         """Entities across rows merge without duplicates, first-seen order."""
         rows = [r for r in fixture_rows if r["IncidentNumber"] == 42]
         inc = SentinelAdapter.normalize_incident(rows)
@@ -435,9 +427,7 @@ class TestNormalizeIncident:
             }
         ]
         inc = SentinelAdapter.normalize_incident(rows)
-        assert inc.events[0].timestamp == datetime(
-            2026, 8, 15, 10, 0, 0, tzinfo=timezone.utc
-        )
+        assert inc.events[0].timestamp == datetime(2026, 8, 15, 10, 0, 0, tzinfo=timezone.utc)
 
     def test_all_timestamps_malformed_uses_epoch(self) -> None:
         """With no parseable timestamp anywhere, the epoch fallback holds."""
@@ -569,9 +559,7 @@ class TestFetchIncidentsRaw:
         """A failing query call raises requests.HTTPError to the caller."""
         bad = MagicMock()
         bad.raise_for_status.side_effect = requests.HTTPError("403")
-        adapter._session.post = MagicMock(
-            side_effect=[_mock_response(_TOKEN_PAYLOAD), bad]
-        )
+        adapter._session.post = MagicMock(side_effect=[_mock_response(_TOKEN_PAYLOAD), bad])
         with pytest.raises(requests.HTTPError):
             adapter.fetch_incidents_raw()
 
@@ -649,9 +637,7 @@ class TestLiveCaptureFixture:
     @pytest.fixture()
     def live_capture(self) -> dict[str, Any]:
         """Load the sanitized live-capture fixture."""
-        return json.loads(
-            (FIXTURES_DIR / "sentinel_live_capture.json").read_text(encoding="utf-8")
-        )
+        return json.loads((FIXTURES_DIR / "sentinel_live_capture.json").read_text(encoding="utf-8"))
 
     def test_normalizes_field_for_field(self, live_capture: dict[str, Any]) -> None:
         """The live shape maps into NormalizedIncident exactly as designed."""

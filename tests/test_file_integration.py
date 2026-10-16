@@ -114,16 +114,12 @@ def _fim_deleted_alert() -> dict[str, Any]:
 
 def _file_entry(body: dict[str, Any]) -> dict[str, Any] | None:
     """Return the file_reputation rationale entry, or None."""
-    return next(
-        (r for r in body["rationale"] if r["signal"] == "file_reputation"), None
-    )
+    return next((r for r in body["rationale"] if r["signal"] == "file_reputation"), None)
 
 
 def _cluster_entry(body: dict[str, Any]) -> dict[str, Any] | None:
     """Return the cluster_context rationale entry, or None."""
-    return next(
-        (r for r in body["rationale"] if r["signal"] == "cluster_context"), None
-    )
+    return next((r for r in body["rationale"] if r["signal"] == "cluster_context"), None)
 
 
 class TestSoloGoldenParity:
@@ -136,9 +132,7 @@ class TestSoloGoldenParity:
             "incident_needs_human_ambiguous.json",
         ],
     )
-    def test_examples_gain_no_file_signal(
-        self, filename: str, file_client
-    ) -> None:
+    def test_examples_gain_no_file_signal(self, filename: str, file_client) -> None:
         """The auth-only examples never register file_reputation or file evidence."""
         raw = json.loads((EXAMPLES_DIR / filename).read_text(encoding="utf-8"))
         body = file_client.post("/api/triage", json=raw).get_json()
@@ -151,9 +145,7 @@ class TestSoloGoldenParity:
 class TestRawConviction:
     def test_87105_lands_high_risk(self, file_client) -> None:
         """A raw VirusTotal conviction alert triages to high_risk ≥ 73."""
-        body = file_client.post(
-            "/api/triage", json=_vt_conviction_alert()
-        ).get_json()
+        body = file_client.post("/api/triage", json=_vt_conviction_alert()).get_json()
         assert body["verdict"] == "high_risk"
         assert body["risk_score"] >= 73
         entry = _file_entry(body)
@@ -161,25 +153,19 @@ class TestRawConviction:
 
     def test_87105_recommends_containment(self, file_client) -> None:
         """Malware recommendations appear (recommend-only)."""
-        body = file_client.post(
-            "/api/triage", json=_vt_conviction_alert()
-        ).get_json()
+        body = file_client.post("/api/triage", json=_vt_conviction_alert()).get_json()
         for action in ("quarantine_file", "hash_sweep_fleet", "isolate_host"):
             assert action in body["actions"]
 
     def test_87105_embedded_verdict_no_lookup(self, file_client) -> None:
         """Embedded verdict → evidence.files present, no lookup section."""
-        body = file_client.post(
-            "/api/triage", json=_vt_conviction_alert()
-        ).get_json()
+        body = file_client.post("/api/triage", json=_vt_conviction_alert()).get_json()
         assert body["evidence"]["files"][0]["vt_positives"] == 58
         assert "file_reputation" not in body["evidence"]
 
     def test_87105_opens_case_with_hash_key(self, file_client) -> None:
         """The alert opens a case carrying the file hash as a correlation key."""
-        body = file_client.post(
-            "/api/triage", json=_vt_conviction_alert()
-        ).get_json()
+        body = file_client.post("/api/triage", json=_vt_conviction_alert()).get_json()
         assert body["case"] is not None
         assert _EICAR_SHA1 in body["case"]["correlation_keys"]["hashes"]
 

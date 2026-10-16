@@ -76,9 +76,7 @@ class TestBatchHappyPath:
 
     def test_search_response_accepted(self, batch_client) -> None:
         """The raw wazuh_alerts.json _search response triages verbatim."""
-        data = json.loads(
-            (FIXTURES_DIR / "wazuh_alerts.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((FIXTURES_DIR / "wazuh_alerts.json").read_text(encoding="utf-8"))
         resp = batch_client.post("/api/triage/batch", json=data)
         assert resp.status_code == 200
         body = resp.get_json()
@@ -102,24 +100,18 @@ class TestBatchHappyPath:
         body = resp.get_json()
         assert body["count"] == 1 and body["succeeded"] == 1
 
-    def test_native_mitre_union_applied_per_entry(
-        self, batch_client, wazuh_hits
-    ) -> None:
+    def test_native_mitre_union_applied_per_entry(self, batch_client, wazuh_hits) -> None:
         """Each entry carries its own hit's rule.mitre.id (finalise runs per alert)."""
         resp = batch_client.post("/api/triage/batch", json=wazuh_hits)
         results = resp.get_json()["results"]
         for k, hit in enumerate(wazuh_hits):
             native = (hit["_source"]["rule"].get("mitre") or {}).get("id", [])
             for tid in native:
-                assert tid in results[k]["mitre_techniques"], (
-                    f"entry {k} missing native {tid}"
-                )
+                assert tid in results[k]["mitre_techniques"], f"entry {k} missing native {tid}"
 
     def test_use_llm_param_ignored(self, batch_client, wazuh_hits) -> None:
         """?use_llm=true is ignored — batch stays deterministic (still 200)."""
-        resp = batch_client.post(
-            "/api/triage/batch?use_llm=true", json=[wazuh_hits[0]]
-        )
+        resp = batch_client.post("/api/triage/batch?use_llm=true", json=[wazuh_hits[0]])
         assert resp.status_code == 200
         assert resp.get_json()["succeeded"] == 1
 
@@ -181,9 +173,7 @@ class TestBatchValidation:
 
     def test_non_json_content_type_415(self, batch_client) -> None:
         """A non-JSON body is a 415, mirroring /api/triage."""
-        resp = batch_client.post(
-            "/api/triage/batch", data="not json", content_type="text/plain"
-        )
+        resp = batch_client.post("/api/triage/batch", data="not json", content_type="text/plain")
         assert resp.status_code == 415
 
     def test_malformed_json_400(self, batch_client) -> None:
@@ -198,9 +188,7 @@ class TestBatchValidation:
         resp = batch_client.post("/api/triage/batch", json=42)
         assert resp.status_code == 422
 
-    def test_single_dict_treated_as_one_element_batch(
-        self, batch_client, wazuh_hits
-    ) -> None:
+    def test_single_dict_treated_as_one_element_batch(self, batch_client, wazuh_hits) -> None:
         """A plain single hit posted to /batch still works (one-element batch)."""
         resp = batch_client.post("/api/triage/batch", json=wazuh_hits[0])
         assert resp.status_code == 200

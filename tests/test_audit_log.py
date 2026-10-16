@@ -145,6 +145,7 @@ def test_log_verdict_corrupt_db_path_logs_warning_without_raising(
     corrupt.write_bytes(b"this is not a sqlite database")
 
     import logging
+
     with caplog.at_level(logging.WARNING, logger="adte.store.audit_log"):
         log_verdict(_FULL_OUTPUT, corrupt)  # must not raise
 
@@ -162,8 +163,12 @@ def test_query_verdicts_returns_rows_newest_first(tmp_path: Path) -> None:
     init_db(db)
 
     first = {**_FULL_OUTPUT, "evidence": {"incident_id": "INC-001"}}
-    second = {**_FULL_OUTPUT, "verdict": "medium_risk", "risk_score": 45.0,
-              "evidence": {"incident_id": "INC-002"}}
+    second = {
+        **_FULL_OUTPUT,
+        "verdict": "medium_risk",
+        "risk_score": 45.0,
+        "evidence": {"incident_id": "INC-002"},
+    }
     log_verdict(first, db)
     log_verdict(second, db)
 
@@ -179,9 +184,9 @@ def test_query_verdicts_filters_by_verdict(tmp_path: Path) -> None:
     db = tmp_path / "audit.db"
     init_db(db)
 
-    log_verdict(_FULL_OUTPUT, db)                                          # high_risk
+    log_verdict(_FULL_OUTPUT, db)  # high_risk
     log_verdict({**_MINIMAL_OUTPUT, "verdict": "medium_risk", "risk_score": 45.0}, db)
-    log_verdict({**_MINIMAL_OUTPUT}, db)                                   # low_risk
+    log_verdict({**_MINIMAL_OUTPUT}, db)  # low_risk
 
     high = query_verdicts(db, verdict_filter="high_risk")
     assert len(high) == 1
@@ -297,6 +302,7 @@ def test_mitre_techniques_round_trips_through_json(tmp_path: Path) -> None:
 def test_query_verdicts_since_filters_old_rows(tmp_path: Path) -> None:
     """since filter excludes rows whose logged_at is before the cutoff."""
     import sqlite3 as _sql
+
     db = tmp_path / "audit.db"
     init_db(db)
     log_verdict(_FULL_OUTPUT, db)
@@ -312,10 +318,13 @@ def test_query_verdicts_since_filters_old_rows(tmp_path: Path) -> None:
 def test_query_verdicts_since_with_verdict_filter(tmp_path: Path) -> None:
     """since and verdict_filter compose correctly — both clauses must match."""
     import sqlite3 as _sql
+
     db = tmp_path / "audit.db"
     init_db(db)
-    log_verdict(_FULL_OUTPUT, db)                                    # high_risk, recent
-    log_verdict({**_MINIMAL_OUTPUT, "verdict": "medium_risk", "risk_score": 45.0}, db)  # medium, recent
+    log_verdict(_FULL_OUTPUT, db)  # high_risk, recent
+    log_verdict(
+        {**_MINIMAL_OUTPUT, "verdict": "medium_risk", "risk_score": 45.0}, db
+    )  # medium, recent
 
     # Back-date the high_risk row only.
     with _sql.connect(str(db)) as conn:
@@ -326,7 +335,9 @@ def test_query_verdicts_since_with_verdict_filter(tmp_path: Path) -> None:
     rows = query_verdicts(db, verdict_filter="high_risk", since="2025-01-01T00:00:00+00:00")
     assert rows == []
 
-    medium_rows = query_verdicts(db, verdict_filter="medium_risk", since="2025-01-01T00:00:00+00:00")
+    medium_rows = query_verdicts(
+        db, verdict_filter="medium_risk", since="2025-01-01T00:00:00+00:00"
+    )
     assert len(medium_rows) == 1
     assert medium_rows[0]["verdict"] == "medium_risk"
 

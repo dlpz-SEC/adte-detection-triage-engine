@@ -28,21 +28,33 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
 # First, last and an inner address of each documentation block.
 DOCUMENTATION_SAMPLES = [
-    "192.0.2.0", "192.0.2.7", "192.0.2.255",
-    "198.51.100.0", "198.51.100.23", "198.51.100.255",  # .23: the HIGH_RISK example
-    "203.0.113.0", "203.0.113.9", "203.0.113.255",
+    "192.0.2.0",
+    "192.0.2.7",
+    "192.0.2.255",
+    "198.51.100.0",
+    "198.51.100.23",
+    "198.51.100.255",  # .23: the HIGH_RISK example
+    "203.0.113.0",
+    "203.0.113.9",
+    "203.0.113.255",
 ]
 SHARED_SAMPLES = [
-    "100.64.0.0", "100.64.0.1",          # inside the mock's proxy /16
-    "100.100.20.30",                     # outside the mock's /16
-    "100.127.255.254", "100.127.255.255",
+    "100.64.0.0",
+    "100.64.0.1",  # inside the mock's proxy /16
+    "100.100.20.30",  # outside the mock's /16
+    "100.127.255.254",
+    "100.127.255.255",
 ]
 # Just outside every block: these must still go live.
 BOUNDARY_PUBLIC = [
-    "192.0.1.255", "192.0.3.0",
-    "198.51.99.255", "198.51.101.0",
-    "203.0.112.255", "203.0.114.0",
-    "100.63.255.255", "100.128.0.0",
+    "192.0.1.255",
+    "192.0.3.0",
+    "198.51.99.255",
+    "198.51.101.0",
+    "203.0.112.255",
+    "203.0.114.0",
+    "100.63.255.255",
+    "100.128.0.0",
 ]
 
 
@@ -90,7 +102,10 @@ class TestDocumentationAddresses:
         agg, _ = _live(_BenignClient())
         got, want = agg.check(ip), _mock_lookup(ip)
         assert (got.is_malicious, got.confidence, got.source, got.tags) == (
-            want.is_malicious, want.confidence, want.source, want.tags,
+            want.is_malicious,
+            want.confidence,
+            want.source,
+            want.tags,
         )
 
     def test_mock_mode_unchanged(self) -> None:
@@ -114,7 +129,9 @@ class TestSharedAddressSpace:
         agg, _ = _live(_BenignClient())
         got = agg.check(ip)
         assert (got.is_malicious, got.confidence, got.source) == (
-            False, 0.0, "shared-address-space",
+            False,
+            0.0,
+            "shared-address-space",
         )
 
     def test_mock_mode_unchanged(self) -> None:
@@ -219,7 +236,9 @@ class TestExampleScoresWithLiveKeys:
             body = http.post("/api/triage", json=raw).get_json()
 
         assert (body["verdict"], body["risk_score"], body["confidence"]) == (
-            "high_risk", 99, 85,
+            "high_risk",
+            99,
+            85,
         )
         assert "198.51.100.23" not in client.calls
         assert client.calls  # the real public IP did go live

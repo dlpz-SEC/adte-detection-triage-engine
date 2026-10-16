@@ -67,9 +67,7 @@ class TestSingleTriage:
         self, triage_client, incident_false_positive: NormalizedIncident, ip: str
     ) -> None:
         """IPv4 and an empty ip_address (the engine skips it) still return 200."""
-        resp = triage_client.post(
-            "/api/triage", json=_with_last_ip(incident_false_positive, ip)
-        )
+        resp = triage_client.post("/api/triage", json=_with_last_ip(incident_false_positive, ip))
         assert resp.status_code == 200, resp.get_data(as_text=True)
 
 

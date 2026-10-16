@@ -16,9 +16,7 @@ import yaml
 
 from adte.intel.mitre_mapper import MitreMapper
 
-_YAML_PATH = (
-    Path(__file__).resolve().parent.parent / "adte" / "data" / "mitre_technique_map.yaml"
-)
+_YAML_PATH = Path(__file__).resolve().parent.parent / "adte" / "data" / "mitre_technique_map.yaml"
 _ID_RE = re.compile(r"^T\d{4}(\.\d{3})?$")
 _REQUIRED_KEYS = {
     "rule_keywords",

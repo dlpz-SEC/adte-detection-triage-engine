@@ -71,9 +71,7 @@ def cluster_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def _cluster_entry(body: dict[str, Any]) -> dict[str, Any] | None:
     """Return the cluster_context rationale entry, or None."""
-    return next(
-        (r for r in body["rationale"] if r["signal"] == "cluster_context"), None
-    )
+    return next((r for r in body["rationale"] if r["signal"] == "cluster_context"), None)
 
 
 class TestSoloGoldenParity:
@@ -136,9 +134,7 @@ class TestBoostedVsControl:
         # The boosted member's score is what the case layer persists.
         assert boosted["case"]["alert_count"] == 2
 
-    def test_replayed_same_incident_scores_identically(
-        self, cluster_client
-    ) -> None:
+    def test_replayed_same_incident_scores_identically(self, cluster_client) -> None:
         """End-to-end self-exclusion: a replayed alert never boosts itself."""
         payload = make_payload("INC-REPLAY")
         first = cluster_client.post("/api/triage", json=payload).get_json()
@@ -172,17 +168,13 @@ class TestBatchIntraCorrelation:
         assert body["succeeded"] == 3
         results = {r["index"]: r for r in body["results"]}
 
-        assert _cluster_entry(results[0]) is None          # nothing before it
+        assert _cluster_entry(results[0]) is None  # nothing before it
         first_entry = _cluster_entry(results[1])
         assert first_entry is not None and first_entry["score"] == 5.0
         second_entry = _cluster_entry(results[2])
         assert second_entry is not None and second_entry["score"] == 8.0
         # Ascending scores for identical payloads.
-        assert (
-            results[0]["risk_score"]
-            < results[1]["risk_score"]
-            < results[2]["risk_score"]
-        )
+        assert results[0]["risk_score"] < results[1]["risk_score"] < results[2]["risk_score"]
         # All three landed in one case.
         assert len(body["cases"]) == 1
         assert body["cases"][0]["member_indices"] == [0, 1, 2]
@@ -215,8 +207,6 @@ class TestFailOpen:
         import adte.server as srv
 
         monkeypatch.setattr(srv, "peek_correlation_context", lambda *a, **k: None)
-        resp = cluster_client.post(
-            "/api/triage", json=make_payload("INC-FAILOPEN")
-        )
+        resp = cluster_client.post("/api/triage", json=make_payload("INC-FAILOPEN"))
         assert resp.status_code == 200
         assert _cluster_entry(resp.get_json()) is None

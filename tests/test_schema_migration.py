@@ -36,17 +36,21 @@ class TestSeverityRejection:
     def test_model_validate_rejects_severity(self) -> None:
         """A payload containing a top-level severity fails validation (→ 422)."""
         with pytest.raises(ValidationError, match="engine-assigned"):
-            NormalizedIncident.model_validate({
-                "incident_id": "INC-1",
-                "user": "alice@contoso.com",
-                "severity": "High",
-            })
+            NormalizedIncident.model_validate(
+                {
+                    "incident_id": "INC-1",
+                    "user": "alice@contoso.com",
+                    "severity": "High",
+                }
+            )
 
     def test_constructor_rejects_severity(self) -> None:
         """Direct construction with severity is rejected too."""
         with pytest.raises(ValidationError, match="engine-assigned"):
             NormalizedIncident(  # type: ignore[call-arg]
-                incident_id="INC-1", user="alice@contoso.com", severity="High",
+                incident_id="INC-1",
+                user="alice@contoso.com",
+                severity="High",
             )
 
     def test_severity_is_not_a_model_field(self) -> None:
@@ -143,7 +147,9 @@ class TestEventsField:
         """NormalizedIncident exposes 'events' and no longer 'sign_in_events'."""
         ev = SignInMetadata(**_valid_event())
         inc = NormalizedIncident(
-            incident_id="INC-1", user="alice@contoso.com", events=[ev],
+            incident_id="INC-1",
+            user="alice@contoso.com",
+            events=[ev],
         )
         assert len(inc.events) == 1
         assert "sign_in_events" not in NormalizedIncident.model_fields
@@ -183,7 +189,7 @@ class TestFromSentinel:
         assert inc.source == "azure_ad"
         assert len(inc.events) == 1
         event = inc.events[0]
-        assert event.type == "authentication"   # defaulted by from_sentinel
+        assert event.type == "authentication"  # defaulted by from_sentinel
         assert event.auth_status == "failure"
         assert event.event_risk == "suspicious"
         assert "severity" not in NormalizedIncident.model_fields

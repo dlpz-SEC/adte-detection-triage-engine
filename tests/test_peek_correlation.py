@@ -44,9 +44,7 @@ def make_incident(
         )
         for ip in ips
     ]
-    return NormalizedIncident(
-        incident_id=incident_id, user=user, source="wazuh", events=events
-    )
+    return NormalizedIncident(incident_id=incident_id, user=user, source="wazuh", events=events)
 
 
 def make_output(
@@ -77,9 +75,7 @@ def _backdate_case(db_path: Path, case_id: str, delta: timedelta) -> None:
     """Rewind a case's last_activity by delta (raw connection)."""
     stale = (datetime.now(timezone.utc) - delta).isoformat()
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "UPDATE cases SET last_activity = ? WHERE case_id = ?", (stale, case_id)
-        )
+        conn.execute("UPDATE cases SET last_activity = ? WHERE case_id = ?", (stale, case_id))
         conn.commit()
 
 
@@ -144,12 +140,8 @@ class TestPeekContext:
         assert ctx.window_minutes == case_store.CASE_WINDOW_MINUTES
 
     def test_user_key_correlation_without_shared_ip(self, db_path: Path) -> None:
-        assert ingest_alert(
-            make_output(), make_incident("INC-1", ips=("10.0.0.5",)), db_path
-        )
-        ctx = peek_correlation_context(
-            make_incident("INC-2", ips=("203.0.113.9",)), db_path
-        )
+        assert ingest_alert(make_output(), make_incident("INC-1", ips=("10.0.0.5",)), db_path)
+        ctx = peek_correlation_context(make_incident("INC-2", ips=("203.0.113.9",)), db_path)
         assert ctx is not None
         assert ctx.sibling_count == 1
 
@@ -185,9 +177,7 @@ class TestPeekContext:
         assert ctx.kill_chain_detected is True
         assert ctx.distinct_sibling_tactics == 3
 
-    def test_reingested_member_excludes_own_tactics_from_kill_chain(
-        self, db_path: Path
-    ) -> None:
+    def test_reingested_member_excludes_own_tactics_from_kill_chain(self, db_path: Path) -> None:
         """Re-triaging a member never self-awards the kill-chain bonus: the
         chain is recomputed over siblings only, not read from the case row
         (which still counts this incident). Phase-31 review fix."""

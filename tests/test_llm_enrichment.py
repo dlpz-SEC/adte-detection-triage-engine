@@ -37,7 +37,9 @@ def _wazuh_alert(
     }
 
 
-def _dump(description: str = "SSH brute force", mitre_ids: list[str] | None = None) -> dict[str, Any]:
+def _dump(
+    description: str = "SSH brute force", mitre_ids: list[str] | None = None
+) -> dict[str, Any]:
     """Normalize a Wazuh alert and dump it in the pipeline's JSON shape."""
     incident = WazuhAdapter.normalize_alert(_wazuh_alert(description, mitre_ids))
     return incident.model_dump(mode="json")
@@ -128,11 +130,18 @@ class TestAdvisoryOnlyContract:
 
         without = (
             TriageEngine(incident_true_positive, profile, registry)
-            .enrich().score().decide().to_output(use_llm=False)
+            .enrich()
+            .score()
+            .decide()
+            .to_output(use_llm=False)
         )
         with_enrich = (
             TriageEngine(incident_true_positive, profile, registry)
-            .enrich().score().decide().llm_enrich().to_output(use_llm=False)
+            .enrich()
+            .score()
+            .decide()
+            .llm_enrich()
+            .to_output(use_llm=False)
         )
         for key in ("verdict", "risk_score", "confidence"):
             assert without[key] == with_enrich[key]

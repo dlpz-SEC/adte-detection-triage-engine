@@ -110,9 +110,10 @@ class FPRegistry:
                     # Warn and normalise rather than silently accepting ambiguous notation.
                     normalised = ipaddress.IPv4Network(cidr, strict=False)
                     _log.warning(
-                        "FP registry CIDR %r in '%s' has host bits set — "
-                        "normalised to %s",
-                        cidr, ptype, normalised,
+                        "FP registry CIDR %r in '%s' has host bits set — normalised to %s",
+                        cidr,
+                        ptype,
+                        normalised,
                     )
                     networks.append(normalised)
             entries[ptype] = networks
@@ -301,9 +302,7 @@ def add_fp_entry(ip: str, comment: str, registry_path: str | Path) -> bool:
         with _fp_write_lock:
             raw: list[dict[str, Any]] = yaml.safe_load(path.read_text(encoding="utf-8")) or []
             raw.append(new_entry)
-            _atomic_write_text(
-                path, yaml.dump(raw, default_flow_style=False, allow_unicode=True)
-            )
+            _atomic_write_text(path, yaml.dump(raw, default_flow_style=False, allow_unicode=True))
             # Invalidate cache while still holding _fp_write_lock to prevent a
             # concurrent load() from caching the pre-write content.
             # Always acquire in this order (_fp_write_lock → _registry_cache_lock)

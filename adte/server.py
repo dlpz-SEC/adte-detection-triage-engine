@@ -30,7 +30,10 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)  # always finds repo-root .env; override=True forces .env to win over existing shell vars
+
+load_dotenv(
+    Path(__file__).resolve().parent.parent / ".env", override=True
+)  # always finds repo-root .env; override=True forces .env to win over existing shell vars
 import os
 from typing import Any
 
@@ -221,6 +224,7 @@ def require_role(minimum_role: str):
     Args:
         minimum_role: Lowest role permitted (e.g. ``"analyst"``).
     """
+
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
@@ -230,9 +234,11 @@ def require_role(minimum_role: str):
             if not _any_keys_configured():
                 if request.method in _DEMO_SAFE_METHODS:
                     return fn(*args, **kwargs)
-                return jsonify({
-                    "error": "Demo mode active — set ADTE_API_KEY_ADMIN to enable write operations."
-                }), 403
+                return jsonify(
+                    {
+                        "error": "Demo mode active — set ADTE_API_KEY_ADMIN to enable write operations."
+                    }
+                ), 403
 
             # Cookie path: browser clients exchange their key for a session
             # token via /api/auth/login; the token is HttpOnly and never
@@ -258,7 +264,9 @@ def require_role(minimum_role: str):
                 return jsonify({"error": "Insufficient permissions"}), 403
 
             return fn(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -294,9 +302,9 @@ DB_PATH: Path = Path(os.getenv("ADTE_AUDIT_DB", "adte_audit.db"))
 REGISTRY_PATH: Path = Path(os.getenv("ADTE_FP_REGISTRY", str(EXAMPLES_DIR / "fp_registry.yaml")))
 
 _EXAMPLE_FILES: dict[str, str] = {
-    "critical":   "incident_account_takeover_tor_exfil.json",
-    "high_risk":  "incident_impossible_travel_mfa_fatigue.json",
-    "low_risk":   "incident_benign_vpn_travel.json",
+    "critical": "incident_account_takeover_tor_exfil.json",
+    "high_risk": "incident_impossible_travel_mfa_fatigue.json",
+    "low_risk": "incident_benign_vpn_travel.json",
     "medium_risk": "incident_needs_human_ambiguous.json",
 }
 
@@ -336,8 +344,7 @@ if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
 # Counted with the aggregator's own rule (blank or whitespace = not set), so
 # the log can never say "configured" while the aggregator runs on the mock.
 _intel_key_count = sum(
-    1 for k in ("ADTE_ABUSEIPDB_KEY", "ADTE_VT_API_KEY", "ADTE_OTX_KEY")
-    if env_key(k)
+    1 for k in ("ADTE_ABUSEIPDB_KEY", "ADTE_VT_API_KEY", "ADTE_OTX_KEY") if env_key(k)
 )
 _log.info("ADTE startup — %d/3 threat intel sources configured", _intel_key_count)
 
@@ -493,7 +500,11 @@ def _log_api_access(response: Any) -> Any:
         role = _caller_role() or "anonymous"
         _log.info(
             "API ip=%s role=%s %s %s → %d",
-            request.remote_addr, role, request.method, request.path, response.status_code,
+            request.remote_addr,
+            role,
+            request.method,
+            request.path,
+            response.status_code,
         )
     return response
 
@@ -536,7 +547,7 @@ def _csrf_origin_check() -> Any:
 # FP registry update: 5 min at most.
 # ---------------------------------------------------------------------------
 _QUEUE_CACHE_TTL: float = 300.0
-_queue_cache: dict[str, dict[str, Any]] = {}   # incident_id → {"row": ..., "ts": float}
+_queue_cache: dict[str, dict[str, Any]] = {}  # incident_id → {"row": ..., "ts": float}
 _queue_cache_lock = threading.Lock()
 
 
@@ -735,9 +746,7 @@ def _coerce_to_incident(payload: Any) -> NormalizedIncident:
             return p
         if isinstance(p, dict):
             wrapped = p.get("alerts")
-            if isinstance(wrapped, list) and not (
-                "incident_id" in p and "title" in p
-            ):
+            if isinstance(wrapped, list) and not ("incident_id" in p and "title" in p):
                 return wrapped
             hits = p.get("hits")
             if isinstance(hits, dict) and isinstance(hits.get("hits"), list):
@@ -827,7 +836,8 @@ def _finalize_output(output: dict[str, Any], incident: NormalizedIncident) -> di
     output["mitre_details"] = get_technique_details(techniques, sources)
     output["nist_phase"] = get_nist_phase(output["verdict"])
     capped = sorted(
-        ip for ip, intel in ((output.get("evidence") or {}).get("threat_intel") or {}).items()
+        ip
+        for ip, intel in ((output.get("evidence") or {}).get("threat_intel") or {}).items()
         if isinstance(intel, dict) and intel.get("source") == "lookup-cap"
     )
     if capped:
@@ -912,33 +922,39 @@ def triage() -> Any:
     try:
         incident = _coerce_to_incident(payload)
     except _BatchPayloadError as exc:
-        return jsonify({
-            "error": (
-                f"Batch payload detected ({exc.count} alerts) — /api/triage "
-                "triages one alert at a time. POST the batch to "
-                f"/api/triage/batch (max {_BATCH_MAX_ALERTS} alerts), or a "
-                "single alert object here."
-            )
-        }), 422
+        return jsonify(
+            {
+                "error": (
+                    f"Batch payload detected ({exc.count} alerts) — /api/triage "
+                    "triages one alert at a time. POST the batch to "
+                    f"/api/triage/batch (max {_BATCH_MAX_ALERTS} alerts), or a "
+                    "single alert object here."
+                )
+            }
+        ), 422
     except ValidationError:
-        return jsonify({
-            "error": (
-                "Invalid incident schema — check required fields. Accepted formats: "
-                "a NormalizedIncident object, a raw Wazuh/OpenSearch alert "
-                "(a `rule` object, or an OpenSearch `_source` envelope), or a "
-                "raw Sentinel incident."
-            )
-        }), 422
+        return jsonify(
+            {
+                "error": (
+                    "Invalid incident schema — check required fields. Accepted formats: "
+                    "a NormalizedIncident object, a raw Wazuh/OpenSearch alert "
+                    "(a `rule` object, or an OpenSearch `_source` envelope), or a "
+                    "raw Sentinel incident."
+                )
+            }
+        ), 422
     except (ValueError, KeyError, TypeError, AttributeError) as exc:
         # AttributeError included: adapter/from_sentinel field access on
         # wrong-typed sub-documents (e.g. a string where a dict is expected)
         # must surface as a clean 422, never a 500.
-        return jsonify({
-            "error": (
-                "Alert could not be normalised — malformed source alert "
-                f"payload ({type(exc).__name__})."
-            )
-        }), 422
+        return jsonify(
+            {
+                "error": (
+                    "Alert could not be normalised — malformed source alert "
+                    f"payload ({type(exc).__name__})."
+                )
+            }
+        ), 422
     ip_error = _unsupported_ip_error(incident)
     if ip_error:
         return jsonify({"error": ip_error}), 422
@@ -955,9 +971,7 @@ def triage() -> Any:
             # a broken case store yields None → signal not applicable.  Runs
             # inside the executor so the 30 s timeout covers the DB read.
             cluster_ctx = peek_correlation_context(incident, DB_PATH)
-            engine = TriageEngine(
-                incident, user_profile, fp_registry, cluster_context=cluster_ctx
-            )
+            engine = TriageEngine(incident, user_profile, fp_registry, cluster_context=cluster_ctx)
             # llm_enrich() populates the advisory llm_enrichment field only —
             # it runs after decide(), so it cannot influence the verdict.
             with lookup_budget():  # bound live threat-intel calls per alert
@@ -972,7 +986,9 @@ def triage() -> Any:
             except concurrent.futures.TimeoutError:
                 return jsonify({"error": f"Triage timed out after {_TRIAGE_TIMEOUT_SECS} s"}), 504
     except Exception as exc:
-        _log.error("Triage pipeline failed for incident %s (%s)", incident.incident_id, type(exc).__name__)
+        _log.error(
+            "Triage pipeline failed for incident %s (%s)", incident.incident_id, type(exc).__name__
+        )
         return jsonify({"error": "Triage pipeline error — check server logs"}), 500
 
     output = _finalize_output(output, incident)
@@ -1040,9 +1056,7 @@ def _extract_batch_items(payload: Any) -> list[Any]:
         return payload
     if isinstance(payload, dict):
         wrapped = payload.get("alerts")
-        if isinstance(wrapped, list) and not (
-            "incident_id" in payload and "title" in payload
-        ):
+        if isinstance(wrapped, list) and not ("incident_id" in payload and "title" in payload):
             return wrapped
         hits = payload.get("hits")
         if isinstance(hits, dict) and isinstance(hits.get("hits"), list):
@@ -1098,12 +1112,14 @@ def triage_batch() -> Any:
     if not items:
         return jsonify({"error": "Batch contains no alerts."}), 422
     if len(items) > _BATCH_MAX_ALERTS:
-        return jsonify({
-            "error": (
-                f"Batch too large ({len(items)} alerts, max {_BATCH_MAX_ALERTS}) — "
-                "split the export or narrow the OpenSearch query."
-            )
-        }), 422
+        return jsonify(
+            {
+                "error": (
+                    f"Batch too large ({len(items)} alerts, max {_BATCH_MAX_ALERTS}) — "
+                    "split the export or narrow the OpenSearch query."
+                )
+            }
+        ), 422
 
     def _run_batch() -> list[dict[str, Any]]:
         """Sequentially triage every element, isolating per-alert failures."""
@@ -1112,33 +1128,45 @@ def triage_batch() -> Any:
         fp_registry = FPRegistry.load()
         for i, item in enumerate(items):
             if time.monotonic() > deadline:
-                results.append({
-                    "index": i, "ok": False,
-                    "error": "Skipped — batch deadline reached",
-                })
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": "Skipped — batch deadline reached",
+                    }
+                )
                 continue
             try:
                 incident = _coerce_to_incident(item)
             except _BatchPayloadError as exc:
-                results.append({
-                    "index": i, "ok": False,
-                    "error": f"Element is itself a batch of {exc.count} alerts",
-                })
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": f"Element is itself a batch of {exc.count} alerts",
+                    }
+                )
                 continue
             except ValidationError:
-                results.append({
-                    "index": i, "ok": False,
-                    "error": "Invalid incident schema — check required fields.",
-                })
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": "Invalid incident schema — check required fields.",
+                    }
+                )
                 continue
             except (ValueError, KeyError, TypeError, AttributeError) as exc:
-                results.append({
-                    "index": i, "ok": False,
-                    "error": (
-                        "Alert could not be normalised — malformed source "
-                        f"alert payload ({type(exc).__name__})."
-                    ),
-                })
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": (
+                            "Alert could not be normalised — malformed source "
+                            f"alert payload ({type(exc).__name__})."
+                        ),
+                    }
+                )
                 continue
             ip_error = _unsupported_ip_error(incident)
             if ip_error:
@@ -1158,12 +1186,14 @@ def triage_batch() -> Any:
                     engine.enrich()
                 output = engine.score().decide().llm_enrich().to_output(use_llm=False)
             except Exception as exc:
-                _log.error(
-                    "Batch triage failed for element %d (%s)", i, type(exc).__name__
+                _log.error("Batch triage failed for element %d (%s)", i, type(exc).__name__)
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": "Triage pipeline error",
+                    }
                 )
-                results.append({
-                    "index": i, "ok": False, "error": "Triage pipeline error",
-                })
                 continue
             output = _finalize_output(output, incident)
             log_verdict(output, DB_PATH)
@@ -1176,9 +1206,7 @@ def triage_batch() -> Any:
         try:
             results = _future.result(timeout=_BATCH_DEADLINE_SECS + 10)
         except concurrent.futures.TimeoutError:
-            return jsonify(
-                {"error": f"Batch triage timed out after {_BATCH_DEADLINE_SECS} s"}
-            ), 504
+            return jsonify({"error": f"Batch triage timed out after {_BATCH_DEADLINE_SECS} s"}), 504
 
     succeeded = sum(1 for r in results if r.get("ok"))
     # Batch-level case summary: per-element "case" blobs show the case as of
@@ -1191,13 +1219,15 @@ def triage_batch() -> Any:
     case_summaries = get_cases_by_ids(list(case_indices), DB_PATH)
     for summary in case_summaries:
         summary["member_indices"] = case_indices[summary["case_id"]]
-    return jsonify({
-        "count": len(items),
-        "succeeded": succeeded,
-        "failed": len(results) - succeeded,
-        "results": results,
-        "cases": case_summaries,
-    }), 200
+    return jsonify(
+        {
+            "count": len(items),
+            "succeeded": succeeded,
+            "failed": len(results) - succeeded,
+            "results": results,
+            "cases": case_summaries,
+        }
+    ), 200
 
 
 # NOTE: /api/queue re-triages the same incidents on every poll (5-min cache),
@@ -1277,6 +1307,7 @@ def queue() -> Any:
         ``top_signal``, ``mitre_tactic``, ``status``, and
         ``incident_json``.
     """
+
     # Inner helper — not hoisted to module level because it's only needed here.
     def _clamp(val: str | None, default: int, lo: int, hi: int) -> int:
         try:
@@ -1284,9 +1315,9 @@ def queue() -> Any:
         except (TypeError, ValueError):
             return default
 
-    hours     = _clamp(request.args.get("hours"),     24,  1, 168)
-    limit     = _clamp(request.args.get("limit"),     50,  1, 500)
-    min_level = _clamp(request.args.get("min_level"),  1,  1,  15)
+    hours = _clamp(request.args.get("hours"), 24, 1, 168)
+    limit = _clamp(request.args.get("limit"), 50, 1, 500)
+    min_level = _clamp(request.args.get("min_level"), 1, 1, 15)
 
     # Live-source ladder: each entry is (source_name, zero-arg loader).
     # Tried in order; the first adapter that is configured AND reachable
@@ -1296,12 +1327,14 @@ def queue() -> Any:
         # Deferred import: keeps server startup clean when the adapter's
         # env vars (ADTE_WAZUH_HOST etc.) are absent.
         from adte.adapters.wazuh import WazuhAdapter
+
         return WazuhAdapter.from_env().fetch_incidents(
             hours=hours, limit=limit, min_level=min_level
         )
 
     def _load_sentinel() -> list[NormalizedIncident]:
         from adte.adapters.sentinel import SentinelAdapter
+
         return SentinelAdapter.from_env().fetch_incidents(hours=hours, limit=limit)
 
     _SOURCE_LADDER: list[tuple[str, Any]] = [
@@ -1342,9 +1375,7 @@ def queue() -> Any:
             user_profile = get_user_profile(incident.user)
             fp_registry = FPRegistry.load()
             cluster_ctx = peek_correlation_context(incident, DB_PATH)
-            engine = TriageEngine(
-                incident, user_profile, fp_registry, cluster_context=cluster_ctx
-            )
+            engine = TriageEngine(incident, user_profile, fp_registry, cluster_context=cluster_ctx)
             with lookup_budget():  # bound live threat-intel calls per alert
                 _prewarm_threat_intel(incident)  # newest IPs first
                 engine.enrich()
@@ -1353,34 +1384,31 @@ def queue() -> Any:
             _log.error("Queue triage failed for incident %s (%s)", iid, type(exc).__name__)
             continue
 
-        source_ip = (
-            incident.events[0].ip_address or ""
-            if incident.events
-            else ""
-        )
+        source_ip = incident.events[0].ip_address or "" if incident.events else ""
         rationale = output.get("rationale", [])
         top_signal = (
             max(rationale, key=lambda r: r.get("score", 0), default={}).get("signal", "")
-            if rationale else ""
+            if rationale
+            else ""
         )
         # mitre_tactics may be absent or empty; `or [""]` ensures [0] is safe.
         mitre_tactic = (output.get("report", {}).get("mitre_tactics") or [""])[0]
 
         row: dict[str, Any] = {
-            "incident_id":      iid,
-            "timestamp":        incident.created_time.isoformat() if incident.created_time else "",
-            "user":             incident.user,
-            "source_ip":        source_ip,
-            "verdict":          output["verdict"],
-            "risk_score":       output["risk_score"],
-            "top_signal":       top_signal,
-            "mitre_tactic":     mitre_tactic,
+            "incident_id": iid,
+            "timestamp": incident.created_time.isoformat() if incident.created_time else "",
+            "user": incident.user,
+            "source_ip": source_ip,
+            "verdict": output["verdict"],
+            "risk_score": output["risk_score"],
+            "top_signal": top_signal,
+            "mitre_tactic": mitre_tactic,
             "mitre_techniques": get_techniques(
                 [r["signal"] for r in rationale if r.get("score", 0) > 0]
             ),
-            "nist_phase":       get_nist_phase(output["verdict"]),
-            "status":           "open",
-            "incident_json":    incident.model_dump(mode="json"),
+            "nist_phase": get_nist_phase(output["verdict"]),
+            "status": "open",
+            "incident_json": incident.model_dump(mode="json"),
         }
 
         with _queue_cache_lock:
@@ -1388,11 +1416,13 @@ def queue() -> Any:
 
         rows.append(row)
 
-    return jsonify({
-        "source": data_source,
-        "params": {"hours": hours, "limit": limit, "min_level": min_level},
-        "rows": rows,
-    }), 200
+    return jsonify(
+        {
+            "source": data_source,
+            "params": {"hours": hours, "limit": limit, "min_level": min_level},
+            "rows": rows,
+        }
+    ), 200
 
 
 @app.route("/api/verdicts")
@@ -1417,9 +1447,9 @@ def verdicts() -> Any:
         try:
             datetime.fromisoformat(since)
         except ValueError:
-            return jsonify({
-                "error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"
-            }), 400
+            return jsonify(
+                {"error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"}
+            ), 400
     try:
         limit = max(1, min(500, int(request.args.get("limit", 100))))
     except (TypeError, ValueError):
@@ -1478,9 +1508,9 @@ def export_verdicts() -> Any:
         try:
             datetime.fromisoformat(since)
         except ValueError:
-            return jsonify({
-                "error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"
-            }), 400
+            return jsonify(
+                {"error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"}
+            ), 400
     try:
         limit = max(1, min(10000, int(request.args.get("limit", 1000))))
     except (TypeError, ValueError):
@@ -1494,9 +1524,7 @@ def export_verdicts() -> Any:
         return Response(
             body,
             mimetype="application/json",
-            headers={
-                "Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.json"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.json"'},
         )
 
     buf = io.StringIO()
@@ -1507,9 +1535,7 @@ def export_verdicts() -> Any:
     return Response(
         buf.getvalue(),
         mimetype="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.csv"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="adte_verdicts_{stamp}.csv"'},
     )
 
 
@@ -1526,9 +1552,11 @@ def _parse_since_param() -> tuple[str | None, Any | None]:
             datetime.fromisoformat(since)
         except ValueError:
             return None, (
-                jsonify({
-                    "error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"
-                }),
+                jsonify(
+                    {
+                        "error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"
+                    }
+                ),
                 400,
             )
     return since, None
@@ -1677,19 +1705,19 @@ def feedback() -> Any:
         if label == "fp" and ip:
             caller = _caller_role()
             if ROLES.get(caller, -1) < ROLES["senior_analyst"]:
-                return jsonify({
-                    "error": "Promoting IPs to the FP registry requires senior_analyst role"
-                }), 403
-            registry_updated = add_fp_entry(
-                ip, "Auto-added by ADTE feedback loop", REGISTRY_PATH
-            )
+                return jsonify(
+                    {"error": "Promoting IPs to the FP registry requires senior_analyst role"}
+                ), 403
+            registry_updated = add_fp_entry(ip, "Auto-added by ADTE feedback loop", REGISTRY_PATH)
 
-        return jsonify({
-            "status": "ok",
-            "label": label,
-            "incident_id": incident_id,
-            "registry_updated": registry_updated,
-        }), 200
+        return jsonify(
+            {
+                "status": "ok",
+                "label": label,
+                "incident_id": incident_id,
+                "registry_updated": registry_updated,
+            }
+        ), 200
     except Exception as exc:
         _log.error("Feedback endpoint failed for incident %s (%s)", incident_id, type(exc).__name__)
         return jsonify({"error": "Failed to record feedback"}), 500
@@ -1841,15 +1869,18 @@ def intel() -> Any:
         return jsonify({"error": "ip parameter required"}), 400
     try:
         from adte.intel.threat_intel import check_threat_intel
+
         r = check_threat_intel(ip)
-        return jsonify({
-            "ip":          r.ip,
-            "is_malicious": r.is_malicious,
-            "confidence":  r.confidence,
-            "source":      r.source,
-            "tags":        r.tags,
-            "queried_at":  r.queried_at.isoformat() if r.queried_at else None,
-        }), 200
+        return jsonify(
+            {
+                "ip": r.ip,
+                "is_malicious": r.is_malicious,
+                "confidence": r.confidence,
+                "source": r.source,
+                "tags": r.tags,
+                "queried_at": r.queried_at.isoformat() if r.queried_at else None,
+            }
+        ), 200
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
@@ -1920,7 +1951,7 @@ def auth_login() -> Any:
         _SESSION_COOKIE,
         token,
         httponly=True,
-        secure=request.is_secure,   # Secure flag only over HTTPS (safe on localhost HTTP)
+        secure=request.is_secure,  # Secure flag only over HTTPS (safe on localhost HTTP)
         samesite="Strict",
         path="/",
         max_age=_SESSION_TTL_HOURS * 3600,
@@ -1968,6 +1999,7 @@ def config() -> Any:
         ``execution_enabled``, ``tenant_allowlist``,
         ``user_allowlist``, ``action_allowlist``.
     """
+
     # _b, _l, _mask_key are defined locally and read the safety-config env
     # vars directly. These vars are surfaced read-only here for analyst
     # visibility; they are reserved for a future execution layer and do not
@@ -1991,27 +2023,29 @@ def config() -> Any:
     def _mask_key(env_var: str) -> str:
         return _mask_value(os.environ.get(env_var, ""))
 
-    return jsonify({
-        "kill_switch":       _b("ADTE_KILL_SWITCH"),
-        "dry_run":           _b("ADTE_DRY_RUN", "true"),
-        "execution_enabled": _b("ADTE_EXECUTION_ENABLED"),
-        "tenant_allowlist":  _l("ADTE_TENANT_ALLOWLIST"),
-        "user_allowlist":    _l("ADTE_USER_ALLOWLIST"),
-        "action_allowlist":  _l("ADTE_ACTION_ALLOWLIST", "CLOSE_INCIDENT,POST_COMMENT"),
-        "api_keys": {
-            "admin": _mask_key("ADTE_API_KEY_ADMIN"),
-            "senior_analyst": _mask_key("ADTE_API_KEY_SENIOR"),
-            "analyst": _mask_key("ADTE_API_KEY_ANALYST"),
-            "readonly": _mask_key("ADTE_API_KEY_READONLY"),
-        },
-        "intel_keys": {
-            # Read like the aggregator reads them: a blank key shows as unset.
-            "abuseipdb": _mask_value(env_key("ADTE_ABUSEIPDB_KEY")),
-            "virustotal": _mask_value(env_key("ADTE_VT_API_KEY")),
-            "otx": _mask_value(env_key("ADTE_OTX_KEY")),
-        },
-        "llm_available": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
-    }), 200
+    return jsonify(
+        {
+            "kill_switch": _b("ADTE_KILL_SWITCH"),
+            "dry_run": _b("ADTE_DRY_RUN", "true"),
+            "execution_enabled": _b("ADTE_EXECUTION_ENABLED"),
+            "tenant_allowlist": _l("ADTE_TENANT_ALLOWLIST"),
+            "user_allowlist": _l("ADTE_USER_ALLOWLIST"),
+            "action_allowlist": _l("ADTE_ACTION_ALLOWLIST", "CLOSE_INCIDENT,POST_COMMENT"),
+            "api_keys": {
+                "admin": _mask_key("ADTE_API_KEY_ADMIN"),
+                "senior_analyst": _mask_key("ADTE_API_KEY_SENIOR"),
+                "analyst": _mask_key("ADTE_API_KEY_ANALYST"),
+                "readonly": _mask_key("ADTE_API_KEY_READONLY"),
+            },
+            "intel_keys": {
+                # Read like the aggregator reads them: a blank key shows as unset.
+                "abuseipdb": _mask_value(env_key("ADTE_ABUSEIPDB_KEY")),
+                "virustotal": _mask_value(env_key("ADTE_VT_API_KEY")),
+                "otx": _mask_value(env_key("ADTE_OTX_KEY")),
+            },
+            "llm_available": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+        }
+    ), 200
 
 
 # ---------------------------------------------------------------------------

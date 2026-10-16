@@ -70,14 +70,16 @@ def _make_context(
 
 def _wazuh_skip_incident() -> NormalizedIncident:
     """The test_engine ==78 scenario: no geo, no MFA, C2 IP, unknown device."""
-    return _make_incident([
-        _make_sign_in(
-            ip="198.51.100.23",  # malicious C2 IP in the mock TI feed
-            device_id="unknown-wazuh-device-xyz",
-            auth_status=None,
-            location=None,
-        )
-    ])
+    return _make_incident(
+        [
+            _make_sign_in(
+                ip="198.51.100.23",  # malicious C2 IP in the mock TI feed
+                device_id="unknown-wazuh-device-xyz",
+                auth_status=None,
+                location=None,
+            )
+        ]
+    )
 
 
 def _run(
@@ -87,9 +89,7 @@ def _run(
 ) -> tuple[TriageEngine, dict]:
     """Run the enrich→score→decide pipeline and return (engine, output)."""
     profile = get_user_profile(incident.user)
-    engine = TriageEngine(
-        incident, profile, fp_registry, cluster_context=context
-    )
+    engine = TriageEngine(incident, profile, fp_registry, cluster_context=context)
     output = engine.enrich().score().decide().to_output()
     return engine, output
 
@@ -132,10 +132,10 @@ class TestPointsCurve:
             (1, False, 5.0),
             (2, False, 8.0),
             (3, False, 10.0),
-            (7, False, 10.0),   # volume ramp caps at 10
+            (7, False, 10.0),  # volume ramp caps at 10
             (1, True, 10.0),
             (2, True, 13.0),
-            (3, True, 15.0),    # weight cap
+            (3, True, 15.0),  # weight cap
             (9, True, 15.0),
         ],
     )
@@ -159,9 +159,9 @@ class TestPointsCurve:
             (1, False, 0.6),
             (2, False, 0.7),
             (4, False, 0.9),
-            (6, False, 0.9),    # confidence ramp caps at 0.9
+            (6, False, 0.9),  # confidence ramp caps at 0.9
             (1, True, 0.7),
-            (5, True, 1.0),     # 0.9 + 0.1 caps at 1.0
+            (5, True, 1.0),  # 0.9 + 0.1 caps at 1.0
         ],
     )
     def test_confidence_ramp(
@@ -187,9 +187,7 @@ class TestAdditiveUplift:
         assert output["verdict"] == "high_risk"
 
     def test_kill_chain_boosts_78_to_88(self, fp_registry: FPRegistry) -> None:
-        _, output = _run(
-            _wazuh_skip_incident(), fp_registry, _make_context(1, kill_chain=True)
-        )
+        _, output = _run(_wazuh_skip_incident(), fp_registry, _make_context(1, kill_chain=True))
         assert output["risk_score"] == 88
 
     def test_uplift_capped_at_100(
@@ -197,9 +195,7 @@ class TestAdditiveUplift:
     ) -> None:
         """A near-max core score + max context never exceeds 100."""
         _, solo = _run(incident_true_positive, fp_registry)
-        _, boosted = _run(
-            incident_true_positive, fp_registry, _make_context(5, kill_chain=True)
-        )
+        _, boosted = _run(incident_true_positive, fp_registry, _make_context(5, kill_chain=True))
         assert solo["risk_score"] > 85  # sanity: the true-positive example is hot
         assert boosted["risk_score"] == 100
         assert boosted["risk_score"] == min(100, solo["risk_score"] + 15)
@@ -211,7 +207,7 @@ class TestAdditiveUplift:
     ) -> None:
         """Monotonicity doctrine: context is an aggravator, never a mitigator."""
         for incident in (
-            _wazuh_skip_incident(),      # skip-heavy: the old 78→67 anomaly case
+            _wazuh_skip_incident(),  # skip-heavy: the old 78→67 anomaly case
             _make_incident([_make_sign_in(ip="10.0.0.1", auth_status="success")]),
         ):
             _, solo = _run(incident, fp_registry)
@@ -225,22 +221,16 @@ class TestAdditiveUplift:
 
 
 class TestOutputShape:
-    def test_context_adds_sixth_rationale_and_summary_entry(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_context_adds_sixth_rationale_and_summary_entry(self, fp_registry: FPRegistry) -> None:
         _, output = _run(_wazuh_skip_incident(), fp_registry, _make_context(2))
         assert len(output["rationale"]) == 6
-        entry = next(
-            r for r in output["rationale"] if r["signal"] == "cluster_context"
-        )
+        entry = next(r for r in output["rationale"] if r["signal"] == "cluster_context")
         assert entry["score"] == 8.0
         summary = output["report"]["signal_summary"]["cluster_context"]
         assert summary["max_possible"] == 15
         assert summary["score"] == 8.0
 
-    def test_rationale_names_case_count_window(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_rationale_names_case_count_window(self, fp_registry: FPRegistry) -> None:
         engine, _ = _run(
             _wazuh_skip_incident(),
             fp_registry,
@@ -254,9 +244,7 @@ class TestOutputShape:
         assert "kill-chain progression detected" in detail
         assert "max sibling risk 78" in detail
 
-    def test_rationale_omits_conditional_clauses(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_rationale_omits_conditional_clauses(self, fp_registry: FPRegistry) -> None:
         """Tactics clause needs >1 tactic; kill-chain clause needs detection."""
         engine, _ = _run(
             _wazuh_skip_incident(),
@@ -267,9 +255,7 @@ class TestOutputShape:
         assert "distinct ATT&CK tactics" not in detail
         assert "kill-chain" not in detail
 
-    def test_context_counts_toward_confidence_coverage(
-        self, fp_registry: FPRegistry
-    ) -> None:
+    def test_context_counts_toward_confidence_coverage(self, fp_registry: FPRegistry) -> None:
         """Correlated coverage is present/total over 6 applicable signals."""
         incident = _wazuh_skip_incident()
         solo_engine, solo = _run(incident, fp_registry)

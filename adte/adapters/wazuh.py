@@ -50,10 +50,12 @@ _ALLOWED_SCHEMES: frozenset[str] = frozenset({"https", "http"})
 # SSRF protection: hostnames that must never be targeted.
 # 169.254.169.254 is the IMDS endpoint on AWS, Azure, and GCP;
 # metadata.google.internal is GCP's DNS alias for the same service.
-_SSRF_BLOCKED_HOSTS: frozenset[str] = frozenset({
-    "169.254.169.254",
-    "metadata.google.internal",
-})
+_SSRF_BLOCKED_HOSTS: frozenset[str] = frozenset(
+    {
+        "169.254.169.254",
+        "metadata.google.internal",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -158,23 +160,62 @@ def _event_risk_from_level(level: int) -> Literal["none", "suspicious", "high", 
 # "virustotal" is deliberately a file hint: Wazuh's VirusTotal integration
 # fires on FIM alerts (rule 87105 family), so its alerts are file events
 # even though their rule.groups carry only ["virustotal"].
-_FILE_TYPE_HINTS: frozenset[str] = frozenset({
-    "syscheck", "fim", "file_integrity", "ossec_file", "virustotal",
-})
-_AUTH_TYPE_HINTS: frozenset[str] = frozenset({
-    "authentication", "auth", "login", "logon", "sshd", "pam",
-    "session", "password", "credential", "kerberos",
-})
-_NETWORK_TYPE_HINTS: frozenset[str] = frozenset({
-    "firewall", "ids", "ips", "suricata", "snort", "web", "attack",
-    "netflow", "network", "ddos", "scan", "shellshock", "http", "exploit",
-})
-_PROCESS_TYPE_HINTS: frozenset[str] = frozenset({
-    "process", "command", "exec", "audit", "syscall", "program_exec",
-})
+_FILE_TYPE_HINTS: frozenset[str] = frozenset(
+    {
+        "syscheck",
+        "fim",
+        "file_integrity",
+        "ossec_file",
+        "virustotal",
+    }
+)
+_AUTH_TYPE_HINTS: frozenset[str] = frozenset(
+    {
+        "authentication",
+        "auth",
+        "login",
+        "logon",
+        "sshd",
+        "pam",
+        "session",
+        "password",
+        "credential",
+        "kerberos",
+    }
+)
+_NETWORK_TYPE_HINTS: frozenset[str] = frozenset(
+    {
+        "firewall",
+        "ids",
+        "ips",
+        "suricata",
+        "snort",
+        "web",
+        "attack",
+        "netflow",
+        "network",
+        "ddos",
+        "scan",
+        "shellshock",
+        "http",
+        "exploit",
+    }
+)
+_PROCESS_TYPE_HINTS: frozenset[str] = frozenset(
+    {
+        "process",
+        "command",
+        "exec",
+        "audit",
+        "syscall",
+        "program_exec",
+    }
+)
 
 
-def _event_type_from_rule(rule: dict[str, Any]) -> Literal["authentication", "network", "process", "file"]:
+def _event_type_from_rule(
+    rule: dict[str, Any],
+) -> Literal["authentication", "network", "process", "file"]:
     """Classify a Wazuh alert into an OCSF-style event ``type``.
 
     Inspects ``rule.groups`` and ``rule.description`` for keyword hints,
@@ -188,10 +229,12 @@ def _event_type_from_rule(rule: dict[str, Any]) -> Literal["authentication", "ne
     Returns:
         One of ``"authentication"``, ``"network"``, ``"process"``, ``"file"``.
     """
-    haystack = " ".join([
-        " ".join(str(g) for g in rule.get("groups", [])),
-        str(rule.get("description", "")),
-    ]).lower()
+    haystack = " ".join(
+        [
+            " ".join(str(g) for g in rule.get("groups", [])),
+            str(rule.get("description", "")),
+        ]
+    ).lower()
     if any(h in haystack for h in _FILE_TYPE_HINTS):
         return "file"
     if any(h in haystack for h in _AUTH_TYPE_HINTS):
@@ -491,9 +534,7 @@ class WazuhAdapter:
         Raises:
             requests.HTTPError: If any API request fails.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=hours)
-        ).strftime("%Y-%m-%dT%H:%M:%S")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
 
         all_items: list[dict[str, Any]] = []
         total: int | None = None
@@ -534,11 +575,7 @@ class WazuhAdapter:
                 raw_total = hits.get("total", 0)
                 # OpenSearch returns total as {"value": N, "relation": "eq"}
                 # or as a plain integer in older versions.
-                total = (
-                    raw_total["value"]
-                    if isinstance(raw_total, dict)
-                    else int(raw_total)
-                )
+                total = raw_total["value"] if isinstance(raw_total, dict) else int(raw_total)
 
             page = hits.get("hits", [])
             for hit in page:
@@ -606,9 +643,7 @@ class WazuhAdapter:
         user = _extract_user(alert)
         srcip = _extract_srcip(alert)
         # Wazuh Indexer uses @timestamp; fall back to timestamp for compatibility.
-        raw_ts = alert.get("@timestamp") or alert.get(
-            "timestamp", "1970-01-01T00:00:00+00:00"
-        )
+        raw_ts = alert.get("@timestamp") or alert.get("timestamp", "1970-01-01T00:00:00+00:00")
         ts = _parse_wazuh_timestamp(raw_ts)
 
         # Native ATT&CK technique IDs from the Wazuh rule (rule.mitre.id is a
@@ -653,35 +688,41 @@ class WazuhAdapter:
             # Reuse the guarded raw_mitre — a non-dict rule.mitre would crash
             # the .get() below (pre-existing bug surfaced by malformed alerts).
             mitre = raw_mitre if isinstance(raw_mitre, dict) else {}
-            entities.append(AlertEntity(
-                entity_type="IP",
-                identifier=srcip,
-                metadata={
-                    "rule_id": rule.get("id", ""),
-                    "mitre_techniques": mitre.get("technique", []),
-                },
-            ))
+            entities.append(
+                AlertEntity(
+                    entity_type="IP",
+                    identifier=srcip,
+                    metadata={
+                        "rule_id": rule.get("id", ""),
+                        "mitre_techniques": mitre.get("technique", []),
+                    },
+                )
+            )
         # Only add Account entity when the user is a real extracted value
         # (not the fallback system account pattern).
         if user and not user.endswith("\\system"):
-            entities.append(AlertEntity(
-                entity_type="Account",
-                identifier=user,
-                metadata={},
-            ))
+            entities.append(
+                AlertEntity(
+                    entity_type="Account",
+                    identifier=user,
+                    metadata={},
+                )
+            )
         if file_artifact is not None:
-            entities.append(AlertEntity(
-                entity_type="File",
-                identifier=file_artifact.path or file_artifact.sha256 or "unknown",
-                metadata={
-                    "sha256": file_artifact.sha256,
-                    "md5": file_artifact.md5,
-                    "fim_action": file_artifact.fim_action or "",
-                    "vt_positives": file_artifact.vt_positives,
-                    "vt_total": file_artifact.vt_total,
-                    "vt_permalink": file_artifact.vt_permalink,
-                },
-            ))
+            entities.append(
+                AlertEntity(
+                    entity_type="File",
+                    identifier=file_artifact.path or file_artifact.sha256 or "unknown",
+                    metadata={
+                        "sha256": file_artifact.sha256,
+                        "md5": file_artifact.md5,
+                        "fim_action": file_artifact.fim_action or "",
+                        "vt_positives": file_artifact.vt_positives,
+                        "vt_total": file_artifact.vt_total,
+                        "vt_permalink": file_artifact.vt_permalink,
+                    },
+                )
+            )
 
         return NormalizedIncident(
             incident_id=alert.get("id", "wazuh-unknown"),

@@ -54,10 +54,7 @@ class TestKillChainConstants:
         from pathlib import Path
 
         map_path = (
-            Path(__file__).resolve().parent.parent
-            / "adte"
-            / "data"
-            / "mitre_technique_map.yaml"
+            Path(__file__).resolve().parent.parent / "adte" / "data" / "mitre_technique_map.yaml"
         )
         mappings = yaml.safe_load(map_path.read_text(encoding="utf-8"))["mappings"]
         tactics = {m["mitre_tactic"] for m in mappings}
@@ -66,9 +63,7 @@ class TestKillChainConstants:
 
 class TestScoreCase:
     def test_base_only_single_member(self) -> None:
-        score, verdict, escalated, rationale = score_case(
-            [55.0], 1, _NO_CHAIN, "INC-1"
-        )
+        score, verdict, escalated, rationale = score_case([55.0], 1, _NO_CHAIN, "INC-1")
         assert score == 55
         assert verdict == "medium_risk"
         assert escalated is False
@@ -102,9 +97,7 @@ class TestScoreCase:
 
     def test_demo_story_three_medium_alerts_escalate_to_high(self) -> None:
         """Three medium alerts, one IP, cred-access→lateral→exfil = 95 high."""
-        score, verdict, escalated, _ = score_case(
-            [55.0, 48.0, 51.0], 3, _CHAIN, "INC-104"
-        )
+        score, verdict, escalated, _ = score_case([55.0, 48.0, 51.0], 3, _CHAIN, "INC-104")
         assert score == 55 + 10 + 10 + 20 == 95
         assert verdict == "high_risk"
         assert escalated is True

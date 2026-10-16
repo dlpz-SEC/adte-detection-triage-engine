@@ -35,35 +35,39 @@ from typing import Mapping
 # all five DE.CM subcategories in the CSF 2.0 core (Appendix A lists no -04,
 # -05, -07 or -08).  The unpadded "DE.CM-1" .. "DE.CM-8" style is CSF 1.1;
 # ADTE's YAML used it until 2026-10-01, including three IDs 2.0 lacks.
-DE_CM: Mapping[str, str] = MappingProxyType({
-    "DE.CM-01": "Networks and network services are monitored to find potentially adverse events",
-    "DE.CM-02": "The physical environment is monitored to find potentially adverse events",
-    "DE.CM-03": (
-        "Personnel activity and technology usage are monitored to find potentially "
-        "adverse events"
-    ),
-    "DE.CM-06": (
-        "External service provider activities and services are monitored to find "
-        "potentially adverse events"
-    ),
-    "DE.CM-09": (
-        "Computing hardware and software, runtime environments, and their data are "
-        "monitored to find potentially adverse events"
-    ),
-})
+DE_CM: Mapping[str, str] = MappingProxyType(
+    {
+        "DE.CM-01": "Networks and network services are monitored to find potentially adverse events",
+        "DE.CM-02": "The physical environment is monitored to find potentially adverse events",
+        "DE.CM-03": (
+            "Personnel activity and technology usage are monitored to find potentially "
+            "adverse events"
+        ),
+        "DE.CM-06": (
+            "External service provider activities and services are monitored to find "
+            "potentially adverse events"
+        ),
+        "DE.CM-09": (
+            "Computing hardware and software, runtime environments, and their data are "
+            "monitored to find potentially adverse events"
+        ),
+    }
+)
 
 # Adverse Event Analysis (DE.AE): "Anomalies, indicators of compromise, and
 # other potentially adverse events are analyzed to characterize the events and
 # detect cybersecurity incidents".  Only the four ADTE performs.
-DE_AE: Mapping[str, str] = MappingProxyType({
-    "DE.AE-02": "Potentially adverse events are analyzed to better understand associated activities",
-    "DE.AE-03": "Information is correlated from multiple sources",
-    "DE.AE-07": (
-        "Cyber threat intelligence and other contextual information are integrated "
-        "into the analysis"
-    ),
-    "DE.AE-08": "Incidents are declared when adverse events meet the defined incident criteria",
-})
+DE_AE: Mapping[str, str] = MappingProxyType(
+    {
+        "DE.AE-02": "Potentially adverse events are analyzed to better understand associated activities",
+        "DE.AE-03": "Information is correlated from multiple sources",
+        "DE.AE-07": (
+            "Cyber threat intelligence and other contextual information are integrated "
+            "into the analysis"
+        ),
+        "DE.AE-08": "Incidents are declared when adverse events meet the defined incident criteria",
+    }
+)
 
 # Every ID ADTE may emit, DE.CM first, in ID order.
 CSF_SUBCATEGORIES: Mapping[str, str] = MappingProxyType({**DE_CM, **DE_AE})

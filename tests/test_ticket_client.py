@@ -63,9 +63,7 @@ class TestCreateLinearTicket(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch("scripts.ticket_client.requests.post")
-    def test_missing_api_key_returns_none_without_request(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_missing_api_key_returns_none_without_request(self, mock_post: MagicMock) -> None:
         """Returns None immediately when ADTE_LINEAR_API_KEY is not set."""
         with patch.dict("os.environ", {"ADTE_LINEAR_TEAM_ID": "team-abc"}, clear=True):
             result = create_linear_ticket(_VERDICT)
@@ -74,9 +72,7 @@ class TestCreateLinearTicket(unittest.TestCase):
         mock_post.assert_not_called()
 
     @patch("scripts.ticket_client.requests.post")
-    def test_missing_team_id_returns_none_without_request(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_missing_team_id_returns_none_without_request(self, mock_post: MagicMock) -> None:
         """Returns None immediately when ADTE_LINEAR_TEAM_ID is not set."""
         with patch.dict("os.environ", {"ADTE_LINEAR_API_KEY": "key"}, clear=True):
             result = create_linear_ticket(_VERDICT)
@@ -88,6 +84,7 @@ class TestCreateLinearTicket(unittest.TestCase):
     def test_request_exception_returns_none(self, mock_post: MagicMock) -> None:
         """Returns None when requests raises a RequestException."""
         import requests as req_lib
+
         mock_post.side_effect = req_lib.RequestException("timeout")
 
         with patch.dict("os.environ", _LINEAR_ENV):
@@ -103,9 +100,7 @@ class TestCreateTrelloCard(unittest.TestCase):
     def test_success_returns_url(self, mock_post: MagicMock) -> None:
         """Returns the card URL when Trello responds with 200 and a URL."""
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "shortUrl": "https://trello.com/c/abc123"
-        }
+        mock_post.return_value.json.return_value = {"shortUrl": "https://trello.com/c/abc123"}
 
         with patch.dict("os.environ", _TRELLO_ENV):
             result = create_trello_card(_VERDICT)
@@ -124,9 +119,7 @@ class TestCreateTrelloCard(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch("scripts.ticket_client.requests.post")
-    def test_missing_api_key_returns_none_without_request(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_missing_api_key_returns_none_without_request(self, mock_post: MagicMock) -> None:
         """Returns None immediately when ADTE_TRELLO_API_KEY is not set."""
         env = {"ADTE_TRELLO_TOKEN": "tok", "ADTE_TRELLO_LIST_ID": "lst"}
         with patch.dict("os.environ", env, clear=True):
@@ -139,6 +132,7 @@ class TestCreateTrelloCard(unittest.TestCase):
     def test_request_exception_returns_none(self, mock_post: MagicMock) -> None:
         """Returns None when requests raises a RequestException."""
         import requests as req_lib
+
         mock_post.side_effect = req_lib.RequestException("connection refused")
 
         with patch.dict("os.environ", _TRELLO_ENV):
@@ -151,9 +145,7 @@ class TestCreateTicketDispatcher(unittest.TestCase):
     """Tests for the create_ticket dispatcher."""
 
     @patch("scripts.ticket_client.requests.post")
-    def test_tries_linear_first_when_both_keys_present(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_tries_linear_first_when_both_keys_present(self, mock_post: MagicMock) -> None:
         """Calls Linear and returns its URL when both providers are configured."""
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {
@@ -169,14 +161,10 @@ class TestCreateTicketDispatcher(unittest.TestCase):
         self.assertIn("linear.app", call_url)
 
     @patch("scripts.ticket_client.requests.post")
-    def test_falls_back_to_trello_when_no_linear_key(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_falls_back_to_trello_when_no_linear_key(self, mock_post: MagicMock) -> None:
         """Falls through to Trello when ADTE_LINEAR_API_KEY is not set."""
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "shortUrl": "https://trello.com/c/xyz"
-        }
+        mock_post.return_value.json.return_value = {"shortUrl": "https://trello.com/c/xyz"}
 
         with patch.dict("os.environ", _TRELLO_ENV, clear=True):
             result = create_ticket(_VERDICT)
@@ -186,9 +174,7 @@ class TestCreateTicketDispatcher(unittest.TestCase):
         self.assertIn("trello.com", call_url)
 
     @patch("scripts.ticket_client.requests.post")
-    def test_returns_none_when_neither_key_configured(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_returns_none_when_neither_key_configured(self, mock_post: MagicMock) -> None:
         """Returns None silently when no provider keys are set."""
         with patch.dict("os.environ", {}, clear=True):
             result = create_ticket(_VERDICT)
@@ -197,9 +183,7 @@ class TestCreateTicketDispatcher(unittest.TestCase):
         mock_post.assert_not_called()
 
     @patch("scripts.ticket_client.requests.post")
-    def test_falls_back_to_trello_when_linear_fails(
-        self, mock_post: MagicMock
-    ) -> None:
+    def test_falls_back_to_trello_when_linear_fails(self, mock_post: MagicMock) -> None:
         """Falls through to Trello when Linear returns an error."""
         # First call (Linear) returns 500; second call (Trello) returns 200.
         linear_resp = MagicMock()

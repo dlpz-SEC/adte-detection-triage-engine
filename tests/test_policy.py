@@ -48,35 +48,45 @@ class TestComputeConfidence:
     def test_compute_confidence_full_coverage(self) -> None:
         """All signals evaluated with perfect agreement → 100%."""
         result = compute_confidence(
-            signals_present=5, signals_total=5, signal_agreement=1.0,
+            signals_present=5,
+            signals_total=5,
+            signal_agreement=1.0,
         )
         assert result == 100
 
     def test_compute_confidence_partial_coverage(self) -> None:
         """3 of 5 signals evaluated with perfect agreement → 60%."""
         result = compute_confidence(
-            signals_present=3, signals_total=5, signal_agreement=1.0,
+            signals_present=3,
+            signals_total=5,
+            signal_agreement=1.0,
         )
         assert result == 60
 
     def test_compute_confidence_half_agreement(self) -> None:
         """Full coverage with 50% agreement → 50%."""
         result = compute_confidence(
-            signals_present=5, signals_total=5, signal_agreement=0.5,
+            signals_present=5,
+            signals_total=5,
+            signal_agreement=0.5,
         )
         assert result == 50
 
     def test_compute_confidence_zero_signals(self) -> None:
         """Zero signals total returns 0."""
         result = compute_confidence(
-            signals_present=0, signals_total=0, signal_agreement=1.0,
+            signals_present=0,
+            signals_total=0,
+            signal_agreement=1.0,
         )
         assert result == 0
 
     def test_compute_confidence_clamped(self) -> None:
         """Result is clamped to 0-100."""
         result = compute_confidence(
-            signals_present=5, signals_total=5, signal_agreement=1.5,
+            signals_present=5,
+            signals_total=5,
+            signal_agreement=1.5,
         )
         assert result == 100
 

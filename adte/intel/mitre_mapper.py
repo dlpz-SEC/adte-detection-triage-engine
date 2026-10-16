@@ -59,9 +59,7 @@ class MitreMapper:
         # first-match semantics are preserved because every keyword of
         # entry N precedes every keyword of entry N+1.
         self._keyword_index: list[tuple[str, dict[str, Any]]] = [
-            (kw, mapping)
-            for mapping in mappings
-            for kw in mapping.get("rule_keywords", [])
+            (kw, mapping) for mapping in mappings for kw in mapping.get("rule_keywords", [])
         ]
         # Technique ID → display fields, built once so get_technique_details
         # and get_technique_map read the same table and can never disagree.
@@ -73,10 +71,7 @@ class MitreMapper:
             if tid and tid not in self._id_index:
                 self._id_index[tid] = {
                     "id": tid,
-                    **{
-                        field: str(mapping.get(key) or "")
-                        for field, key in _DISPLAY_FIELDS
-                    },
+                    **{field: str(mapping.get(key) or "") for field, key in _DISPLAY_FIELDS},
                 }
 
     @classmethod

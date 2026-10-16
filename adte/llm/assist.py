@@ -84,6 +84,7 @@ def _llm_cache_put(key: str, value: dict[str, Any]) -> None:
             _llm_cache.pop(next(iter(_llm_cache)))
         _llm_cache[key] = (dict(value), time.monotonic() + _LLM_CACHE_TTL_SECONDS)
 
+
 # Lazy-loaded so a missing YAML file doesn't crash the server at import time.
 _mapper: MitreMapper | None = None
 
@@ -103,9 +104,7 @@ def _get_mapper() -> MitreMapper | None:
     return _mapper
 
 
-_CSF_REFERENCE: str = "\n".join(
-    f"  {sub_id}: {text}" for sub_id, text in CSF_SUBCATEGORIES.items()
-)
+_CSF_REFERENCE: str = "\n".join(f"  {sub_id}: {text}" for sub_id, text in CSF_SUBCATEGORIES.items())
 
 _SYSTEM_PROMPT: str = f"""\
 You are an expert security analyst working in a Security Operations Center (SOC).
@@ -139,9 +138,7 @@ SECURITY BOUNDARY:
 Return only valid JSON. No markdown. No code blocks. No commentary outside the JSON.\
 """
 
-_MOCK_CONFIDENCE_NOTE: str = (
-    "No LLM available — MITRE mappings are template-based estimates."
-)
+_MOCK_CONFIDENCE_NOTE: str = "No LLM available — MITRE mappings are template-based estimates."
 
 
 # ------------------------------------------------------------------ #
@@ -199,11 +196,11 @@ def sanitize_alert_field(value: str, max_length: int = 300) -> str:
     Returns:
         Sanitized string safe for prompt inclusion.
     """
-    cleaned = _ZERO_WIDTH.sub("", value)                    # drop zero-width splice chars
-    cleaned = re.sub(r"\s+", " ", cleaned)                  # collapse \t\n\r\f\v + spaces (keeps boundaries)
-    cleaned = _CONTROL_CHARS.sub("", cleaned).strip()       # strip remaining non-printable control chars
+    cleaned = _ZERO_WIDTH.sub("", value)  # drop zero-width splice chars
+    cleaned = re.sub(r"\s+", " ", cleaned)  # collapse \t\n\r\f\v + spaces (keeps boundaries)
+    cleaned = _CONTROL_CHARS.sub("", cleaned).strip()  # strip remaining non-printable control chars
     cleaned = _INJECTION_PATTERNS.sub("[REDACTED]", cleaned)  # redact BEFORE truncation
-    cleaned = cleaned[:max_length]                          # hard cap after injection-pattern scan
+    cleaned = cleaned[:max_length]  # hard cap after injection-pattern scan
     return cleaned
 
 
@@ -248,10 +245,7 @@ def _build_deterministic_summary(decision_output: dict[str, Any]) -> dict[str, A
             f"No signals fired — all {len(quiet)} indicators were benign."
         )
     else:
-        signal_parts = [
-            f"{r['signal'].replace('_', ' ')} ({r['detail']})"
-            for r in fired
-        ]
+        signal_parts = [f"{r['signal'].replace('_', ' ')} ({r['detail']})" for r in fired]
         signals_text = "; ".join(signal_parts)
         narrative = (
             f"Verdict: {verdict_label} (score {risk_score}/100, "
@@ -284,16 +278,12 @@ def _build_deterministic_summary(decision_output: dict[str, Any]) -> dict[str, A
         "narrative": narrative,
         "mitre_tactics": tactics,
         "mitre_techniques": techniques,
-        "nist_phases": derive_nist_phases(
-            decision_output, [t["id"] for t in techniques]
-        ),
+        "nist_phases": derive_nist_phases(decision_output, [t["id"] for t in techniques]),
         "confidence_note": _MOCK_CONFIDENCE_NOTE,
     }
 
 
-def derive_nist_phases(
-    decision_output: dict[str, Any], technique_ids: list[str]
-) -> list[str]:
+def derive_nist_phases(decision_output: dict[str, Any], technique_ids: list[str]) -> list[str]:
     """Derive the NIST CSF 2.0 subcategories that fit one triage result.
 
     Replaces a constant list that every incident used to receive.  Two
@@ -330,11 +320,11 @@ def derive_nist_phases(
     enrichment = decision_output.get("llm_enrichment")
     native_ids = enrichment.get("technique_ids") if isinstance(enrichment, dict) else None
     all_ids = list(technique_ids) + [
-        tid for tid in (native_ids if isinstance(native_ids, list) else [])
-        if isinstance(tid, str)
+        tid for tid in (native_ids if isinstance(native_ids, list) else []) if isinstance(tid, str)
     ]
     monitoring = {
-        d["nist_csf"] for d in get_technique_details(list(dict.fromkeys(all_ids)))
+        d["nist_csf"]
+        for d in get_technique_details(list(dict.fromkeys(all_ids)))
         if d["nist_csf"] in DE_CM
     }
 
@@ -416,10 +406,13 @@ def _parse_llm_response(text: str) -> dict[str, Any] | None:
             # The model may cite a CSF 1.1 ID or invent one; only IDs ADTE
             # can stand behind reach the report.
             phases = result.get("nist_phases")
-            result["nist_phases"] = list(dict.fromkeys(
-                p for p in (phases if isinstance(phases, list) else [])
-                if isinstance(p, str) and p in CSF_SUBCATEGORIES
-            ))
+            result["nist_phases"] = list(
+                dict.fromkeys(
+                    p
+                    for p in (phases if isinstance(phases, list) else [])
+                    if isinstance(p, str) and p in CSF_SUBCATEGORIES
+                )
+            )
             return result
     except (json.JSONDecodeError, AttributeError):
         pass
@@ -465,7 +458,9 @@ def _call_claude(prompt: str) -> dict[str, Any] | None:
     except Exception as exc:
         # Broad catch is intentional: network errors, rate limits, and
         # unexpected API changes must all fall through to the deterministic path.
-        _log.warning("LLM call failed (%s) — falling back to deterministic summary", type(exc).__name__)
+        _log.warning(
+            "LLM call failed (%s) — falling back to deterministic summary", type(exc).__name__
+        )
         return None
 
 

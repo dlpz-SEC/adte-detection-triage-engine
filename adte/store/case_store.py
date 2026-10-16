@@ -108,9 +108,7 @@ CREATE TABLE IF NOT EXISTS case_members (
 """
 
 # Valid correlation hash: 32 (MD5), 40 (SHA-1), or 64 (SHA-256) lowercase hex.
-_HASH_KEY_RE: re.Pattern[str] = re.compile(
-    r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}"
-)
+_HASH_KEY_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
 
 _CREATE_INDEX_SQL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_case_members_case_id ON case_members(case_id)",
@@ -166,9 +164,7 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
     for table in ("cases", "case_members"):
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if "hashes" not in columns:
-            conn.execute(
-                f"ALTER TABLE {table} ADD COLUMN hashes TEXT NOT NULL DEFAULT '[]'"
-            )
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN hashes TEXT NOT NULL DEFAULT '[]'")
     for stmt in _CREATE_INDEX_SQL:
         conn.execute(stmt)
     return conn
@@ -263,11 +259,7 @@ def _member_display_fields(
     earliest: datetime | None = None
     for event in incident.events:
         raw_ip = (event.ip_address or "").strip()
-        if (
-            raw_ip
-            and raw_ip not in display_ips
-            and len(display_ips) < CASE_MAX_IPS_PER_MEMBER
-        ):
+        if raw_ip and raw_ip not in display_ips and len(display_ips) < CASE_MAX_IPS_PER_MEMBER:
             display_ips.append(raw_ip)
         if rule_name is None and (event.app_display_name or "").strip():
             rule_name = event.app_display_name.strip()
@@ -382,9 +374,7 @@ def ingest_alert(
         window_cutoff = (now - timedelta(minutes=CASE_WINDOW_MINUTES)).isoformat()
         retention_cutoff = (now - timedelta(days=CASE_RETENTION_DAYS)).isoformat()
 
-        technique_ids = list(output.get("mitre_techniques") or [])[
-            :CASE_MAX_TECHNIQUE_IDS
-        ]
+        technique_ids = list(output.get("mitre_techniques") or [])[:CASE_MAX_TECHNIQUE_IDS]
         tactics: list[str] = []
         for detail in output.get("mitre_details") or []:
             tactic = detail.get("tactic", "")
@@ -401,9 +391,7 @@ def ingest_alert(
                 "(SELECT case_id FROM cases WHERE last_activity < ?)",
                 (retention_cutoff,),
             )
-            conn.execute(
-                "DELETE FROM cases WHERE last_activity < ?", (retention_cutoff,)
-            )
+            conn.execute("DELETE FROM cases WHERE last_activity < ?", (retention_cutoff,))
 
             candidates = conn.execute(
                 "SELECT * FROM cases WHERE deleted_at IS NULL "
@@ -449,10 +437,7 @@ def ingest_alert(
                     if ip not in case_ips and len(case_ips) < CASE_MAX_CASE_IPS:
                         case_ips.append(ip)
                 for file_hash in hash_keys:
-                    if (
-                        file_hash not in case_hashes
-                        and len(case_hashes) < CASE_MAX_CASE_HASHES
-                    ):
+                    if file_hash not in case_hashes and len(case_hashes) < CASE_MAX_CASE_HASHES:
                         case_hashes.append(file_hash)
 
             member_fields = (
@@ -492,8 +477,8 @@ def ingest_alert(
                     (case_id, incident.incident_id, *member_fields),
                 )
 
-            members, case_score, case_verdict, escalated, rationale, kill_chain = (
-                _recompute_case(conn, case_id)
+            members, case_score, case_verdict, escalated, rationale, kill_chain = _recompute_case(
+                conn, case_id
             )
             conn.execute(
                 "UPDATE cases SET last_activity = ?, users = ?, ips = ?, "
@@ -546,9 +531,7 @@ def ingest_alert(
             "window_minutes": CASE_WINDOW_MINUTES,
         }
     except Exception as exc:
-        _log.warning(
-            "case correlation failed (%s) — triage unaffected", type(exc).__name__
-        )
+        _log.warning("case correlation failed (%s) — triage unaffected", type(exc).__name__)
         return None
 
 
@@ -633,12 +616,8 @@ def peek_correlation_context(
         if match is None or not siblings:
             return None
 
-        sibling_member_tactics = [
-            (row["id"], json.loads(row["tactics"])) for row in siblings
-        ]
-        sibling_tactics = {
-            tactic for _key, tactics in sibling_member_tactics for tactic in tactics
-        }
+        sibling_member_tactics = [(row["id"], json.loads(row["tactics"])) for row in siblings]
+        sibling_tactics = {tactic for _key, tactics in sibling_member_tactics for tactic in tactics}
         # Kill-chain is recomputed over SIBLINGS ONLY (this incident excluded),
         # mirroring the self-exclusion applied to every other sibling fact.  The
         # case-level stored kill_chain includes this incident when it is already
@@ -692,14 +671,10 @@ def _row_to_summary(row: sqlite3.Row, window_cutoff: str) -> dict[str, Any]:
 
 def _window_cutoff_iso() -> str:
     """Return the ISO timestamp separating open from closed cases."""
-    return (
-        datetime.now(timezone.utc) - timedelta(minutes=CASE_WINDOW_MINUTES)
-    ).isoformat()
+    return (datetime.now(timezone.utc) - timedelta(minutes=CASE_WINDOW_MINUTES)).isoformat()
 
 
-def list_cases(
-    db_path: str | Path, status: str = "all", limit: int = 50
-) -> list[dict[str, Any]]:
+def list_cases(db_path: str | Path, status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
     """List case summaries, newest activity first.  Fail-closed to ``[]``.
 
     Args:
@@ -793,9 +768,7 @@ def get_case(case_id: str, db_path: str | Path) -> dict[str, Any] | None:
         return None
 
 
-def get_cases_by_ids(
-    case_ids: list[str], db_path: str | Path
-) -> list[dict[str, Any]]:
+def get_cases_by_ids(case_ids: list[str], db_path: str | Path) -> list[dict[str, Any]]:
     """Return summaries for specific cases, preserving input order.
 
     Used by the batch route to report final per-case counts after all
@@ -816,16 +789,13 @@ def get_cases_by_ids(
         conn = _connect(db_path)
         try:
             rows = conn.execute(
-                f"SELECT * FROM cases WHERE case_id IN ({placeholders}) "
-                "AND deleted_at IS NULL",
+                f"SELECT * FROM cases WHERE case_id IN ({placeholders}) AND deleted_at IS NULL",
                 case_ids,
             ).fetchall()
         finally:
             conn.close()
         by_id = {row["case_id"]: row for row in rows}
-        return [
-            _row_to_summary(by_id[cid], cutoff) for cid in case_ids if cid in by_id
-        ]
+        return [_row_to_summary(by_id[cid], cutoff) for cid in case_ids if cid in by_id]
     except Exception as exc:
         _log.warning("case_store.get_cases_by_ids failed: %s", type(exc).__name__)
         return []
@@ -849,9 +819,7 @@ def clear_cases(db_path: str | Path) -> bool:
         conn = _connect(db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(
-                "UPDATE cases SET deleted_at = ? WHERE deleted_at IS NULL", (now,)
-            )
+            conn.execute("UPDATE cases SET deleted_at = ? WHERE deleted_at IS NULL", (now,))
             conn.execute("COMMIT")
         finally:
             conn.close()

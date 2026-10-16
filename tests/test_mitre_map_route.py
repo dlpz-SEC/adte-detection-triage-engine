@@ -23,9 +23,7 @@ from adte.intel.mitre_mapper import MitreMapper, get_technique_details
 from adte.intel.nist_csf import CSF_SUBCATEGORIES
 from adte.store.audit_log import init_db
 
-_YAML_PATH = (
-    Path(__file__).resolve().parent.parent / "adte" / "data" / "mitre_technique_map.yaml"
-)
+_YAML_PATH = Path(__file__).resolve().parent.parent / "adte" / "data" / "mitre_technique_map.yaml"
 _ENTRY_KEYS = {"id", "name", "tactic", "nist_csf", "nist_csf_name"}
 _DETAIL_KEYS = _ENTRY_KEYS | {"source"}
 # Map-entry field -> the raw YAML key it is sourced from.
@@ -108,7 +106,9 @@ class TestShape:
     def test_top_level_keys(self, anon_client) -> None:
         """Only the technique table, the tactic order and the CSF text are exposed."""
         assert set(_get_map(anon_client)) == {
-            "techniques", "kill_chain_order", "csf_subcategories",
+            "techniques",
+            "kill_chain_order",
+            "csf_subcategories",
         }
 
     def test_kill_chain_order_matches_case_policy(self, anon_client) -> None:

@@ -34,8 +34,12 @@ class _CountingClient:
         self.calls.append(ip)
         bad = ip in self.flagged
         return ThreatIntelResult(
-            ip=ip, is_malicious=bad, confidence=0.9 if bad else 0.0, source="stub-live",
-            tags=["flagged"] if bad else [], queried_at=datetime.now(timezone.utc),
+            ip=ip,
+            is_malicious=bad,
+            confidence=0.9 if bad else 0.0,
+            source="stub-live",
+            tags=["flagged"] if bad else [],
+            queried_at=datetime.now(timezone.utc),
         )
 
 
@@ -186,10 +190,13 @@ class TestRoutesApplyTheCap:
     def test_batch_caps_each_alert_separately(self, live: _CountingClient, http) -> None:
         """/api/triage/batch: the budget is per alert, not per request."""
         other = [f"5.6.7.{n}" for n in range(1, 31)]
-        resp = http.post("/api/triage/batch", json=[
-            _many_ip_incident("CAP-2", PUBLIC_IPS),
-            _many_ip_incident("CAP-3", other),
-        ])
+        resp = http.post(
+            "/api/triage/batch",
+            json=[
+                _many_ip_incident("CAP-2", PUBLIC_IPS),
+                _many_ip_incident("CAP-3", other),
+            ],
+        )
         assert resp.get_json()["succeeded"] == 2
         assert len(live.calls) == 50
 
@@ -199,9 +206,7 @@ class TestRoutesApplyTheCap:
         Events are stored oldest first, so without the newest-first prewarm the
         26th IP, the only bad one, would be the one left unchecked.
         """
-        body = http.post(
-            "/api/triage", json=_many_ip_incident("CAP-4", PUBLIC_IPS[:26])
-        ).get_json()
+        body = http.post("/api/triage", json=_many_ip_incident("CAP-4", PUBLIC_IPS[:26])).get_json()
         intel = body["evidence"]["threat_intel"]
         assert intel["1.2.3.26"]["is_malicious"] is True
         assert intel["1.2.3.1"]["source"] == "lookup-cap"

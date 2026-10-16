@@ -144,7 +144,9 @@ def check_threat_intel(ip: str) -> ThreatIntelResult:
         if budget[0] <= 0:
             budget[1] += 1
             if budget[1] == 1:  # once per alert, so the log cannot be flooded
-                _log.info("Threat-intel lookup cap reached; further IPs in this alert are not looked up")
+                _log.info(
+                    "Threat-intel lookup cap reached; further IPs in this alert are not looked up"
+                )
             return ThreatIntelResult(
                 ip=ip,
                 is_malicious=False,

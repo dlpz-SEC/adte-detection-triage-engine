@@ -190,10 +190,7 @@ class VirusTotalClient:
             return _neutral(ip)
 
         stats: dict[str, int] = (
-            response.json()
-            .get("data", {})
-            .get("attributes", {})
-            .get("last_analysis_stats", {})
+            response.json().get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
         )
         malicious = stats.get("malicious", 0)
         suspicious = stats.get("suspicious", 0)
@@ -247,9 +244,7 @@ class VirusTotalClient:
         # The embedded Wazuh/VirusTotal verdict is preferred anyway, so a
         # skipped hash lookup only affects alerts that carry no verdict.
         if self._throttled(self._rate_limit_sleep):
-            _log.info(
-                "VirusTotalClient: rate-limit window open, skipping hash %s", file_hash
-            )
+            _log.info("VirusTotalClient: rate-limit window open, skipping hash %s", file_hash)
             return _neutral_hash(file_hash, hash_type)
 
         try:

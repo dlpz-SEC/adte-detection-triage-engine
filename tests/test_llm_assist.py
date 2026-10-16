@@ -73,7 +73,8 @@ class TestDeterministicSummary:
     """Tests for the deterministic (no-API-key) summary path."""
 
     def test_deterministic_summary_without_api_key(
-        self, monkeypatch: object,
+        self,
+        monkeypatch: object,
     ) -> None:
         """Without API keys, generate_summary uses deterministic template."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # type: ignore[attr-defined]
@@ -125,8 +126,11 @@ class TestDeterministicSummary:
         output = _make_decision_output()
         summary = _build_deterministic_summary(output)
         for key in (
-            "narrative", "mitre_tactics", "mitre_techniques",
-            "nist_phases", "confidence_note",
+            "narrative",
+            "mitre_tactics",
+            "mitre_techniques",
+            "nist_phases",
+            "confidence_note",
         ):
             assert key in summary, f"Missing key: {key}"
 
@@ -144,7 +148,11 @@ class TestDeterministicSummary:
         output = _make_decision_output()
         summary = _build_deterministic_summary(output)
         assert summary["nist_phases"] == [
-            "DE.CM-01", "DE.CM-03", "DE.AE-02", "DE.AE-07", "DE.AE-08",
+            "DE.CM-01",
+            "DE.CM-03",
+            "DE.AE-02",
+            "DE.AE-07",
+            "DE.AE-08",
         ]
 
 
@@ -175,7 +183,8 @@ class TestClaudeAPIPath:
         return mock_client
 
     def test_call_claude_returns_dict_on_success(
-        self, monkeypatch: object,
+        self,
+        monkeypatch: object,
     ) -> None:
         """_call_claude returns a parsed dict when the API succeeds."""
         import adte.llm.assist as mod
@@ -191,7 +200,8 @@ class TestClaudeAPIPath:
         assert result["mitre_tactics"] == valid_response["mitre_tactics"]
 
     def test_call_claude_returns_none_on_api_error(
-        self, monkeypatch: object,
+        self,
+        monkeypatch: object,
     ) -> None:
         """_call_claude returns None when the API raises an exception."""
         import adte.llm.assist as mod
@@ -203,7 +213,8 @@ class TestClaudeAPIPath:
         assert result is None
 
     def test_generate_summary_uses_claude_when_key_set(
-        self, monkeypatch: object,
+        self,
+        monkeypatch: object,
     ) -> None:
         """generate_summary returns Claude output when ANTHROPIC_API_KEY is set."""
         import adte.llm.assist as mod
@@ -223,7 +234,8 @@ class TestClaudeAPIPath:
         assert output["verdict"] == "high_risk"
 
     def test_generate_summary_falls_back_on_claude_failure(
-        self, monkeypatch: object,
+        self,
+        monkeypatch: object,
     ) -> None:
         """generate_summary falls back to deterministic when Claude fails."""
         import adte.llm.assist as mod

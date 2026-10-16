@@ -63,6 +63,7 @@ def _ensure_aware(dt: datetime) -> datetime:
         return dt.replace(tzinfo=timezone.utc)
     return dt
 
+
 # MFA fatigue detection parameters.
 _MFA_DENIAL_THRESHOLD: int = 3
 _MFA_WINDOW_MINUTES: float = 10.0
@@ -224,9 +225,7 @@ class TriageEngine:
                 continue
             if _HASH_RE.fullmatch(file_hash):
                 try:
-                    self._file_reputation_results[file_hash] = check_file_hash(
-                        file_hash
-                    )
+                    self._file_reputation_results[file_hash] = check_file_hash(file_hash)
                 except ValueError:
                     # Malformed hash slipped past the regex guard — never
                     # let enrichment raise; the signal simply has no lookup.
@@ -250,9 +249,7 @@ class TriageEngine:
         try:
             from adte.llm.enrichment import enrich_alert  # lazy import
 
-            self._llm_enrichment = enrich_alert(
-                self._incident.model_dump(mode="json")
-            )
+            self._llm_enrichment = enrich_alert(self._incident.model_dump(mode="json"))
         except Exception:
             self._llm_enrichment = None
         return self
@@ -272,16 +269,12 @@ class TriageEngine:
         # Aggregate risk score with proportional weight redistribution for
         # skipped signals (signals that had no evaluable data).
         raw_sum = sum(s[0] for s in self._signals.values())
-        skipped_weight = sum(
-            SIGNAL_WEIGHTS[name] for name in self._skipped_signals
-        )
+        skipped_weight = sum(SIGNAL_WEIGHTS[name] for name in self._skipped_signals)
         available_weight = 100 - skipped_weight
         if available_weight <= 0:
             self._risk_score = 0
         elif available_weight < 100:
-            self._risk_score = max(0, min(100, round(
-                raw_sum * 100 / available_weight
-            )))
+            self._risk_score = max(0, min(100, round(raw_sum * 100 / available_weight)))
         else:
             self._risk_score = max(0, min(100, round(raw_sum)))
 
@@ -455,31 +448,35 @@ class TriageEngine:
 
         if self._profile.last_seen_location and self._profile.last_seen_at and located_events:
             first = located_events[0]
-            pairs.append((
-                f"{self._profile.last_seen_location.city or 'last_seen'}",
-                self._profile.last_seen_location.lat,
-                self._profile.last_seen_location.lon,
-                _ensure_aware(self._profile.last_seen_at),
-                f"{first.location.city or first.ip_address}",  # type: ignore[union-attr]
-                first.location.lat,  # type: ignore[union-attr]
-                first.location.lon,  # type: ignore[union-attr]
-                _ensure_aware(first.timestamp),
-            ))
+            pairs.append(
+                (
+                    f"{self._profile.last_seen_location.city or 'last_seen'}",
+                    self._profile.last_seen_location.lat,
+                    self._profile.last_seen_location.lon,
+                    _ensure_aware(self._profile.last_seen_at),
+                    f"{first.location.city or first.ip_address}",  # type: ignore[union-attr]
+                    first.location.lat,  # type: ignore[union-attr]
+                    first.location.lon,  # type: ignore[union-attr]
+                    _ensure_aware(first.timestamp),
+                )
+            )
 
         for i in range(len(located_events) - 1):
             a, b = located_events[i], located_events[i + 1]
             if a.ip_address == b.ip_address:
                 continue
-            pairs.append((
-                f"{a.location.city or a.ip_address}",  # type: ignore[union-attr]
-                a.location.lat,  # type: ignore[union-attr]
-                a.location.lon,  # type: ignore[union-attr]
-                _ensure_aware(a.timestamp),
-                f"{b.location.city or b.ip_address}",  # type: ignore[union-attr]
-                b.location.lat,  # type: ignore[union-attr]
-                b.location.lon,  # type: ignore[union-attr]
-                _ensure_aware(b.timestamp),
-            ))
+            pairs.append(
+                (
+                    f"{a.location.city or a.ip_address}",  # type: ignore[union-attr]
+                    a.location.lat,  # type: ignore[union-attr]
+                    a.location.lon,  # type: ignore[union-attr]
+                    _ensure_aware(a.timestamp),
+                    f"{b.location.city or b.ip_address}",  # type: ignore[union-attr]
+                    b.location.lat,  # type: ignore[union-attr]
+                    b.location.lon,  # type: ignore[union-attr]
+                    _ensure_aware(b.timestamp),
+                )
+            )
 
         for label_a, lat_a, lon_a, ts_a, label_b, lat_b, lon_b, ts_b in pairs:
             dist = haversine_distance(lat_a, lon_a, lat_b, lon_b)
@@ -546,10 +543,7 @@ class TriageEngine:
         max_denials_in_window: int = 0
         for i, start_event in enumerate(denied):
             window_end = start_event.timestamp.timestamp() + _MFA_WINDOW_MINUTES * 60
-            count = sum(
-                1 for d in denied[i:]
-                if d.timestamp.timestamp() <= window_end
-            )
+            count = sum(1 for d in denied[i:] if d.timestamp.timestamp() <= window_end)
             max_denials_in_window = max(max_denials_in_window, count)
 
         # Check if a denial burst was eventually followed by a success
@@ -558,9 +552,8 @@ class TriageEngine:
         # Wazuh returns events descending so denied[0] would be the newest.
         if denied:
             earliest_denial_ts = min(e.timestamp for e in denied)
-            fatigue_success = (
-                len(denied) >= _MFA_DENIAL_THRESHOLD
-                and any(e.auth_status == "success" for e in auth_events if e.timestamp > earliest_denial_ts)
+            fatigue_success = len(denied) >= _MFA_DENIAL_THRESHOLD and any(
+                e.auth_status == "success" for e in auth_events if e.timestamp > earliest_denial_ts
             )
         else:
             fatigue_success = False
@@ -660,10 +653,7 @@ class TriageEngine:
                 0.4,
             )
 
-        novel = {
-            did: name for did, name in incident_devices.items()
-            if did not in known_ids
-        }
+        novel = {did: name for did, name in incident_devices.items() if did not in known_ids}
 
         if novel:
             names = ", ".join(f"{name} ({did})" for did, name in novel.items())
@@ -674,9 +664,7 @@ class TriageEngine:
                 confidence,
             )
 
-        known_names = ", ".join(
-            f"{name} ({did})" for did, name in incident_devices.items()
-        )
+        known_names = ", ".join(f"{name} ({did})" for did, name in incident_devices.items())
         return (0.0, f"All devices recognised: {known_names}", 0.9)
 
     def _compute_login_hour_anomaly(self) -> SignalResult:
@@ -761,10 +749,7 @@ class TriageEngine:
             f"related alert(s) in the last {ctx.window_minutes} min"
         )
         if ctx.distinct_sibling_tactics > 1:
-            rationale += (
-                f", {ctx.distinct_sibling_tactics} distinct ATT&CK tactics "
-                f"across siblings"
-            )
+            rationale += f", {ctx.distinct_sibling_tactics} distinct ATT&CK tactics across siblings"
         if ctx.kill_chain_detected:
             rationale += ", ascending kill-chain progression detected"
         rationale += f" (max sibling risk {round(ctx.max_sibling_risk_score)})"
@@ -861,12 +846,14 @@ class TriageEngine:
                     # floor's non-corroboration note.  Only the zero-detection
                     # wording changes — the ratio > 0 string above is left
                     # byte-identical so the pinned examples keep their parity.
-                    candidates.append((
-                        0.0,
-                        0.8,
-                        f"VirusTotal scan clean — 0/{artifact.vt_total} "
-                        f"engines flagged it (embedded verdict)",
-                    ))
+                    candidates.append(
+                        (
+                            0.0,
+                            0.8,
+                            f"VirusTotal scan clean — 0/{artifact.vt_total} "
+                            f"engines flagged it (embedded verdict)",
+                        )
+                    )
 
             # 2. ADTE's own hash lookup (populated in enrich(), which skips
             #    the call entirely when an embedded verdict is present — so
@@ -948,9 +935,7 @@ class TriageEngine:
                 }
                 for ip, r in self._threat_intel_results.items()
             },
-            "fp_matches": {
-                ip: ptype for ip, ptype in self._fp_matches.items() if ptype
-            },
+            "fp_matches": {ip: ptype for ip, ptype in self._fp_matches.items() if ptype},
             "sign_in_count": len(self._incident.events),
             "unique_ips": list(self._threat_intel_results.keys()),
             "user": self._incident.user,
@@ -959,8 +944,7 @@ class TriageEngine:
 
         # File observables (Phase 32) — conditional, see docstring.
         file_artifacts = [
-            (event.file, event) for event in self._incident.events
-            if event.file is not None
+            (event.file, event) for event in self._incident.events if event.file is not None
         ]
         if file_artifacts:
             evidence["files"] = [

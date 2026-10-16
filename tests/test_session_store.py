@@ -116,9 +116,7 @@ class TestCookieSessionFlow:
 
     def test_login_sets_cookie_and_authenticates(self, secured_client) -> None:
         """A valid key yields a session cookie that authenticates GETs."""
-        resp = secured_client.post(
-            "/api/auth/login", json={"api_key": "analyst-test-key"}
-        )
+        resp = secured_client.post("/api/auth/login", json={"api_key": "analyst-test-key"})
         assert resp.status_code == 200
         assert resp.get_json()["role"] == "analyst"
         # The test client retains cookies — this exercises the cookie path.
