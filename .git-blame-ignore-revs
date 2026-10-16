@@ -1,0 +1,4 @@
+# Mechanical reformat commits. `git blame` skips them once you run:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# style: ruff format and pre-commit baseline
+d33a7e29a109ac4fe94e1317e7a3de9279173199
