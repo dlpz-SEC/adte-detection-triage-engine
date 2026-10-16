@@ -1,0 +1,51 @@
+# Tier 0 gate (lifecycle plan step 4, B2). Install once per clone:
+#   pre-commit install
+# Run everything by hand:
+#   pre-commit run --all-files
+# CI runs this same config on every push (.github/workflows/ci.yml), so there
+# is no pre-push pytest hook here: the CI run gates the Railway deploy.
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: mixed-line-ending
+        args: [--fix=auto]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 38bfb07c0c64c304f47eb52090f8288150c77730  # frozen: v0.17.1
+    hooks:
+      # Python files only: ruff 0.17 also reformats code blocks inside Markdown.
+      - id: ruff-check
+        args: [--fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # Needs gitleaks on PATH (winget install Gitleaks.Gitleaks). It scans the
+  # staged changes, so it has nothing to scan in CI, which skips it; GitHub
+  # secret scanning covers pushes to this public repo.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 2ca41cc1372d1e939a6a879f18cdc19fc1cac1ce  # frozen: v8.30.0
+    hooks:
+      # pass_filenames false is load-bearing: without it upstream's hook takes
+      # the staged file name as `gitleaks git`'s repo path, scans 0 commits and
+      # passes. Proven with a planted fake token (claude-toolkit LESSONS.md).
+      - id: gitleaks-system
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: check-pins
+        name: python dependencies have upper bounds
+        entry: python tools/check_pins.py
+        language: system
+        files: (^|/)(requirements[^/]*\.txt|pyproject\.toml)$

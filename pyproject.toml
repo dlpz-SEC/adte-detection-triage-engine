@@ -49,6 +49,19 @@ pythonpath = ["."]
 target-version = "py311"
 line-length = 100
 
+# Gate on ruff's classic default rule set, pinned so a ruff upgrade cannot
+# change what blocks a commit. Bugbear and security rules run as a
+# non-blocking CI report, never as a gate (lifecycle plan B2). Kept here
+# rather than in a ruff.toml, which would shadow this whole [tool.ruff] table.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Deliberate: load_dotenv() runs before the adte imports, so settings read at
+# import time see the repo-root .env.
+"adte/cli.py" = ["E402"]
+"adte/server.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

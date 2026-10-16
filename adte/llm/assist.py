@@ -25,12 +25,12 @@ import threading
 import time
 from typing import Any
 
-_log = logging.getLogger(__name__)
-
 import anthropic
 
 from adte.intel.mitre_mapper import MitreMapper, get_technique_details
 from adte.intel.nist_csf import CSF_SUBCATEGORIES, DE_CM
+
+_log = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------ #
 # Module-level constants                                               #
