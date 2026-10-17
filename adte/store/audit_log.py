@@ -29,6 +29,17 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
+# Incident-ID prefix of Incident Drill rows (adte/simulation).  Drill verdicts
+# go to the real audit log but are hidden from every read below unless the
+# caller passes include_drills=True.  The server rejects caller-supplied IDs
+# with this prefix, so only the drill route can write one.
+DRILL_ID_PREFIX: str = "DRILL-"
+
+# Case-sensitive prefix test.  SQLite's LIKE folds ASCII case, which would
+# also hide a real incident named "drill-…".
+_NOT_DRILL_SQL: str = "substr(incident_id, 1, ?) != ?"
+_NOT_DRILL_PARAMS: tuple[int, str] = (len(DRILL_ID_PREFIX), DRILL_ID_PREFIX)
+
 _CREATE_TABLE_SQL: str = """
 CREATE TABLE IF NOT EXISTS verdicts (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,6 +189,8 @@ def query_verdicts(
     verdict_filter: str | None = None,
     limit: int = 100,
     since: str | None = None,
+    *,
+    include_drills: bool = False,
 ) -> list[dict[str, Any]]:
     """Return verdict rows from the audit log as dicts, newest first.
 
@@ -188,6 +201,9 @@ def query_verdicts(
         limit: Maximum number of rows to return.  Defaults to 100.
         since: ISO-8601 timestamp string.  When provided, only rows whose
             ``logged_at`` is >= this value are returned.
+        include_drills: When ``False`` (default), Incident Drill rows
+            (``DRILL_ID_PREFIX``) are excluded in SQL, before ``limit``
+            applies, so drills can never push real rows out of a page.
 
     Returns:
         List of row dicts.  Empty list on any error or if the database
@@ -198,6 +214,9 @@ def query_verdicts(
             conn.row_factory = sqlite3.Row  # makes rows subscriptable so dict(row) works
             clauses: list[str] = ["deleted_at IS NULL"]
             params: list[Any] = []
+            if not include_drills:
+                clauses.append(_NOT_DRILL_SQL)
+                params.extend(_NOT_DRILL_PARAMS)
             if verdict_filter is not None:
                 clauses.append("verdict = ?")
                 params.append(verdict_filter)
@@ -329,7 +348,12 @@ def clear_feedback(db_path: str | Path) -> bool:
         return False
 
 
-def stats_verdicts(db_path: str | Path, since: str | None = None) -> dict[str, Any]:
+def stats_verdicts(
+    db_path: str | Path,
+    since: str | None = None,
+    *,
+    include_drills: bool = False,
+) -> dict[str, Any]:
     """Aggregate verdict counts from the audit log.
 
     Respects the soft-delete pattern (``deleted_at IS NULL``) so cleared
@@ -339,6 +363,8 @@ def stats_verdicts(db_path: str | Path, since: str | None = None) -> dict[str, A
         db_path: Path to the SQLite database file.
         since: ISO-8601 timestamp; when provided only rows with
             ``logged_at >= since`` are counted.
+        include_drills: When ``False`` (default), Incident Drill rows are
+            not counted.
 
     Returns:
         ``{"counts": {<verdict>: n, ...}, "total": N}``.  Empty counts on
@@ -348,6 +374,9 @@ def stats_verdicts(db_path: str | Path, since: str | None = None) -> dict[str, A
         with sqlite3.connect(str(db_path), check_same_thread=False) as conn:
             clauses = ["deleted_at IS NULL"]
             params: list[Any] = []
+            if not include_drills:
+                clauses.append(_NOT_DRILL_SQL)
+                params.extend(_NOT_DRILL_PARAMS)
             if since is not None:
                 clauses.append("logged_at >= ?")
                 params.append(since)
@@ -363,7 +392,12 @@ def stats_verdicts(db_path: str | Path, since: str | None = None) -> dict[str, A
         return {"counts": {}, "total": 0}
 
 
-def stats_mitre(db_path: str | Path, since: str | None = None) -> dict[str, Any]:
+def stats_mitre(
+    db_path: str | Path,
+    since: str | None = None,
+    *,
+    include_drills: bool = False,
+) -> dict[str, Any]:
     """Aggregate MITRE technique frequency from logged verdicts.
 
     The ``mitre_techniques`` column stores a JSON-encoded list per row;
@@ -374,6 +408,8 @@ def stats_mitre(db_path: str | Path, since: str | None = None) -> dict[str, Any]
         db_path: Path to the SQLite database file.
         since: ISO-8601 timestamp; when provided only rows with
             ``logged_at >= since`` are counted.
+        include_drills: When ``False`` (default), Incident Drill rows are
+            not counted.
 
     Returns:
         ``{"techniques": [{"technique_id": ..., "count": n}, ...],
@@ -384,6 +420,9 @@ def stats_mitre(db_path: str | Path, since: str | None = None) -> dict[str, Any]
         with sqlite3.connect(str(db_path), check_same_thread=False) as conn:
             clauses = ["deleted_at IS NULL"]
             params: list[Any] = []
+            if not include_drills:
+                clauses.append(_NOT_DRILL_SQL)
+                params.extend(_NOT_DRILL_PARAMS)
             if since is not None:
                 clauses.append("logged_at >= ?")
                 params.append(since)

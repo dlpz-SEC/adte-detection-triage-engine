@@ -110,6 +110,91 @@ _MOCK_PROFILES: dict[str, UserProfile] = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# Incident Drill personas (adte/simulation)
+# ---------------------------------------------------------------------------
+# Baselines so benign drill noise has something to be normal against.  All
+# live in UTC+0/+1 cities so the 07:00-19:00 baseline matches their working
+# day (the engine compares an event's own wall clock to the baseline; the
+# timezone field is a label).  last_seen_at sits well before every drill date
+# (drills start 2026-03-02), so impossible travel never pairs a drill event
+# with a stale last-seen position at a fake speed.
+
+
+def _drill_persona(
+    upn: str,
+    city: str,
+    country: str,
+    lat: float,
+    lon: float,
+    devices: list[tuple[str, str]],
+) -> UserProfile:
+    """Build one drill persona profile.
+
+    Args:
+        upn: Lowercase UPN on ``corp.example``.
+        city: Home city.
+        country: ISO country code.
+        lat: Home latitude.
+        lon: Home longitude.
+        devices: ``(device_id, display_name)`` pairs the user owns.
+
+    Returns:
+        The persona's ``UserProfile``.
+    """
+    home = GeoLocation(lat=lat, lon=lon, city=city, country=country)
+    return UserProfile(
+        upn=upn,
+        known_locations=[home],
+        known_devices=[
+            DeviceInfo(device_id=did, display_name=name, os="Windows 11", compliant=True)
+            for did, name in devices
+        ],
+        baseline_login_hours=LoginHourRange(start=time(7, 0), end=time(19, 0), timezone="UTC"),
+        last_seen_location=home,
+        last_seen_at=datetime(2026, 1, 5, 12, 0, 0),
+        risk_score=0.05,
+    )
+
+
+_DRILL_PERSONAS: list[UserProfile] = [
+    _drill_persona(
+        "maria.chen@corp.example",
+        "London",
+        "GB",
+        51.5074,
+        -0.1278,
+        [("LT-MCHEN-01", "MCHEN-Laptop")],
+    ),
+    _drill_persona(
+        "dev.patel@corp.example",
+        "Dublin",
+        "IE",
+        53.3498,
+        -6.2603,
+        [("LT-DPATEL-02", "DPATEL-Laptop")],
+    ),
+    _drill_persona(
+        "sam.okafor@corp.example",
+        "Amsterdam",
+        "NL",
+        52.3676,
+        4.9041,
+        [("LT-SOKAFOR-03", "SOKAFOR-Laptop"), ("PH-SOKAFOR-04", "SOKAFOR-Phone")],
+    ),
+    _drill_persona(
+        "lena.novak@corp.example",
+        "Madrid",
+        "ES",
+        40.4168,
+        -3.7038,
+        [("LT-LNOVAK-05", "LNOVAK-Laptop")],
+    ),
+]
+
+DRILL_PERSONA_UPNS: tuple[str, ...] = tuple(p.upn for p in _DRILL_PERSONAS)
+_MOCK_PROFILES.update({p.upn: p for p in _DRILL_PERSONAS})
+
 
 def get_user_profile(upn: str) -> UserProfile:
     """Retrieve the behavioral profile for a user.

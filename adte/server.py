@@ -22,6 +22,8 @@ import hmac
 import io
 import json
 import logging
+import secrets
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -58,8 +60,19 @@ from adte.intel.sigma_fp_registry import FPRegistry, add_fp_entry
 import adte.intel.threat_intel as _ti
 from adte.intel.threat_intel import lookup_budget
 from adte.models import NormalizedIncident, SentinelIncident
+from adte.simulation.debrief import build_debrief, build_report, report_markdown
+from adte.simulation.generator import NOISE_COUNTS, generate
+from adte.simulation.scenarios import SCENARIOS
+from adte.simulation.schema import (
+    MAX_DRILL_ALERTS,
+    MAX_SEED,
+    DrillRun,
+    DrillReportRequest,
+    DrillRunRequest,
+)
 from adte.store import session_store
 from adte.store.audit_log import (
+    DRILL_ID_PREFIX,
     clear_feedback,
     clear_verdicts,
     init_db,
@@ -972,6 +985,8 @@ def triage() -> Any:
     ip_error = _unsupported_ip_error(incident)
     if ip_error:
         return jsonify({"error": ip_error}), 422
+    if _is_reserved_drill_id(incident.incident_id):
+        return jsonify({"error": _DRILL_ID_RESERVED_ERROR}), 422
 
     # --- Run triage pipeline (30 s hard timeout) ---
     _TRIAGE_TIMEOUT_SECS = 30
@@ -1013,6 +1028,31 @@ def triage() -> Any:
     return jsonify(output), 200
 
 
+# Incident Drill rows are hidden from audit reads by their ID prefix
+# (audit_log.DRILL_ID_PREFIX).  Callers may not use that prefix, or any
+# analyst (including the public recruiter passkey) could hide a real verdict
+# from the default Audit Log, MITRE / NIST and stats views by naming it so.
+# Case-insensitive here, stricter than the case-sensitive read filter.
+_DRILL_ID_RESERVED_ERROR: str = (
+    f"Incident IDs starting with '{DRILL_ID_PREFIX}' are reserved for Incident Drill runs."
+)
+
+
+def _is_reserved_drill_id(incident_id: Any) -> bool:
+    """Return True if a caller-supplied incident ID uses the drill prefix.
+
+    Args:
+        incident_id: The incident ID from a request (any JSON type).
+
+    Returns:
+        ``True`` for a string starting with ``DRILL_ID_PREFIX`` in any case.
+    """
+    return (
+        isinstance(incident_id, str)
+        and incident_id[: len(DRILL_ID_PREFIX)].upper() == DRILL_ID_PREFIX
+    )
+
+
 # ---------------------------------------------------------------------------
 # Batch triage — accept a whole OpenSearch export (array / wrapper of alerts)
 # ---------------------------------------------------------------------------
@@ -1023,6 +1063,83 @@ def triage() -> Any:
 # but each cold public IP costs live HTTP.
 _BATCH_MAX_ALERTS: int = 25
 _BATCH_DEADLINE_SECS: int = 45
+
+
+def _triage_incident(
+    incident: NormalizedIncident,
+    fp_registry: FPRegistry,
+    *,
+    case_db: str | Path,
+    log: bool = True,
+) -> dict[str, Any]:
+    """Score one normalised incident the way a batch element is scored.
+
+    Shared by ``/api/triage/batch`` and the Incident Drill routes.  Peeks the
+    case store for correlated context, runs the engine chain (no LLM
+    narrative), MITRE-finalises, writes the audit row, then ingests the alert
+    into the case store.  Order matters: element N of a run sees elements
+    1..N-1 through the peek.
+
+    The audit row always goes to the module-level ``DB_PATH`` (read at call
+    time, so tests can monkeypatch it).  Case correlation reads and writes
+    ``case_db``, which a drill points at a per-request temporary file so
+    drills never touch ``/api/cases``.
+
+    Args:
+        incident: The normalised incident to triage.
+        fp_registry: The loaded false-positive registry.
+        case_db: SQLite path for case peek and ingest.  Required, never
+            defaulted: a default would bind ``DB_PATH`` at import time.
+        log: When ``False`` the audit write is skipped (drill re-scoring).
+            Peek and ingest still run, so a re-score reproduces the run.
+
+    Returns:
+        The finalised triage output dict, with ``case`` set to the case blob
+        or ``None``.
+
+    Raises:
+        Exception: Anything the engine or finaliser raises; callers isolate
+            per-alert failures.  Nothing raises after the audit write
+            (``ingest_alert`` is fail-open), so a failed element never has a
+            logged row.
+    """
+    user_profile = get_user_profile(incident.user)
+    cluster_ctx = peek_correlation_context(incident, case_db)
+    engine = TriageEngine(incident, user_profile, fp_registry, cluster_context=cluster_ctx)
+    with lookup_budget():  # bound live threat-intel calls per alert
+        _prewarm_threat_intel(incident)  # newest IPs first
+        engine.enrich()
+    output = engine.score().decide().llm_enrich().to_output(use_llm=False)
+    output = _finalize_output(output, incident)
+    if log:
+        log_verdict(output, DB_PATH)
+    output["case"] = ingest_alert(output, incident, case_db)
+    return output
+
+
+def _case_summaries(results: list[dict[str, Any]], case_db: str | Path) -> list[dict[str, Any]]:
+    """Summarise the cases a run's successful elements landed in.
+
+    Per-element ``case`` blobs show a case as of that element's ingest; this
+    re-reads each case once every element has landed, so counts are final.
+
+    Args:
+        results: Run results, each with ``index``, ``ok`` and (on success)
+            the triage output including ``case``.
+        case_db: The case store the run ingested into.
+
+    Returns:
+        One case summary per distinct case, each with ``member_indices``
+        (the result indices that joined it, in run order).
+    """
+    case_indices: dict[str, list[int]] = {}
+    for r in results:
+        if r.get("ok") and r.get("case"):
+            case_indices.setdefault(r["case"]["case_id"], []).append(r["index"])
+    summaries = get_cases_by_ids(list(case_indices), case_db)
+    for summary in summaries:
+        summary["member_indices"] = case_indices[summary["case_id"]]
+    return summaries
 
 
 def _prewarm_threat_intel(incident: NormalizedIncident) -> None:
@@ -1186,19 +1303,20 @@ def triage_batch() -> Any:
             if ip_error:
                 results.append({"index": i, "ok": False, "error": ip_error})
                 continue
-            try:
-                user_profile = get_user_profile(incident.user)
-                # Peek per element: element N sees elements 1..N-1's ingested
-                # members, so later alerts in one batch are boosted by earlier
-                # ones (intra-batch correlation — batch order matters).
-                cluster_ctx = peek_correlation_context(incident, DB_PATH)
-                engine = TriageEngine(
-                    incident, user_profile, fp_registry, cluster_context=cluster_ctx
+            if _is_reserved_drill_id(incident.incident_id):
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": _DRILL_ID_RESERVED_ERROR,
+                    }
                 )
-                with lookup_budget():  # bound live threat-intel calls per alert
-                    _prewarm_threat_intel(incident)  # newest IPs first
-                    engine.enrich()
-                output = engine.score().decide().llm_enrich().to_output(use_llm=False)
+                continue
+            try:
+                # Element N sees elements 1..N-1's ingested members, so later
+                # alerts in one batch are boosted by earlier ones (intra-batch
+                # correlation — batch order matters).
+                output = _triage_incident(incident, fp_registry, case_db=DB_PATH)
             except Exception as exc:
                 _log.error("Batch triage failed for element %d (%s)", i, type(exc).__name__)
                 results.append(
@@ -1209,9 +1327,6 @@ def triage_batch() -> Any:
                     }
                 )
                 continue
-            output = _finalize_output(output, incident)
-            log_verdict(output, DB_PATH)
-            output["case"] = ingest_alert(output, incident, DB_PATH)
             results.append({"index": i, "ok": True, **output})
         return results
 
@@ -1223,23 +1338,221 @@ def triage_batch() -> Any:
             return jsonify({"error": f"Batch triage timed out after {_BATCH_DEADLINE_SECS} s"}), 504
 
     succeeded = sum(1 for r in results if r.get("ok"))
-    # Batch-level case summary: per-element "case" blobs show the case as of
-    # that element's ingest; re-reading here reports the FINAL counts once
-    # every element has landed.
-    case_indices: dict[str, list[int]] = {}
-    for r in results:
-        if r.get("ok") and r.get("case"):
-            case_indices.setdefault(r["case"]["case_id"], []).append(r["index"])
-    case_summaries = get_cases_by_ids(list(case_indices), DB_PATH)
-    for summary in case_summaries:
-        summary["member_indices"] = case_indices[summary["case_id"]]
     return jsonify(
         {
             "count": len(items),
             "succeeded": succeeded,
             "failed": len(results) - succeeded,
             "results": results,
-            "cases": case_summaries,
+            "cases": _case_summaries(results, DB_PATH),
+        }
+    ), 200
+
+
+# ---------------------------------------------------------------------------
+# Incident Drill — synthetic attack scenarios scored by the real pipeline
+# ---------------------------------------------------------------------------
+
+
+def _run_drill(run: DrillRun, *, log: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Triage a drill's incidents in queue order into a throwaway case store.
+
+    Each request gets its own temporary case database, deleted on return, so
+    drills never appear in ``/api/cases``, never boost each other or real
+    alerts, and a seed replays identically.  Audit rows (when ``log``) go to
+    the real audit log under the ``DRILL-`` prefix, hidden by default.
+
+    Args:
+        run: The generated run.
+        log: Write audit rows (``/run``) or not (``/report`` re-score).
+
+    Returns:
+        ``(results, cases)`` shaped like the batch route's ``results`` and
+        ``cases``.  Case IDs refer to the deleted temporary store: they are
+        meaningful only within this response.
+    """
+    results: list[dict[str, Any]] = []
+    deadline = time.monotonic() + _BATCH_DEADLINE_SECS
+    # ignore_cleanup_errors: on Windows a lingering SQLite handle can block the
+    # delete; a leftover temp file must never turn a drill into a 500.
+    with tempfile.TemporaryDirectory(prefix="adte-drill-", ignore_cleanup_errors=True) as tmp:
+        case_db = Path(tmp) / "drill_cases.db"
+        fp_registry = FPRegistry.load()
+        for i, incident in enumerate(run.incidents):
+            if time.monotonic() > deadline:
+                results.append(
+                    {
+                        "index": i,
+                        "ok": False,
+                        "error": "Skipped — drill deadline reached",
+                    }
+                )
+                continue
+            try:
+                output = _triage_incident(incident, fp_registry, case_db=case_db, log=log)
+            except Exception as exc:
+                _log.error("Drill triage failed for element %d (%s)", i, type(exc).__name__)
+                results.append({"index": i, "ok": False, "error": "Triage pipeline error"})
+                continue
+            results.append({"index": i, "ok": True, **output})
+        cases = _case_summaries(results, case_db)
+    return results, cases
+
+
+def _parse_drill_body(model: type[DrillRunRequest] | type[DrillReportRequest]) -> tuple[Any, Any]:
+    """Parse and validate a drill route's JSON body.
+
+    Args:
+        model: The pydantic request model (unknown fields are rejected).
+
+    Returns:
+        ``(parsed, None)`` on success; ``(None, <error response>)`` on a
+        non-JSON (415), unparseable (400) or invalid (422) body.  Validation
+        details name the field and the rule, never echo the input.
+    """
+    if not request.is_json:
+        return None, (jsonify({"error": "Content-Type must be application/json"}), 415)
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return None, (jsonify({"error": "Request body must be valid JSON"}), 400)
+    if not isinstance(payload, dict):
+        return None, (jsonify({"error": "Request body must be a JSON object"}), 422)
+    try:
+        return model.model_validate(payload), None
+    except ValidationError as exc:
+        details = [
+            {"field": ".".join(str(p) for p in err["loc"]), "error": err["msg"]}
+            for err in exc.errors()[:10]
+        ]
+        return None, (jsonify({"error": "Invalid drill request", "details": details}), 422)
+
+
+@app.route("/api/drill/scenarios")
+@limiter.limit("60/minute")
+def drill_scenarios() -> Any:
+    """Return the public Incident Drill catalogue (no ground truth).
+
+    Public on purpose, like ``/api/mitre/map``: it describes the exercises a
+    visitor can run after logging in, and reveals nothing about which alerts
+    in a run are malicious.
+
+    NIST 800-61 Phase: Preparation — training exercise catalogue.
+
+    Returns:
+        ``{"scenarios": [...], "noise_levels": {level: benign_alerts},
+        "max_alerts": N}`` (200).
+    """
+    return jsonify(
+        {
+            "scenarios": [
+                s.model_dump(include={"id", "name", "summary", "difficulty", "chain", "techniques"})
+                for s in SCENARIOS.values()
+            ],
+            "noise_levels": dict(NOISE_COUNTS),
+            "max_alerts": MAX_DRILL_ALERTS,
+        }
+    ), 200
+
+
+@app.route("/api/drill/run", methods=["POST"])
+@limiter.limit("3/minute;30/hour")
+@require_role("analyst")
+def drill_run() -> Any:
+    """Generate a drill and triage every alert through the batch pipeline.
+
+    Body: ``{"scenario": id, "seed": int | null, "noise": "low"|"medium"|"high"}``.
+    A missing seed is drawn at random and returned, so the run can be
+    replayed.  Audit rows are written with ``DRILL-`` incident IDs (hidden
+    from audit reads unless ``include_drills=true``); case correlation runs
+    in a per-request temporary store.  The response carries the alerts and
+    ADTE's verdicts but no ground truth.
+
+    NIST 800-61 Phase: Detection & Analysis — on synthetic data.
+
+    Returns:
+        ``{"drill": true, "scenario", "seed", "noise", "count", "succeeded",
+        "failed", "alerts": [...], "results": [...], "cases": [...],
+        "cases_are_run_local": true}`` (200); ``{"error"}`` on a bad body
+        (400/415/422) or a pipeline failure (500).
+    """
+    body, error = _parse_drill_body(DrillRunRequest)
+    if error is not None:
+        return error
+    if body.scenario not in SCENARIOS:
+        return jsonify({"error": f"Unknown scenario. Valid: {', '.join(SCENARIOS)}"}), 422
+    seed = body.seed if body.seed is not None else secrets.randbelow(MAX_SEED + 1)
+    try:
+        run = generate(body.scenario, seed, body.noise)
+        results, cases = _run_drill(run, log=True)
+    except Exception as exc:
+        _log.error("Drill run failed (%s)", type(exc).__name__)
+        return jsonify({"error": "Drill pipeline error — check server logs"}), 500
+    succeeded = sum(1 for r in results if r.get("ok"))
+    return jsonify(
+        {
+            "drill": True,
+            "scenario": run.scenario,
+            "seed": seed,
+            "noise": run.noise,
+            "count": len(run.incidents),
+            "succeeded": succeeded,
+            "failed": len(results) - succeeded,
+            "alerts": [incident.model_dump(mode="json") for incident in run.incidents],
+            "results": results,
+            "cases": cases,
+            "cases_are_run_local": True,
+        }
+    ), 200
+
+
+@app.route("/api/drill/report", methods=["POST"])
+@limiter.limit("5/minute;60/hour")
+@require_role("analyst")
+def drill_report() -> Any:
+    """Grade a drill: regenerate, re-score server-side, report and debrief.
+
+    Body: ``{"scenario", "seed", "noise", "dispositions": [{"index", "call",
+    "escalate", "rationale"}] (max 25, one per alert), "notes"}``.  The run is
+    regenerated from the seed and re-scored here with the audit write off, so
+    no client-supplied verdict is trusted and nothing is logged twice.
+    Dispositions never reach ``/api/feedback`` (an FP call with an IP would
+    promote a drill IP into the production FP registry).
+
+    NIST 800-61 Phase: Post-Incident Activity — lessons learned.
+
+    Returns:
+        ``{"report", "report_markdown", "debrief"}`` (200); ``{"error"}`` on a
+        bad body (400/415/422) or a pipeline failure (500).
+    """
+    body, error = _parse_drill_body(DrillReportRequest)
+    if error is not None:
+        return error
+    if body.scenario not in SCENARIOS:
+        return jsonify({"error": f"Unknown scenario. Valid: {', '.join(SCENARIOS)}"}), 422
+    try:
+        run = generate(body.scenario, body.seed, body.noise)
+    except Exception as exc:
+        _log.error("Drill regenerate failed (%s)", type(exc).__name__)
+        return jsonify({"error": "Drill pipeline error — check server logs"}), 500
+    indices = [d.index for d in body.dispositions]
+    if len(set(indices)) != len(indices):
+        return jsonify({"error": "Each alert can have only one disposition."}), 422
+    if any(i >= len(run.incidents) for i in indices):
+        return jsonify(
+            {"error": f"Disposition index out of range (this run has {len(run.incidents)} alerts)."}
+        ), 422
+    try:
+        results, cases = _run_drill(run, log=False)
+        report = build_report(run, results, cases, body.dispositions, body.notes)
+        debrief = build_debrief(run, results, cases, body.dispositions)
+    except Exception as exc:
+        _log.error("Drill report failed (%s)", type(exc).__name__)
+        return jsonify({"error": "Drill pipeline error — check server logs"}), 500
+    return jsonify(
+        {
+            "report": report,
+            "report_markdown": report_markdown(report),
+            "debrief": debrief,
         }
     ), 200
 
@@ -1451,6 +1764,8 @@ def verdicts() -> Any:
     Query Parameters:
         verdict: Optional filter string (e.g. ``"high_risk"``).
         limit:   Maximum rows to return (default 100, capped at 500).
+        include_drills: ``"true"`` to include Incident Drill (``DRILL-``)
+            rows; they are excluded by default.
 
     Returns:
         JSON object with ``verdicts`` (list of row dicts) and ``count`` (int).
@@ -1464,11 +1779,20 @@ def verdicts() -> Any:
             return jsonify(
                 {"error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"}
             ), 400
+    include_drills, error = _parse_include_drills_param()
+    if error is not None:
+        return error
     try:
         limit = max(1, min(500, int(request.args.get("limit", 100))))
     except (TypeError, ValueError):
         limit = 100
-    rows = query_verdicts(DB_PATH, verdict_filter=verdict_filter, limit=limit, since=since)
+    rows = query_verdicts(
+        DB_PATH,
+        verdict_filter=verdict_filter,
+        limit=limit,
+        since=since,
+        include_drills=include_drills,
+    )
     return jsonify({"verdicts": rows, "count": len(rows)}), 200
 
 
@@ -1507,10 +1831,13 @@ def export_verdicts() -> Any:
         verdict: Optional exact-match filter (e.g. ``"high_risk"``).
         since:   Optional ISO 8601 lower bound on ``logged_at``.
         limit:   Maximum rows (default 1000, capped at 10000).
+        include_drills: ``"true"`` to include Incident Drill rows
+            (excluded by default).
 
     Returns:
         A ``text/csv`` or ``application/json`` attachment (200), or
-        ``{"error": "..."}`` on an invalid ``format`` or ``since`` (400).
+        ``{"error": "..."}`` on an invalid ``format``, ``since`` or
+        ``include_drills`` (400).
     """
     fmt: str = (request.args.get("format") or "csv").lower()
     if fmt not in ("csv", "json"):
@@ -1525,12 +1852,21 @@ def export_verdicts() -> Any:
             return jsonify(
                 {"error": "since must be a valid ISO 8601 timestamp (e.g. 2025-01-01T00:00:00Z)"}
             ), 400
+    include_drills, error = _parse_include_drills_param()
+    if error is not None:
+        return error
     try:
         limit = max(1, min(10000, int(request.args.get("limit", 1000))))
     except (TypeError, ValueError):
         limit = 1000
 
-    rows = query_verdicts(DB_PATH, verdict_filter=verdict_filter, limit=limit, since=since)
+    rows = query_verdicts(
+        DB_PATH,
+        verdict_filter=verdict_filter,
+        limit=limit,
+        since=since,
+        include_drills=include_drills,
+    )
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     if fmt == "json":
@@ -1576,6 +1912,32 @@ def _parse_since_param() -> tuple[str | None, Any | None]:
     return since, None
 
 
+def _parse_include_drills_param() -> tuple[bool, Any | None]:
+    """Validate the optional ``include_drills`` query parameter.
+
+    Incident Drill rows are hidden from audit reads unless the caller asks
+    for them.  Strict on purpose: an unrecognised value is a 400 rather
+    than a silent ``False``.
+
+    Returns:
+        ``(flag, None)`` when absent (``False``) or one of
+        ``true/false/1/0`` (case-insensitive); ``(False, <error response>)``
+        otherwise.
+    """
+    raw: str | None = request.args.get("include_drills")
+    if raw is None or raw == "":
+        return False, None
+    value = raw.strip().lower()
+    if value in ("true", "1"):
+        return True, None
+    if value in ("false", "0"):
+        return False, None
+    return False, (
+        jsonify({"error": "include_drills must be 'true' or 'false'"}),
+        400,
+    )
+
+
 @app.route("/api/stats/verdicts")
 @limiter.limit("10/minute")
 @require_role("analyst")
@@ -1586,6 +1948,8 @@ def stats_verdicts_route() -> Any:
 
     Query Parameters:
         since: Optional ISO-8601 timestamp lower bound on ``logged_at``.
+        include_drills: ``"true"`` to count Incident Drill rows (excluded
+            by default).
 
     Returns:
         JSON ``{"counts": {<verdict>: n}, "total": N, "since": <str|null>}``.
@@ -1593,7 +1957,10 @@ def stats_verdicts_route() -> Any:
     since, error = _parse_since_param()
     if error is not None:
         return error
-    result = stats_verdicts(DB_PATH, since=since)
+    include_drills, error = _parse_include_drills_param()
+    if error is not None:
+        return error
+    result = stats_verdicts(DB_PATH, since=since, include_drills=include_drills)
     result["since"] = since
     return jsonify(result), 200
 
@@ -1609,6 +1976,8 @@ def stats_mitre_route() -> Any:
 
     Query Parameters:
         since: Optional ISO-8601 timestamp lower bound on ``logged_at``.
+        include_drills: ``"true"`` to count Incident Drill rows (excluded
+            by default).
 
     Returns:
         JSON ``{"techniques": [{"technique_id", "count"}], "total_rows": N,
@@ -1617,7 +1986,10 @@ def stats_mitre_route() -> Any:
     since, error = _parse_since_param()
     if error is not None:
         return error
-    result = stats_mitre(DB_PATH, since=since)
+    include_drills, error = _parse_include_drills_param()
+    if error is not None:
+        return error
+    result = stats_mitre(DB_PATH, since=since, include_drills=include_drills)
     result["since"] = since
     return jsonify(result), 200
 
@@ -1711,6 +2083,11 @@ def feedback() -> Any:
         return jsonify({"error": "label must be 'fp' or 'tp'"}), 400
     if not isinstance(incident_id, str) or not isinstance(ip, (str, type(None))):
         return jsonify({"error": "incident_id and ip must be strings"}), 400
+    # Drill dispositions go through /api/drill/report, never here: an FP label
+    # with an IP would promote a drill IP into the production FP registry.
+    # Checked before log_feedback so a rejected call writes nothing.
+    if _is_reserved_drill_id(incident_id):
+        return jsonify({"error": _DRILL_ID_RESERVED_ERROR}), 422
 
     try:
         log_feedback(incident_id, label, ip, DB_PATH)
