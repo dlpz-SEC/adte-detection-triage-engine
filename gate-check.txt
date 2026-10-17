@@ -1,0 +1,1 @@
+Throwaway file for the branch-protection gate check. No trailing newline, so pre-commit (end-of-file-fixer) fails CI on purpose.
