@@ -10,8 +10,10 @@ Rules every run follows (each one pinned by ``tests/test_drill_generator.py``):
   ``created_time`` is set explicitly (the model default is ``utcnow``).
 - Every IP is reserved: attacker infrastructure from the RFC 5737 TEST-NETs,
   benign remote users from RFC 6598 outside the mock feed's ``100.64.0.0/16``,
-  internal hosts from ``10.20.0.0/24``.  The threat-intel aggregator answers
-  the reserved ranges from its deterministic mock, so a drill makes no
+  internal hosts from ``10.20.0.0/24``.  The threat-intel aggregator never
+  sends a reserved address to a live provider (RFC 5737: the mock in every
+  mode; RFC 6598: the mock, or a neutral shared-address result when live keys
+  are set; RFC 1918: the private-address short-circuit), so a drill makes no
   network call.  Example and false-positive-registry addresses are excluded.
 - Every file event carries an embedded VirusTotal verdict with a non-zero
   total, so the engine never makes a live hash lookup; no EICAR hash is used.

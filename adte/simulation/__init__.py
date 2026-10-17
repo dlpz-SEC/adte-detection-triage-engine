@@ -13,10 +13,15 @@ Modules:
   ``debrief``   — dispositions vs ground truth, and the incident report.
 
 Every drill incident ID starts with ``audit_log.DRILL_ID_PREFIX`` so the audit
-log can hide drill rows by default.  Every IP comes from a reserved
-documentation or shared-address range, which the threat-intel aggregator
-always answers from its deterministic mock, so a drill makes no network calls
-and a seed replays identically with or without live API keys.
+log can hide drill rows by default.  Every IP comes from a reserved range, and
+the threat-intel aggregator never sends a reserved address to a live provider:
+RFC 5737 documentation addresses get its deterministic mock in every mode,
+RFC 6598 shared addresses get the mock without API keys and a neutral
+``shared-address-space`` result with them, and RFC 1918 internal hosts take
+the private-address short-circuit.  So a drill makes no network calls, and a
+seed replays the same verdicts, risk scores and confidence with or without
+live API keys; only the threat-intel evidence shown for RFC 6598 addresses
+changes.
 
 NIST 800-61 Phase: Preparation — exercises the detection-and-analysis
 workflow on synthetic data before a real incident needs it.

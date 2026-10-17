@@ -32,8 +32,8 @@ SCENARIOS: dict[str, Scenario] = {
             "alarming on its own; the pattern only appears when alerts are "
             "grouped by source IP.",
             "The successful sign-in from the spraying IP is the pivot of the "
-            "incident: it is the moment the account fell, even though nothing "
-            "about a single successful login is suspicious.",
+            "incident: it is the moment the account fell, even though on its own "
+            "it looks like little more than a user on a new device.",
         ],
     ),
     "identity-exfil": Scenario(
@@ -62,17 +62,19 @@ SCENARIOS: dict[str, Scenario] = {
         name="Web shell drop and lateral spread",
         summary=(
             "File integrity monitoring reports a new file on a web server. Later "
-            "the same file runs, appears on a second host after an SSH login, "
-            "and that host starts talking to an outside address. Routine host "
-            "noise is mixed in. Trace the spread and scope the hosts."
+            "that file runs and drops a second file, the same second file appears "
+            "on another host after an SSH login, and that host starts talking to "
+            "an outside address. Routine host noise is mixed in. Trace the spread "
+            "and scope the hosts."
         ),
         difficulty="advanced",
         chain=["Initial Access", "Execution", "Lateral Movement", "Command and Control"],
         techniques=["T1190", "T1059.004", "T1021.004", "T1071"],
         lessons=[
-            "A freshly dropped file is often unknown to VirusTotal (0 detections). "
-            "A clean scan at drop time is absence of evidence, not a verdict; "
-            "the same hash is convicted once it is seen more widely.",
+            "A freshly dropped file often has no VirusTotal detections yet (here "
+            "0 of 70 engines). A clean scan at drop time is absence of evidence, "
+            "not a verdict: judge the file by where it landed and what it did "
+            "next, not by its scan.",
             "The same SHA-256 on a second host is the strongest scoping signal "
             "in this scenario: correlation by hash ties hosts together even when "
             "they share no user or IP.",

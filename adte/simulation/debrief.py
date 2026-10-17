@@ -9,7 +9,9 @@ ground truth leaves the server.
 ``build_report`` is the analyst's incident report.  It is built only from the
 alerts the analyst confirmed as true positives, so it describes what the
 analyst concluded, never the answer key.  Recommended actions are copied from
-the engine's recommend-only action lists: ADTE recommends, it never executes.
+the engine's recommend-only action lists, minus ADTE's close-and-baseline
+advice for alerts the analyst confirmed (the tuning list records that
+disagreement instead): ADTE recommends, it never executes.
 
 NIST 800-61 Phase: Post-Incident Activity — lessons learned and reporting
 for a training exercise.
@@ -28,6 +30,10 @@ from adte.simulation.schema import Disposition, DrillRun
 REPORT_BANNER: str = "Synthetic drill: not a real incident."
 
 _FLAGGED = ("medium_risk", "high_risk")
+
+# The engine's low_risk actions.  On an alert the analyst confirmed as
+# malicious they are the opposite of containment, so the report drops them.
+_DISMISSAL_ACTIONS = frozenset({"auto_close_incident", "update_baseline"})
 
 # What to tune when a signal fires on a benign alert.
 _SIGNAL_TUNING: dict[str, str] = {
@@ -276,7 +282,7 @@ def build_report(
             if t.get("tactic"):
                 tactics.setdefault(t["tactic"], {})[t["id"]] = t.get("name") or t["id"]
         for a in result.get("actions") or []:
-            if a not in actions:
+            if a not in _DISMISSAL_ACTIONS and a not in actions:
                 actions.append(a)
         timeline.append(
             {
@@ -296,12 +302,16 @@ def build_report(
             f"The analyst confirmed {len(confirmed)} of {len(run.incidents)} alerts as malicious, "
             f"involving {len(users)} user account(s) and {len(hosts)} host(s)."
         )
+        # Claim only what the case covers: two or more confirmed alerts in it,
+        # and the kill chain attributed to the case, not to the confirmed set.
+        members = set((attack_case or {}).get("member_indices", []))
+        in_case = [i for i in confirmed if i in members]
         chain = (attack_case or {}).get("kill_chain") or {}
-        if chain.get("detected"):
+        if len(in_case) >= 2 and chain.get("detected"):
+            lead = "them" if len(in_case) == len(confirmed) else f"{len(in_case)} of them"
             summary += (
-                " ADTE correlated them into one case with a kill chain across "
-                + ", ".join(chain["tactics_in_order"])
-                + "."
+                f" ADTE correlated {lead} into one case of {len(members)} alerts, "
+                "whose detected kill chain spans " + ", ".join(chain["tactics_in_order"]) + "."
             )
     else:
         summary = "The analyst confirmed no alerts as malicious."
@@ -322,16 +332,26 @@ def build_report(
             }
         )
 
+    # Both directions of disagreement, from the analyst's calls only: ADTE
+    # flagged what the analyst cleared, or scored low what the analyst confirmed.
     tuning = []
     for row in rows:
+        if row["adte_verdict"] == "error" or row["analyst_call"] is None:
+            continue
+        signals = ", ".join(_fired(results[row["index"]])) or "no signal"
         if (
             row["analyst_call"] in ("benign_positive", "false_positive")
             and row["adte_verdict"] in _FLAGGED
         ):
-            signals = ", ".join(_fired(results[row["index"]])) or "no signal"
             tuning.append(
                 f"{row['incident_id']}: ADTE scored {row['adte_verdict']} "
                 f"({row['adte_risk']}) but the analyst called it {row['analyst_call']} "
+                f"(signals: {signals})."
+            )
+        elif row["analyst_call"] == "true_positive" and row["adte_verdict"] == "low_risk":
+            tuning.append(
+                f"{row['incident_id']}: ADTE scored low_risk ({row['adte_risk']}) and "
+                "recommended auto-close, but the analyst confirmed it as true_positive "
                 f"(signals: {signals})."
             )
 
