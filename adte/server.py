@@ -465,17 +465,31 @@ def add_security_headers(response: Any) -> Any:
     script-src CSP needs no 'unsafe-inline'/'unsafe-eval'. Scripts are limited
     to 'self' plus the cdnjs allowlist (Chart.js); styles/fonts to 'self' and
     the Google Fonts hosts. All other sources default to 'self'.
+
+    base-uri, form-action and frame-ancestors do not fall back to default-src,
+    so they are set explicitly; object-src 'none' is tighter than the 'self'
+    default. X-XSS-Protection is "0" because the legacy XSS auditor it
+    controlled is gone from current browsers and could be abused in old ones;
+    the CSP is the XSS control. COOP and CORP keep other origins from holding
+    a window reference to ADTE or loading its responses as subresources.
     """
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["X-XSS-Protection"] = "0"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' https://cdnjs.cloudflare.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "connect-src 'self';"
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none';"
     )
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     # Send HSTS unconditionally so it reaches browsers even when Flask sits
     # behind a TLS-terminating reverse proxy (where request.is_secure is False).
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
