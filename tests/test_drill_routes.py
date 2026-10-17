@@ -9,8 +9,10 @@ the DRILL- prefix, and drill dispositions never reach /api/feedback.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -281,6 +283,153 @@ class TestReport:
         md = body["report_markdown"]
         assert "a\\|b c" in md
         assert "\n# not a heading" not in md and "\n    # not a heading" in md
+
+
+def _report(
+    http, scenario: str, seed: int, calls: list[dict[str, Any]], noise: str = "medium"
+) -> dict[str, Any]:
+    resp = http.post(
+        "/api/drill/report",
+        json={"scenario": scenario, "seed": seed, "noise": noise, "dispositions": calls},
+    )
+    assert resp.status_code == 200, resp.get_json()
+    return resp.get_json()
+
+
+def _attack_indices(scenario: str, seed: int, noise: str = "medium") -> list[int]:
+    from adte.simulation.generator import generate
+
+    truth = generate(scenario, seed, noise).truth
+    return [i for i, st in enumerate(truth) if st.label == "malicious"]
+
+
+_DISMISSAL = {"auto_close_incident", "update_baseline"}
+_RFC1918 = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+class TestReportFollowsAnalystCalls:
+    """The report describes the analyst's true-positive calls and nothing else."""
+
+    def test_false_positive_calls_build_an_empty_report(self, http) -> None:
+        from adte.simulation.generator import generate
+
+        n = len(generate("identity-exfil", 42).incidents)
+        calls = [{"index": i, "call": "false_positive"} for i in range(n)]
+        r = _report(http, "identity-exfil", 42, calls)["report"]
+        assert r["summary"] == "The analyst confirmed no alerts as malicious."
+        assert r["timeline"] == [] and r["scope"] == {"users": [], "hosts": []}
+        assert r["iocs"] == {"ips": [], "file_hashes": []}
+        assert r["recommended_actions"] == []
+
+    @pytest.mark.parametrize("scenario, seed", [("identity-exfil", 42), ("malware-spread", 7)])
+    def test_report_uses_only_true_positive_alerts(self, http, scenario: str, seed: int) -> None:
+        """Benign alerts and RFC 1918 scope never reach the timeline, scope or IOCs."""
+        from adte.simulation.generator import generate
+
+        run = generate(scenario, seed, "medium")
+        tp = set(_attack_indices(scenario, seed))
+        calls = [
+            {"index": i, "call": "true_positive" if i in tp else "false_positive"}
+            for i in range(len(run.incidents))
+        ]
+        r = _report(http, scenario, seed, calls)["report"]
+        assert r["summary"].startswith(f"The analyst confirmed {len(tp)} of {len(run.incidents)} ")
+        assert sorted(t["incident_id"] for t in r["timeline"]) == sorted(
+            run.incidents[i].incident_id for i in tp
+        )
+        subjects = {run.incidents[i].user for i in tp}
+        assert r["scope"] == {
+            "users": sorted(u for u in subjects if "\\" not in u),
+            "hosts": sorted({u.split("\\", 1)[0] for u in subjects if "\\" in u}),
+        }
+        tp_ips = {e.ip_address for i in tp for e in run.incidents[i].events if e.ip_address}
+        internal = {ip for ip in tp_ips if any(ipaddress.ip_address(ip) in n for n in _RFC1918)}
+        assert r["iocs"]["ips"] == sorted(tp_ips - internal)
+        tp_hashes = {
+            e.file.sha256 for i in tp for e in run.incidents[i].events if e.file and e.file.sha256
+        }
+        assert {h["sha256"] for h in r["iocs"]["file_hashes"]} == tp_hashes
+        if scenario == "malware-spread":
+            assert internal, "needs RFC 1918 addresses on attack alerts to test the exclusion"
+
+
+class TestReportActionsAndTuning:
+    @pytest.mark.parametrize("scenario, seed", [("password-spray", 42), ("malware-spread", 7)])
+    def test_confirmed_alerts_drop_dismissal_actions(self, http, scenario: str, seed: int) -> None:
+        """An alert the analyst confirmed never contributes auto-close or baseline advice."""
+        run = _run(http, scenario=scenario, seed=seed)
+        tp = _attack_indices(scenario, seed)
+        assert any(run["results"][i]["verdict"] == "low_risk" for i in tp)
+        calls = [{"index": i, "call": "true_positive"} for i in tp]
+        actions = _report(http, scenario, seed, calls)["report"]["recommended_actions"]
+        assert not _DISMISSAL & set(actions)
+        assert set(actions) == {a for i in tp for a in run["results"][i]["actions"]} - _DISMISSAL
+
+    def test_tuning_records_missed_detections(self, http) -> None:
+        """A true-positive call on an alert ADTE scored low_risk is a listed disagreement."""
+        tp = _attack_indices("password-spray", 42)
+        calls = [{"index": i, "call": "true_positive"} for i in tp]
+        body = _report(http, "password-spray", 42, calls)
+        low = body["debrief"]["summary"]["adte_low_on_malicious"]
+        assert low
+        ids = {r["index"]: r["incident_id"] for r in body["report"]["verdicts_vs_calls"]}
+        for i in low:
+            assert any(
+                t.startswith(f"{ids[i]}: ADTE scored low_risk") and "true_positive" in t
+                for t in body["report"]["tuning"]
+            )
+        assert "No disagreements with ADTE." not in body["report_markdown"]
+
+
+class TestReportSummaryClaimsOnlyTheCase:
+    @pytest.mark.parametrize("scenario", ["password-spray", "identity-exfil", "malware-spread"])
+    def test_one_confirmed_alert_claims_no_correlation(self, http, scenario: str) -> None:
+        first = _attack_indices(scenario, 42)[0]
+        calls = [{"index": first, "call": "true_positive"}]
+        summary = _report(http, scenario, 42, calls)["report"]["summary"]
+        assert summary.startswith("The analyst confirmed 1 of ")
+        assert "correlated" not in summary
+
+    def test_confirmed_alerts_outside_the_case_are_not_claimed(self, http) -> None:
+        run = _run(http, scenario="identity-exfil", seed=42)
+        tp = _attack_indices("identity-exfil", 42)
+        attack_case = max(run["cases"], key=lambda c: len(set(tp) & set(c["member_indices"])))
+        members = set(attack_case["member_indices"])
+        outside = next(i for i in range(run["count"]) if i not in members and i not in tp)
+        confirmed = [*tp, outside]
+        calls = [{"index": i, "call": "true_positive"} for i in confirmed]
+        summary = _report(http, "identity-exfil", 42, calls)["report"]["summary"]
+        in_case = len(members & set(confirmed))
+        assert 2 <= in_case < len(confirmed)
+        assert (
+            f"ADTE correlated {in_case} of them into one case of {len(members)} alerts" in summary
+        )
+
+
+class TestLiveKeysChangeNoVerdict:
+    """Regression guard for the adte.simulation docstring: with live keys set,
+    no drill address reaches a provider and every verdict replays unchanged."""
+
+    @pytest.mark.parametrize("scenario", ["password-spray", "identity-exfil", "malware-spread"])
+    def test_same_verdicts_and_no_provider_call(
+        self, http, monkeypatch: pytest.MonkeyPatch, scenario: str
+    ) -> None:
+        from adte.intel import threat_intel
+        from adte.intel.aggregator import ThreatIntelAggregator
+
+        keyless = _verdicts(_run(http, scenario=scenario))
+        live = ThreatIntelAggregator(abuseipdb_key="test", vt_key="test", otx_key="test")
+        assert live._use_mock is False
+        provider_calls: list[MagicMock] = []
+        for client in live._clients:
+            for method in ("check", "check_hash"):
+                if hasattr(client, method):
+                    stub = MagicMock(side_effect=AssertionError("live provider called"))
+                    monkeypatch.setattr(client, method, stub)
+                    provider_calls.append(stub)
+        monkeypatch.setattr(threat_intel, "_aggregator", live)
+        assert _verdicts(_run(http, scenario=scenario)) == keyless
+        assert [s.call_count for s in provider_calls] == [0] * len(provider_calls)
 
 
 def _one(incident_id: str) -> dict[str, Any]:
