@@ -200,8 +200,9 @@ class TestBlankKeys:
         srv.app.config["TESTING"] = True
         with srv.app.test_client() as http:
             keys = http.get("/api/config").get_json()["intel_keys"]
-        assert keys["virustotal"] == ""
-        assert keys["otx"] == "0123****cdef"
+        # Re-pinned 2026-10-23 (postmortem F10): presence only, was "" / "0123****cdef".
+        assert keys["virustotal"] is False
+        assert keys["otx"] is True
 
 
 class TestExampleScoresWithLiveKeys:

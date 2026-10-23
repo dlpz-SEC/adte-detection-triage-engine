@@ -73,12 +73,18 @@ class TestDemoMode:
     """With no keys configured, config is readable but holds nothing secret."""
 
     def test_anonymous_read_shows_no_secret(self, client, monkeypatch) -> None:
-        """200, RBAC key fields empty, a configured TI key only masked."""
-        vt_key = "a" * 30 + "SECRETMIDDLE" + "b" * 22
+        """200, RBAC keys all absent, a configured TI key reported as present only.
+
+        Re-pinned 2026-10-23 (postmortem F10): this used to expect the TI key
+        masked to first-4/last-4.  No character of a key leaves the server now.
+        """
+        vt_key = "HEAD" + "a" * 26 + "SECRETMIDDLE" + "b" * 18 + "TAIL"
         monkeypatch.setenv("ADTE_VT_API_KEY", vt_key)
         resp = client.get("/api/config")
         assert resp.status_code == 200
         body = resp.get_json()
-        assert set(body["api_keys"].values()) == {""}
-        assert body["intel_keys"]["virustotal"] == vt_key[:4] + "****" + vt_key[-4:]
-        assert "SECRETMIDDLE" not in resp.get_data(as_text=True)
+        assert set(body["api_keys"].values()) == {False}
+        assert body["intel_keys"]["virustotal"] is True
+        text = resp.get_data(as_text=True)
+        for fragment in ("HEAD", "SECRETMIDDLE", "TAIL"):
+            assert fragment not in text

@@ -66,8 +66,8 @@ The full table is Appendix A. In order of what an attacker could do with the val
 3. **`ANTHROPIC_API_KEY`.** Model usage billed to David's account, up to whatever limit the
    account has [TODO: Anthropic spend limit at the time of exposure].
 4. **`ADTE_API_KEY_SENIOR`.** Adds false-positive registry promotion, which suppresses future
-   detections for an IP, and `GET /api/config`. That route returns the first 4 and last 4
-   characters of every configured key, the admin key included.
+   detections for an IP, and `GET /api/config`. That route returned the first 4 and last 4
+   characters of every configured key, the admin key included (fixed on branch: F10).
 5. **Provider keys `ADTE_VT_API_KEY`, `ADTE_OTX_KEY` (and `ADTE_ABUSEIPDB_KEY` if set).** Free-tier
    quota drain under David's identity, and, where the provider allows it, submissions (AbuseIPDB
    reports, OTX pulses) attributed to his account.
@@ -209,8 +209,8 @@ should not be there.
 | F7 | Provider caps: Anthropic monthly spend limit; VT/AbuseIPDB ADTE quotas are already set below the free tiers (450 / 900 per day) | about 15 min | Open |
 | F8 | Session-key binding | done on branch | In Review (not deployed) |
 | F9 | Rotation runbook | done on branch | In Review |
-| F10 | `/api/config` shows 8 characters of every key to `senior_analyst`; reduce it to presence only or the last 4 | about 1 h incl. tests | Proposed |
-| F11 | Startup check that refuses placeholder secrets (`changeme-*`, `your-*`) on a hosted deploy | about 1 h incl. tests | Proposed |
+| F10 | `/api/config` shows 8 characters of every key to `senior_analyst`; reduce it to presence only or the last 4 | done on branch: presence only | In Review (not deployed) |
+| F11 | Startup check that refuses placeholder secrets (`changeme-*`, `your-*`) on a hosted deploy | done on branch: a placeholder login key is refused everywhere (header, login, session) yet keeps the app locked; startup logs the count | In Review (not deployed) |
 | F12 | Delete `AZURE_TENANT_ID` from Railway (read nowhere) and confirm `ADTE_CORS_ORIGINS` is meant to be set | about 5 min | Open |
 | F13 | Confirm the two Railway variables not visible in the inventory screenshot | about 5 min | Open |
 
@@ -268,4 +268,4 @@ confirmed: [TODO: the 2 Railway variable names not visible in the inventory scre
 - **Unused where stored:** `ADTE_WAZUH_*` on Railway (F2); `AZURE_TENANT_ID` (F12).
 - **Shared across environments:** at least one value is the same locally and on Railway
   [TODO: which] (F6).
-- **Cross-tier leak inside ADTE:** `senior_analyst` can read 8 characters of the admin key (F10).
+- **Cross-tier leak inside ADTE:** `senior_analyst` can read 8 characters of the admin key (F10; fixed on branch).

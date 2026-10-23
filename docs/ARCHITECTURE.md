@@ -274,7 +274,7 @@ Configured via the `ADTE_CORS_ORIGINS` environment variable (comma-separated ori
 
 ### Credential Safety
 
-- API keys are never logged or returned in full — the `/api/config` endpoint masks keys to `xxxx****xxxx` format.
+- API keys are never logged or returned — the `/api/config` endpoint reports only whether each key is set (`true`/`false`) and names any key still holding a `.env.example` template value, which is refused as a credential.
 - Wazuh adapter's `__repr__` excludes the password field.
 - No credential values appear in any `_log.*` call across the codebase.
 
