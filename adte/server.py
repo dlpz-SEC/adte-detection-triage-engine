@@ -18,6 +18,7 @@ from __future__ import annotations
 import concurrent.futures
 import csv
 import functools
+import hashlib
 import hmac
 import io
 import json
@@ -193,30 +194,90 @@ _SESSION_TTL_HOURS: int = 8
 _SESSION_COOKIE: str = "adte_session"
 
 
-def _create_session(role: str) -> str:
+# Sessions are bound to the key that minted them (2026-10-23, after the
+# Railway env-var exposure): rotating ADTE_API_KEY_* must end the sessions the
+# old key opened, not leave them alive for up to _SESSION_TTL_HOURS on a
+# persistent volume.  The store keeps a slow, salted fingerprint of the key,
+# never the key, so a copy of the database is not a cheap offline oracle for
+# a short operator-chosen key.
+_KEY_FP_SALT: bytes = b"adte-session-key-fp-v1"
+_KEY_FP_ITERATIONS: int = 100_000
+
+
+@functools.lru_cache(maxsize=16)
+def _key_fingerprint(api_key: str) -> str:
+    """Return the stored fingerprint of an API key.
+
+    Cached per process: the inputs are the configured keys, which already sit
+    in ``os.environ``, so the cache holds nothing new and the PBKDF2 cost is
+    paid once per key instead of on every request.
+
+    Args:
+        api_key: The raw API key.
+
+    Returns:
+        Hex PBKDF2-HMAC-SHA256 digest of the key.
+    """
+    return hashlib.pbkdf2_hmac(
+        "sha256", api_key.encode("utf-8"), _KEY_FP_SALT, _KEY_FP_ITERATIONS
+    ).hex()
+
+
+def _configured_keys_for_role(role: str) -> list[str]:
+    """Return every currently configured key that grants exactly *role*.
+
+    Args:
+        role: An RBAC role name.
+
+    Returns:
+        Non-empty key values: the role's own ``ADTE_API_KEY_*`` plus any
+        alias keys that map onto the role.
+    """
+    env_vars = [v for r, v in _ROLE_ENV_MAP.items() if r == role]
+    env_vars += [v for v, r in _ALIAS_ENV_MAP.items() if r == role]
+    return [k for k in (os.environ.get(v, "") for v in env_vars) if k]
+
+
+def _create_session(role: str, api_key: str) -> str:
     """Create a cryptographically random session token in the shared store.
 
     Args:
         role: The RBAC role to associate with this session.
+        api_key: The key that authenticated the login; only its fingerprint
+            is stored.
 
     Returns:
         A 64-character hex session token.
     """
-    return session_store.create_session(role, DB_PATH, _SESSION_TTL_HOURS)
+    return session_store.create_session(
+        role, DB_PATH, _SESSION_TTL_HOURS, key_fp=_key_fingerprint(api_key)
+    )
 
 
 def _resolve_session(token: str) -> str | None:
-    """Return the role for a session token, or None if expired/unknown.
+    """Return the role for a session token, or None if it no longer holds.
 
-    Expired entries are removed on lookup so the store self-prunes.
+    Expired entries are removed on lookup so the store self-prunes.  A live
+    row is still refused when the key that minted it is no longer configured
+    for its role (rotated or removed), or when the row predates key binding.
 
     Args:
         token: Session token from the ``adte_session`` cookie.
 
     Returns:
-        Role string, or None if the token is invalid or expired.
+        Role string, or None if the token is invalid, expired, or its key
+        has been rotated.
     """
-    return session_store.resolve_session(token, DB_PATH)
+    found = session_store.resolve_session_binding(token, DB_PATH)
+    if found is None:
+        return None
+    role, key_fp = found
+    if not key_fp:
+        return None
+    for key in _configured_keys_for_role(role):
+        if hmac.compare_digest(key_fp, _key_fingerprint(key)):
+            return role
+    return None
 
 
 # HTTP methods that are safe to serve in unauthenticated demo mode.
@@ -2336,7 +2397,7 @@ def auth_login() -> Any:
     if role is None:
         return jsonify({"error": "Invalid API key"}), 401
 
-    token = _create_session(role)
+    token = _create_session(role, api_key)
     resp = jsonify({"authenticated": True, "role": role})
     resp.set_cookie(
         _SESSION_COOKIE,
