@@ -427,7 +427,7 @@ environment variables reserved for a future automated-containment layer.
 
 ## Test Coverage
 
-1119 tests across 52 files — test_geo, test_intel, test_intel_hash, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_sentinel_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_rbac_recruiter, test_cors_origins, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration, test_file_signal, test_file_integration, test_config_access, test_deploy_config, test_fp_registry_cache, test_mitre_map_route, test_nist_csf, test_non_ipv4_events, test_rate_limits, test_request_body_shapes, test_ti_lookup_cap, test_ti_reserved_ranges, test_version, test_security_headers, test_drill_generator, test_drill_routes, test_audit_drill_filter
+1152 tests across 55 files — test_geo, test_intel, test_intel_hash, test_policy, test_engine, test_llm_assist, test_llm_cache, test_llm_enrichment, test_wazuh_adapter, test_sentinel_adapter, test_native_mitre, test_feedback, test_mitre_mapper, test_mitre_map_schema, test_demo_stories, test_sql_injection, test_rbac_recruiter, test_cors_origins, test_prompt_injection_adversarial, test_audit_log, test_stats_endpoints, test_ti_cache_quota, test_ticket_client, test_verdict_export, test_schema_migration, test_session_store, test_triage_batch, test_triage_input_formats, test_case_policy, test_kill_chain, test_case_store, test_cases_api, test_peek_correlation, test_cluster_signal, test_cluster_integration, test_file_signal, test_file_integration, test_config_access, test_deploy_config, test_fp_registry_cache, test_mitre_map_route, test_nist_csf, test_non_ipv4_events, test_rate_limits, test_request_body_shapes, test_ti_lookup_cap, test_ti_reserved_ranges, test_version, test_security_headers, test_drill_generator, test_drill_routes, test_audit_drill_filter, test_session_key_binding, test_sigma_indexer_auth, test_enrich_unknown_ips
 
 Example verdicts (fresh clone, no API keys — deterministic synthetic intel):
 
@@ -625,7 +625,7 @@ Every item below is implemented in this repository and covered by the test suite
 | Skill | Evidence |
 |-------|----------|
 | **Python 3.11** — full type hints, Google-style docstrings, Pydantic v2 models at every module boundary | entire `adte/` package |
-| **Testing** — 1119 tests; unit, integration, adversarial, and **golden-parity** pins that fail CI on a 1-point scoring drift | `tests/` |
+| **Testing** — 1152 tests; unit, integration, adversarial, and **golden-parity** pins that fail CI on a 1-point scoring drift | `tests/` |
 | **Change control under risk** — rollback tags, additive-only diffs, and sha256 output-parity proofs before/after every edit to scoring-critical code | `pre-file-signal`, `pre-cluster-signal` tags |
 | **Concurrency** — `ThreadPoolExecutor` fan-out, request deadlines, cross-worker SQLite state (gunicorn multi-worker correctness) | `adte/intel/aggregator.py`, `adte/store/` |
 | **Databases** — SQLite with `BEGIN IMMEDIATE` race-safe upserts, lazy schema migrations, indexing, retention pruning | `adte/store/case_store.py` |
