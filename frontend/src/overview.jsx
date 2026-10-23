@@ -9,7 +9,7 @@ import React from 'react';
 // references/current-claims.md (regenerated from the repos by collect_stats.py).
 // Bump here when the claims file changes.
 const STATS = [
-  { value: '1152', label: 'Automated Tests' },
+  { value: '1172', label: 'Automated Tests' },
   { value: '7', label: 'Scoring Signals' },
   { value: '2', label: 'Live SIEM Adapters' },
   { value: '42', label: 'ATT&CK Map Entries' },
@@ -108,7 +108,7 @@ const SECURITY_CONTROLS = [
   { title: 'Per-route rate limiting', body: 'flask-limiter on every data route: triage 10/min, batch 5/min, queue 20/min, intel 30/min, destructive deletes 5/min. A custom JSON 429 keeps errors structured.' },
   { title: 'CSRF origin gate', body: 'Every state-changing /api/ request has its Origin checked against the host before RBAC even runs — defense-in-depth on top of SameSite=Strict cookies. ProxyFix trusts exactly one TLS proxy hop, no more.' },
   { title: 'Session design', body: 'Login exchanges the API key for a session token stored SHA-256-hashed at rest — the server keeps only the hash. HttpOnly + SameSite=Strict + Secure cookie, 8-hour server-side TTL, logout revocation, fail-closed on store errors.' },
-  { title: 'API keys never reach the browser', body: 'RBAC and threat-intel keys live in server environment variables only. The frontend holds a cookie, never a key; /api/config masks values to first-4/last-4; HTTP client logging is pinned so auth headers cannot leak into logs.' },
+  { title: 'API keys never reach the browser', body: 'RBAC and threat-intel keys live in server environment variables only. The frontend holds a cookie, never a key; /api/config reports only whether each key is set, and template placeholder keys are refused; HTTP client logging is pinned so auth headers cannot leak into logs.' },
   { title: 'Security headers', body: 'Content-Security-Policy with no unsafe-inline scripts, Strict-Transport-Security, X-Frame-Options DENY, X-Content-Type-Options nosniff — on every response.' },
   { title: 'SSRF defense', body: 'The Wazuh indexer URL passes a scheme allowlist, a cloud-metadata host block (169.254.169.254, metadata.google.internal), and a link-local IP check. Disabling TLS verification is refused for any non-localhost host.' },
   { title: 'Strict input validation', body: 'Pydantic models on every boundary; input severity rejected by design; malformed payloads return 422, never a 500 with internals; 1 MB body cap; batch capped at 25 alerts / 45 s; wrapper nesting bounded.' },

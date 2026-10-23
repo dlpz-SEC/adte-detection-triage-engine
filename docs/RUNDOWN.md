@@ -190,7 +190,7 @@ Regenerated from the `@app.route` decorators in `adte/server.py` (24 route handl
 | 21 | GET | `/api/auth-check` | readonly | — | Verify an API key and return the resolved role |
 | 22 | POST | `/api/auth/login` | public | — | Exchange an API key for an HttpOnly session cookie |
 | 23 | POST | `/api/auth/logout` | public | — | Revoke the current browser session |
-| 24 | GET | `/api/config` | senior_analyst | 10/min | Read safety gate config + masked API key status + `llm_available` flag |
+| 24 | GET | `/api/config` | senior_analyst | 10/min | Read safety gate config + API key presence (set / not set) + refused placeholder key names + `llm_available` flag |
 
 ---
 
@@ -408,11 +408,11 @@ There is no execution layer today, so these gates enforce nothing — the table 
 
 | Key Type | Storage | Returned to Browser? | Notes |
 |----------|---------|---------------------|-------|
-| `ADTE_ABUSEIPDB_KEY` | Server env var | Never | Masked in `/api/config` response (`xxxx****xxxx`) |
-| `ADTE_VT_API_KEY` | Server env var | Never | Masked in `/api/config` |
-| `ADTE_OTX_KEY` | Server env var | Never | Masked in `/api/config` |
+| `ADTE_ABUSEIPDB_KEY` | Server env var | Never | `/api/config` reports only set / not set |
+| `ADTE_VT_API_KEY` | Server env var | Never | `/api/config` reports only set / not set |
+| `ADTE_OTX_KEY` | Server env var | Never | `/api/config` reports only set / not set |
 | `ANTHROPIC_API_KEY` | Server env var | Never | Browser only sees `llm_available: true/false` |
-| `ADTE_API_KEY_ADMIN` (and other roles) | Server env var; browser holds only an HttpOnly session cookie after login | Only as masked preview in `/api/config` | ADTE's own bearer token — exchanged at login, never persisted browser-side |
+| `ADTE_API_KEY_ADMIN` (and other roles) | Server env var; browser holds only an HttpOnly session cookie after login | Never; `/api/config` reports only set / not set | ADTE's own bearer token — exchanged at login, never persisted browser-side. A `changeme-*` / `your-*` template value is refused as a credential |
 
 **Why this split:**
 
@@ -466,7 +466,7 @@ The ADTE bearer token is ADTE's own credential — it authenticates the user to 
 **Env var:** `ADTE_API_KEY_SENIOR`
 
 **Can call (inherits analyst +):**
-- `GET /api/config` — view safety gate states, masked key status, `llm_available` flag
+- `GET /api/config` — view safety gate states, key presence and refused placeholder key names, `llm_available` flag
 
 **Cannot call:** `DELETE /api/verdicts`, `DELETE /api/feedback`.
 
@@ -630,7 +630,7 @@ pip install -e ".[dev]"
 
 ### Tests Fail or Drop Below the Floor
 
-The project enforces a test-count minimum, stored in `tests/.min_count` (1118 as of 2026-10-17). In CI, `tests/conftest.py` fails the run if fewer tests pass than that. If you see fewer passing tests after any change, something regressed. Run:
+The project enforces a test-count minimum, stored in `tests/.min_count` (1171 as of 2026-10-23). In CI, `tests/conftest.py` fails the run if fewer tests pass than that. If you see fewer passing tests after any change, something regressed. Run:
 ```powershell
 pytest -v --tb=short
 ```

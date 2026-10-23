@@ -137,6 +137,53 @@ _ALIAS_ENV_MAP: dict[str, str] = {
     "ADTE_API_KEY_RECRUITER": "analyst",
 }
 
+# Template values from .env.example (``changeme-admin-key``) are public in the
+# repo, so a deploy that still carries one must not accept it as a credential
+# (postmortem F11, 2026-10-21 Railway env-var exposure).  Prefix match only:
+# a substring test could reject a real random key that happens to contain one.
+_PLACEHOLDER_KEY_PREFIXES: tuple[str, ...] = (
+    "changeme",
+    "your-",
+    "your_",
+    "replace-me",
+    "placeholder",
+)
+
+
+def _is_placeholder_key(value: str) -> bool:
+    """Return True if *value* is an unfilled template key, not a real one.
+
+    Args:
+        value: A raw ``ADTE_API_KEY_*`` value.
+
+    Returns:
+        True if the stripped, lowercased value starts with a known template prefix.
+    """
+    return value.strip().lower().startswith(_PLACEHOLDER_KEY_PREFIXES)
+
+
+def _usable_key(env_var: str) -> str:
+    """Return the key in *env_var*, or ``""`` if it is unset or a placeholder.
+
+    Args:
+        env_var: Name of an ``ADTE_API_KEY_*`` environment variable.
+
+    Returns:
+        The key value, or an empty string when it must not authenticate.
+    """
+    value = os.environ.get(env_var, "")
+    return "" if _is_placeholder_key(value) else value
+
+
+def _placeholder_key_envs() -> list[str]:
+    """Return the names of RBAC key env vars that hold a template placeholder.
+
+    Returns:
+        Sorted env var names (never values), role keys and aliases alike.
+    """
+    env_vars = [*_ROLE_ENV_MAP.values(), *_ALIAS_ENV_MAP]
+    return sorted(v for v in env_vars if _is_placeholder_key(os.environ.get(v, "")))
+
 
 def _any_keys_configured() -> bool:
     """Return True if at least one RBAC API key is set in the environment.
@@ -145,7 +192,10 @@ def _any_keys_configured() -> bool:
     (at least one key configured).  When False, all RBAC checks are
     bypassed so the web UI works without configuration.  Alias keys
     (e.g. the recruiter demo key) count too: setting only the recruiter
-    key still puts the app in secured mode.
+    key still puts the app in secured mode.  Raw values are read on purpose:
+    a placeholder key cannot authenticate (``_usable_key``) but still counts
+    here, so a deploy left on template keys stays locked instead of opening
+    demo mode's anonymous GETs.
 
     Returns:
         True if any ADTE_API_KEY_* env var (role or alias) is non-empty.
@@ -159,7 +209,8 @@ def _resolve_role(api_key: str) -> str | None:
     """Match an API key to its role by checking environment variables.
 
     Real per-tier role keys are checked first, then alias keys (which map
-    onto an existing role).  All comparisons are constant-time.
+    onto an existing role).  All comparisons are constant-time.  A key still
+    set to a template placeholder never matches.
 
     Args:
         api_key: The key value from the X-ADTE-Key header.
@@ -168,11 +219,11 @@ def _resolve_role(api_key: str) -> str | None:
         The role name if matched, or None if no match found.
     """
     for role, env_var in _ROLE_ENV_MAP.items():
-        expected = os.environ.get(env_var, "")
+        expected = _usable_key(env_var)
         if expected and hmac.compare_digest(api_key, expected):
             return role
     for env_var, role in _ALIAS_ENV_MAP.items():
-        expected = os.environ.get(env_var, "")
+        expected = _usable_key(env_var)
         if expected and hmac.compare_digest(api_key, expected):
             return role
     return None
@@ -231,11 +282,12 @@ def _configured_keys_for_role(role: str) -> list[str]:
 
     Returns:
         Non-empty key values: the role's own ``ADTE_API_KEY_*`` plus any
-        alias keys that map onto the role.
+        alias keys that map onto the role.  Placeholder keys are left out,
+        so a session minted under one is refused.
     """
     env_vars = [v for r, v in _ROLE_ENV_MAP.items() if r == role]
     env_vars += [v for v, r in _ALIAS_ENV_MAP.items() if r == role]
-    return [k for k in (os.environ.get(v, "") for v in env_vars) if k]
+    return [k for k in (_usable_key(v) for v in env_vars) if k]
 
 
 def _create_session(role: str, api_key: str) -> str:
@@ -424,6 +476,15 @@ _log.info("ADTE startup — %d/3 threat intel sources configured", _intel_key_co
 
 if not _any_keys_configured():
     _log.warning("ADTE running in DEMO MODE — write endpoints are disabled.")
+
+# Count only, like the intel line above; GET /api/config names them.
+_placeholder_key_count = len(_placeholder_key_envs())
+if _placeholder_key_count:
+    _log.error(
+        "ADTE startup — %d login key(s) hold a template placeholder and are refused; "
+        "GET /api/config lists which",
+        _placeholder_key_count,
+    )
 
 app = Flask(__name__)
 
@@ -2440,7 +2501,10 @@ def config() -> Any:
     Reads the six ADTE safety gate env vars and returns their current
     values without exposing any secret or credential material.  Boolean
     vars are coerced to Python bools; allowlist vars are returned as
-    lists of strings.
+    lists of strings.  Keys are reported as present or absent only: no
+    character of any key leaves the server (postmortem F10 — the old
+    first-4/last-4 mask let a senior analyst read 8 characters of the
+    admin key).
 
     NIST 800-61 Phase: Detection & Analysis — surfaces the reserved
     safety-gate env vars (read-only; reserved for a future execution layer,
@@ -2449,11 +2513,14 @@ def config() -> Any:
     Returns:
         JSON object with ``kill_switch``, ``dry_run``,
         ``execution_enabled``, ``tenant_allowlist``,
-        ``user_allowlist``, ``action_allowlist``.
+        ``user_allowlist``, ``action_allowlist``, ``api_keys`` and
+        ``intel_keys`` (name -> bool, True when a usable key is set),
+        ``placeholder_keys`` (env var names refused as template values)
+        and ``llm_available``.
     """
 
-    # _b, _l, _mask_key are defined locally and read the safety-config env
-    # vars directly. These vars are surfaced read-only here for analyst
+    # _b and _l are defined locally and read the safety-config env vars
+    # directly. These vars are surfaced read-only here for analyst
     # visibility; they are reserved for a future execution layer and do not
     # gate anything today (ADTE performs no automated actions).
     def _b(key: str, default: str = "false") -> bool:
@@ -2462,18 +2529,6 @@ def config() -> Any:
     def _l(key: str, default: str = "") -> list[str]:
         val = os.environ.get(key, default)
         return [x.strip() for x in val.split(",") if x.strip()]
-
-    def _mask_value(val: str | None) -> str:
-        # Show first-4/last-4 for keys longer than 8 chars so analysts can
-        # confirm which key is active without exposing the full secret.
-        if not val:
-            return ""
-        if len(val) <= 8:
-            return "****"
-        return val[:4] + "****" + val[-4:]
-
-    def _mask_key(env_var: str) -> str:
-        return _mask_value(os.environ.get(env_var, ""))
 
     return jsonify(
         {
@@ -2484,17 +2539,15 @@ def config() -> Any:
             "user_allowlist": _l("ADTE_USER_ALLOWLIST"),
             "action_allowlist": _l("ADTE_ACTION_ALLOWLIST", "CLOSE_INCIDENT,POST_COMMENT"),
             "api_keys": {
-                "admin": _mask_key("ADTE_API_KEY_ADMIN"),
-                "senior_analyst": _mask_key("ADTE_API_KEY_SENIOR"),
-                "analyst": _mask_key("ADTE_API_KEY_ANALYST"),
-                "readonly": _mask_key("ADTE_API_KEY_READONLY"),
+                role: bool(_usable_key(env_var)) for role, env_var in _ROLE_ENV_MAP.items()
             },
             "intel_keys": {
                 # Read like the aggregator reads them: a blank key shows as unset.
-                "abuseipdb": _mask_value(env_key("ADTE_ABUSEIPDB_KEY")),
-                "virustotal": _mask_value(env_key("ADTE_VT_API_KEY")),
-                "otx": _mask_value(env_key("ADTE_OTX_KEY")),
+                "abuseipdb": bool(env_key("ADTE_ABUSEIPDB_KEY")),
+                "virustotal": bool(env_key("ADTE_VT_API_KEY")),
+                "otx": bool(env_key("ADTE_OTX_KEY")),
             },
+            "placeholder_keys": _placeholder_key_envs(),
             "llm_available": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
         }
     ), 200
