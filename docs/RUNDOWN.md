@@ -156,41 +156,46 @@ Role levels are numeric — higher roles inherit all lower-role access:
 
 | Role | Level | Env Var | Endpoints Accessible |
 |------|-------|---------|----------------------|
-| `readonly` | 0 | `ADTE_API_KEY_READONLY` | Public routes (`GET /`, `/health`, `/api/examples`) + `GET /api/auth-check` |
-| `analyst` | 1 | `ADTE_API_KEY_ANALYST` | All readonly + triage (single + batch), queue, verdicts (+ export + stats), feedback, cases, intel |
+| `readonly` | 0 | `ADTE_API_KEY_READONLY` | Public routes (`GET /`, `/health`, `/version`, `/api/examples`, `/api/mitre/map`, `/api/drill/scenarios`) + `GET /api/auth-check` |
+| `analyst` | 1 | `ADTE_API_KEY_ANALYST` | All readonly + triage (single + batch), queue, verdicts (+ export + stats), feedback, cases, intel, drill (run + report) |
 | `senior_analyst` | 2 | `ADTE_API_KEY_SENIOR` | All analyst + `GET /api/config` |
 | `admin` | 3 | `ADTE_API_KEY_ADMIN` | All endpoints + `DELETE /api/verdicts`, `DELETE /api/feedback`, `DELETE /api/cases` |
 
-### All 24 Endpoints at a Glance
+### All 29 Endpoints at a Glance
 
-Regenerated from the `@app.route` decorators in `adte/server.py` (24 route handlers).
+Regenerated from the `@app.route` decorators in `adte/server.py` (29 route handlers), in source order.
 
 | # | Method | Path | Minimum Role | Rate Limit | Description |
 |---|--------|------|-------------|-----------|-------------|
 | 1 | GET | `/` | public | — | Serve the frontend SPA |
 | 2 | GET | `/<path:filename>` | public | — | Serve static frontend assets (bundle.js, CSS, images) |
 | 3 | GET | `/health` | public | — | Liveness probe (`{"status": "ok"}`) |
-| 4 | GET | `/api/examples` | public | — | Load the 4 bundled example incidents as NormalizedIncident JSON |
-| 5 | POST | `/api/triage` | analyst | 10/min | Run full triage pipeline on one incident (auto-detects canonical / raw Wazuh / raw Sentinel payload formats) |
-| 6 | POST | `/api/triage/batch` | analyst | 5/min | Batch triage (25-alert cap, 45 s deadline, per-alert error isolation) |
-| 7 | GET | `/api/queue` | analyst | 20/min | Live alert queue, triage-scored — source ladder wazuh → sentinel → demo |
-| 8 | GET | `/api/verdicts` | analyst | 60/min | Audit log of past triage verdicts (filterable, newest first) |
-| 9 | GET | `/api/verdicts/export` | analyst | 10/min | Download the verdict audit log as CSV or JSON |
-| 10 | GET | `/api/stats/verdicts` | analyst | 10/min | Verdict distribution aggregated from the audit log |
-| 11 | GET | `/api/stats/mitre` | analyst | 10/min | MITRE technique frequency aggregated from the audit log |
-| 12 | GET | `/api/stats/feedback` | analyst | 10/min | FP/TP feedback ratio aggregated from the audit log |
-| 13 | GET | `/api/feedback` | analyst | 60/min | Analyst FP/TP feedback history |
-| 14 | POST | `/api/feedback` | analyst | 30/min | Submit FP/TP label; auto-promotes FP IPs to YAML registry |
-| 15 | DELETE | `/api/verdicts` | admin | 5/min | Clear all verdict audit log rows |
-| 16 | DELETE | `/api/feedback` | admin | 5/min | Clear all analyst feedback rows |
-| 17 | GET | `/api/cases` | analyst | 60/min | List correlated alert cases |
-| 18 | GET | `/api/cases/<case_id>` | analyst | 60/min | Case detail with member alerts |
-| 19 | DELETE | `/api/cases` | admin | 5/min | Soft-delete all cases |
-| 20 | GET | `/api/intel` | analyst | 30/min | Enrich a single IP against live threat intel sources |
-| 21 | GET | `/api/auth-check` | readonly | — | Verify an API key and return the resolved role |
-| 22 | POST | `/api/auth/login` | public | — | Exchange an API key for an HttpOnly session cookie |
-| 23 | POST | `/api/auth/logout` | public | — | Revoke the current browser session |
-| 24 | GET | `/api/config` | senior_analyst | 10/min | Read safety gate config + masked API key status + `llm_available` flag |
+| 4 | GET | `/version` | public | — | Running commit SHA for the deploy-truth check (`{"commit": ..., "source": ...}`) |
+| 5 | GET | `/api/examples` | public | — | Load the 4 bundled example incidents as NormalizedIncident JSON |
+| 6 | GET | `/api/mitre/map` | public | — | ATT&CK technique table and kill-chain tactic order, from `mitre_technique_map.yaml` |
+| 7 | POST | `/api/triage` | analyst | 10/min | Run full triage pipeline on one incident (auto-detects canonical / raw Wazuh / raw Sentinel payload formats) |
+| 8 | POST | `/api/triage/batch` | analyst | 5/min | Batch triage (25-alert cap, 45 s deadline, per-alert error isolation) |
+| 9 | GET | `/api/drill/scenarios` | public | 60/min | Incident Drill catalogue (no ground truth) |
+| 10 | POST | `/api/drill/run` | analyst | 3/min, 30/hr | Generate a seeded drill and triage every alert through the batch pipeline |
+| 11 | POST | `/api/drill/report` | analyst | 5/min, 60/hr | Grade a drill: regenerate from the seed, re-score server-side, report and debrief |
+| 12 | GET | `/api/queue` | analyst | 20/min | Live alert queue, triage-scored — source ladder wazuh → sentinel → demo |
+| 13 | GET | `/api/verdicts` | analyst | 60/min | Audit log of past triage verdicts (filterable, newest first) |
+| 14 | GET | `/api/verdicts/export` | analyst | 10/min | Download the verdict audit log as CSV or JSON |
+| 15 | GET | `/api/stats/verdicts` | analyst | 10/min | Verdict distribution aggregated from the audit log |
+| 16 | GET | `/api/stats/mitre` | analyst | 10/min | MITRE technique frequency aggregated from the audit log |
+| 17 | GET | `/api/stats/feedback` | analyst | 10/min | FP/TP feedback ratio aggregated from the audit log |
+| 18 | GET | `/api/feedback` | analyst | 60/min | Analyst FP/TP feedback history |
+| 19 | POST | `/api/feedback` | analyst | 30/min | Submit FP/TP label; auto-promotes FP IPs to YAML registry |
+| 20 | DELETE | `/api/verdicts` | admin | 5/min | Clear all verdict audit log rows |
+| 21 | DELETE | `/api/feedback` | admin | 5/min | Clear all analyst feedback rows |
+| 22 | GET | `/api/cases` | analyst | 60/min | List correlated alert cases |
+| 23 | GET | `/api/cases/<case_id>` | analyst | 60/min | Case detail with member alerts |
+| 24 | DELETE | `/api/cases` | admin | 5/min | Soft-delete all cases |
+| 25 | GET | `/api/intel` | analyst | 30/min | Enrich a single IP against live threat intel sources |
+| 26 | GET | `/api/auth-check` | readonly | 30/min | Verify an API key and return the resolved role |
+| 27 | POST | `/api/auth/login` | public | 10/min | Exchange an API key for an HttpOnly session cookie |
+| 28 | POST | `/api/auth/logout` | public | — | Revoke the current browser session |
+| 29 | GET | `/api/config` | senior_analyst | 10/min | Read safety gate config + masked API key status + `llm_available` flag |
 
 ---
 
