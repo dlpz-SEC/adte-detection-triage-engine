@@ -960,3 +960,14 @@ The first fix (title `flex-shrink: 0` + `nowrap`, controls `flex-shrink: 0`) was
 Back link up and after pressing Back, and both read clean. With NO Back link and the LIVE badge up,
 the same rules made the title paint over the session counter, where HEAD had let it wrap. Only the
 adversarial review caught it, by building the header markup and measuring the states I skipped.
+
+### 2026-10-23 — An exposure inventory comes from the platform's variable list, not the repo's notes
+
+**Rule:** When a host may have leaked its environment, list the variables from the host's own
+dashboard (names only) and diff them against the code's reads. Repo notes describe intent, not
+what is set.
+
+Project CLAUDE.md called `ADTE_WAZUH_*` "useless on Railway" (the indexer is VM-private). That was
+about reachability; all four were set there and were in the 2026-10-21 exposed set, while
+`ADTE_ABUSEIPDB_KEY`, which the notes said was set, did not appear. Only David's paste of the
+Railway Variables page showed both.

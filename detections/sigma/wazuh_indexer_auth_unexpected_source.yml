@@ -1,0 +1,87 @@
+title: Wazuh - Indexer Authentication From Unexpected Source
+id: 4ca4a8bf-1426-4ecb-89b3-3dbb26ad8ea6
+status: experimental
+description: |
+    Detects a successful REST authentication to the Wazuh Indexer (OpenSearch,
+    port 9200) from a source address outside the approved allowlist.
+
+    Written in response to the 2026-10-21 Railway environment-variable
+    exposure, in which ADTE's indexer credentials (ADTE_WAZUH_USER /
+    ADTE_WAZUH_PASS) were in the set a third party may have read. A valid
+    login from an address nobody approved is the event that turns a leaked
+    credential into SIEM access (docs/incidents/2026-10-21-railway-env-var-exposure.md).
+
+    Data source: the OpenSearch security plugin audit log (security-auditlog-*
+    indices). Two settings decide whether this rule can ever fire, and both
+    must be checked on the deployed indexer, not assumed:
+      1. audit logging must be enabled (plugins.security.audit.type);
+      2. AUTHENTICATED must not be in
+         plugins.security.audit.config.disabled_rest_categories, where the
+         OpenSearch defaults place it.
+    With either unmet, a zero-hit result means "not logged", not "did not
+    happen".
+references:
+    - https://attack.mitre.org/techniques/T1078/
+    - https://attack.mitre.org/techniques/T1552/
+    - https://opensearch.org/docs/latest/security/audit-logs/index/
+author: David Lopez
+date: 2026/10/23
+modified: 2026/10/23
+tags:
+    - attack.initial-access
+    - attack.persistence
+    - attack.t1078
+    - attack.credential-access
+    - attack.t1552
+logsource:
+    product: opensearch
+    service: audit
+    definition: Wazuh Indexer security plugin audit log (security-auditlog-*), REST layer
+detection:
+    # Successful logins over the REST API. TRANSPORT-layer events are
+    # node-to-node traffic inside the cluster, not a client login.
+    selection:
+        audit_category: AUTHENTICATED
+        audit_request_layer: REST
+    # reason: approved sources. Loopback covers the Wazuh Dashboard and local
+    # tooling on the same VM. 192.0.2.0/24 is an RFC 5737 PLACEHOLDER that
+    # never routes; replace it with the lab admin CIDRs before deploying.
+    filter_allowlist:
+        audit_request_remote_address|cidr:
+            - '127.0.0.0/8'
+            - '::1/128'
+            - '192.0.2.0/24'
+    condition: selection and not filter_allowlist
+
+level: high
+
+falsepositives:
+    - A new or re-addressed admin workstation not yet added to the allowlist
+    - The VM's NAT or bridge address changing after a VMware network reset
+    - A Wazuh Dashboard or Filebeat instance moved off the indexer host
+    - Scheduled jobs (backups, snapshot tooling) that log in from a separate host
+
+custom:
+    lifecycle: experimental
+    confidence: medium
+    false_positive_rate: low
+    investigation_steps: |
+        1. Read audit_request_effective_user: which credential logged in.
+        2. Run the source IP through scripts/enrich_unknown_ips.py (dry run first).
+        3. Check what the session did next: search the same remote address for
+           audit_category GRANTED_PRIVILEGES / INDEX_EVENT and any write to
+           wazuh-alerts-* or .opendistro_security.
+        4. If the credential is ADTE's, rotate ADTE_WAZUH_PASS and confirm the
+           old value now returns 401.
+    tuning_notes: |
+        Keep the allowlist to exact CIDRs; never add a cloud provider's whole
+        egress range. Railway egress addresses are shared across tenants, so
+        allowlisting them would admit any Railway customer.
+    mitre_context:
+        technique: T1078 Valid Accounts; T1552 Unsecured Credentials
+        tactic: Initial Access, Persistence, Credential Access
+        data_sources: OpenSearch security audit log
+        platforms: Linux (Wazuh Indexer)
+    owner: David Lopez
+    review_frequency: quarterly
+    last_reviewed: 2026-10-23

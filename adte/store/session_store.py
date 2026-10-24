@@ -18,6 +18,13 @@ Design notes:
   lookup and creation, so the table cannot grow unboundedly.
 - The table is created lazily on first use (``CREATE TABLE IF NOT EXISTS``),
   mirroring how the tests re-point ``DB_PATH`` at per-test temp files.
+- **Sessions are bound to the key that minted them** (2026-10-23, after the
+  Railway env-var exposure).  Each row carries ``key_fp``, a fingerprint of
+  the API key used at login; the server only honours a session while that
+  fingerprint still matches a configured key for the session's role, so
+  rotating a key ends its sessions on the next request.  Rows written before
+  the column existed have ``key_fp`` NULL and are denied by the server (one
+  re-login).  The column is added lazily, like the table.
 - Sessions live in the audit database (``ADTE_AUDIT_DB``).  On hosts with an
   ephemeral disk (e.g. Railway without a volume) a redeploy clears active
   sessions — operators simply log in again; the 8-hour TTL is otherwise
@@ -42,7 +49,8 @@ _CREATE_SESSIONS_SQL: str = """
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     role       TEXT NOT NULL,
-    expires_at TEXT NOT NULL
+    expires_at TEXT NOT NULL,
+    key_fp     TEXT
 )
 """
 
@@ -70,6 +78,16 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     """
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.execute(_CREATE_SESSIONS_SQL)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+    if "key_fp" not in columns:
+        # Lazy migration for a database created before sessions were bound
+        # to their key.  Existing rows get NULL, which the server denies.
+        try:
+            conn.execute("ALTER TABLE sessions ADD COLUMN key_fp TEXT")
+        except sqlite3.OperationalError as exc:
+            # Another thread migrated between the PRAGMA and the ALTER.
+            if "duplicate column" not in str(exc).lower():
+                raise
     return conn
 
 
@@ -84,13 +102,16 @@ def _prune_expired(conn: sqlite3.Connection, now_iso: str) -> None:
     conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now_iso,))
 
 
-def create_session(role: str, db_path: Path, ttl_hours: int) -> str:
+def create_session(role: str, db_path: Path, ttl_hours: int, key_fp: str | None = None) -> str:
     """Create a session and return its raw token.
 
     Args:
         role: RBAC role to associate with the session.
         db_path: Path to the SQLite database file.
         ttl_hours: Session lifetime in hours (server-side enforced).
+        key_fp: Fingerprint of the API key that minted the session (never
+            the key itself).  ``None`` stores NULL, which the server's
+            binding check denies.
 
     Returns:
         A 64-character hex session token for the browser cookie.  Only its
@@ -106,8 +127,8 @@ def create_session(role: str, db_path: Path, ttl_hours: int) -> str:
     with _connect(db_path) as conn:
         _prune_expired(conn, now.isoformat())
         conn.execute(
-            "INSERT INTO sessions (token_hash, role, expires_at) VALUES (?, ?, ?)",
-            (_hash_token(token), role, expires),
+            "INSERT INTO sessions (token_hash, role, expires_at, key_fp) VALUES (?, ?, ?, ?)",
+            (_hash_token(token), role, expires, key_fp),
         )
     return token
 
@@ -134,6 +155,35 @@ def resolve_session(token: str, db_path: Path) -> str | None:
                 (_hash_token(token), now_iso),
             ).fetchone()
         return row[0] if row else None
+    except sqlite3.Error as exc:
+        _log.warning("Session lookup failed (%s) — denying session", type(exc).__name__)
+        return None
+
+
+def resolve_session_binding(token: str, db_path: Path) -> tuple[str, str | None] | None:
+    """Return ``(role, key_fp)`` for a live session token, or None.
+
+    Same lookup and fail-closed rules as ``resolve_session``; the caller
+    decides whether the stored key fingerprint is still acceptable.
+
+    Args:
+        token: Raw session token from the ``adte_session`` cookie.
+        db_path: Path to the SQLite database file.
+
+    Returns:
+        ``(role, key_fp)`` where ``key_fp`` is None for a row written before
+        sessions were bound to keys, or None if the token is invalid,
+        expired, or the store is unreadable.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        with _connect(db_path) as conn:
+            _prune_expired(conn, now_iso)
+            row = conn.execute(
+                "SELECT role, key_fp FROM sessions WHERE token_hash = ? AND expires_at > ?",
+                (_hash_token(token), now_iso),
+            ).fetchone()
+        return (row[0], row[1]) if row else None
     except sqlite3.Error as exc:
         _log.warning("Session lookup failed (%s) — denying session", type(exc).__name__)
         return None

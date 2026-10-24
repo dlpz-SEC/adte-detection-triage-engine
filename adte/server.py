@@ -18,6 +18,7 @@ from __future__ import annotations
 import concurrent.futures
 import csv
 import functools
+import hashlib
 import hmac
 import io
 import json
@@ -136,6 +137,53 @@ _ALIAS_ENV_MAP: dict[str, str] = {
     "ADTE_API_KEY_RECRUITER": "analyst",
 }
 
+# Template values from .env.example (``changeme-admin-key``) are public in the
+# repo, so a deploy that still carries one must not accept it as a credential
+# (postmortem F11, 2026-10-21 Railway env-var exposure).  Prefix match only:
+# a substring test could reject a real random key that happens to contain one.
+_PLACEHOLDER_KEY_PREFIXES: tuple[str, ...] = (
+    "changeme",
+    "your-",
+    "your_",
+    "replace-me",
+    "placeholder",
+)
+
+
+def _is_placeholder_key(value: str) -> bool:
+    """Return True if *value* is an unfilled template key, not a real one.
+
+    Args:
+        value: A raw ``ADTE_API_KEY_*`` value.
+
+    Returns:
+        True if the stripped, lowercased value starts with a known template prefix.
+    """
+    return value.strip().lower().startswith(_PLACEHOLDER_KEY_PREFIXES)
+
+
+def _usable_key(env_var: str) -> str:
+    """Return the key in *env_var*, or ``""`` if it is unset or a placeholder.
+
+    Args:
+        env_var: Name of an ``ADTE_API_KEY_*`` environment variable.
+
+    Returns:
+        The key value, or an empty string when it must not authenticate.
+    """
+    value = os.environ.get(env_var, "")
+    return "" if _is_placeholder_key(value) else value
+
+
+def _placeholder_key_envs() -> list[str]:
+    """Return the names of RBAC key env vars that hold a template placeholder.
+
+    Returns:
+        Sorted env var names (never values), role keys and aliases alike.
+    """
+    env_vars = [*_ROLE_ENV_MAP.values(), *_ALIAS_ENV_MAP]
+    return sorted(v for v in env_vars if _is_placeholder_key(os.environ.get(v, "")))
+
 
 def _any_keys_configured() -> bool:
     """Return True if at least one RBAC API key is set in the environment.
@@ -144,7 +192,10 @@ def _any_keys_configured() -> bool:
     (at least one key configured).  When False, all RBAC checks are
     bypassed so the web UI works without configuration.  Alias keys
     (e.g. the recruiter demo key) count too: setting only the recruiter
-    key still puts the app in secured mode.
+    key still puts the app in secured mode.  Raw values are read on purpose:
+    a placeholder key cannot authenticate (``_usable_key``) but still counts
+    here, so a deploy left on template keys stays locked instead of opening
+    demo mode's anonymous GETs.
 
     Returns:
         True if any ADTE_API_KEY_* env var (role or alias) is non-empty.
@@ -158,7 +209,8 @@ def _resolve_role(api_key: str) -> str | None:
     """Match an API key to its role by checking environment variables.
 
     Real per-tier role keys are checked first, then alias keys (which map
-    onto an existing role).  All comparisons are constant-time.
+    onto an existing role).  All comparisons are constant-time.  A key still
+    set to a template placeholder never matches.
 
     Args:
         api_key: The key value from the X-ADTE-Key header.
@@ -167,11 +219,11 @@ def _resolve_role(api_key: str) -> str | None:
         The role name if matched, or None if no match found.
     """
     for role, env_var in _ROLE_ENV_MAP.items():
-        expected = os.environ.get(env_var, "")
+        expected = _usable_key(env_var)
         if expected and hmac.compare_digest(api_key, expected):
             return role
     for env_var, role in _ALIAS_ENV_MAP.items():
-        expected = os.environ.get(env_var, "")
+        expected = _usable_key(env_var)
         if expected and hmac.compare_digest(api_key, expected):
             return role
     return None
@@ -193,30 +245,91 @@ _SESSION_TTL_HOURS: int = 8
 _SESSION_COOKIE: str = "adte_session"
 
 
-def _create_session(role: str) -> str:
+# Sessions are bound to the key that minted them (2026-10-23, after the
+# Railway env-var exposure): rotating ADTE_API_KEY_* must end the sessions the
+# old key opened, not leave them alive for up to _SESSION_TTL_HOURS on a
+# persistent volume.  The store keeps a slow, salted fingerprint of the key,
+# never the key, so a copy of the database is not a cheap offline oracle for
+# a short operator-chosen key.
+_KEY_FP_SALT: bytes = b"adte-session-key-fp-v1"
+_KEY_FP_ITERATIONS: int = 100_000
+
+
+@functools.lru_cache(maxsize=16)
+def _key_fingerprint(api_key: str) -> str:
+    """Return the stored fingerprint of an API key.
+
+    Cached per process: the inputs are the configured keys, which already sit
+    in ``os.environ``, so the cache holds nothing new and the PBKDF2 cost is
+    paid once per key instead of on every request.
+
+    Args:
+        api_key: The raw API key.
+
+    Returns:
+        Hex PBKDF2-HMAC-SHA256 digest of the key.
+    """
+    return hashlib.pbkdf2_hmac(
+        "sha256", api_key.encode("utf-8"), _KEY_FP_SALT, _KEY_FP_ITERATIONS
+    ).hex()
+
+
+def _configured_keys_for_role(role: str) -> list[str]:
+    """Return every currently configured key that grants exactly *role*.
+
+    Args:
+        role: An RBAC role name.
+
+    Returns:
+        Non-empty key values: the role's own ``ADTE_API_KEY_*`` plus any
+        alias keys that map onto the role.  Placeholder keys are left out,
+        so a session minted under one is refused.
+    """
+    env_vars = [v for r, v in _ROLE_ENV_MAP.items() if r == role]
+    env_vars += [v for v, r in _ALIAS_ENV_MAP.items() if r == role]
+    return [k for k in (_usable_key(v) for v in env_vars) if k]
+
+
+def _create_session(role: str, api_key: str) -> str:
     """Create a cryptographically random session token in the shared store.
 
     Args:
         role: The RBAC role to associate with this session.
+        api_key: The key that authenticated the login; only its fingerprint
+            is stored.
 
     Returns:
         A 64-character hex session token.
     """
-    return session_store.create_session(role, DB_PATH, _SESSION_TTL_HOURS)
+    return session_store.create_session(
+        role, DB_PATH, _SESSION_TTL_HOURS, key_fp=_key_fingerprint(api_key)
+    )
 
 
 def _resolve_session(token: str) -> str | None:
-    """Return the role for a session token, or None if expired/unknown.
+    """Return the role for a session token, or None if it no longer holds.
 
-    Expired entries are removed on lookup so the store self-prunes.
+    Expired entries are removed on lookup so the store self-prunes.  A live
+    row is still refused when the key that minted it is no longer configured
+    for its role (rotated or removed), or when the row predates key binding.
 
     Args:
         token: Session token from the ``adte_session`` cookie.
 
     Returns:
-        Role string, or None if the token is invalid or expired.
+        Role string, or None if the token is invalid, expired, or its key
+        has been rotated.
     """
-    return session_store.resolve_session(token, DB_PATH)
+    found = session_store.resolve_session_binding(token, DB_PATH)
+    if found is None:
+        return None
+    role, key_fp = found
+    if not key_fp:
+        return None
+    for key in _configured_keys_for_role(role):
+        if hmac.compare_digest(key_fp, _key_fingerprint(key)):
+            return role
+    return None
 
 
 # HTTP methods that are safe to serve in unauthenticated demo mode.
@@ -363,6 +476,15 @@ _log.info("ADTE startup — %d/3 threat intel sources configured", _intel_key_co
 
 if not _any_keys_configured():
     _log.warning("ADTE running in DEMO MODE — write endpoints are disabled.")
+
+# Count only, like the intel line above; GET /api/config names them.
+_placeholder_key_count = len(_placeholder_key_envs())
+if _placeholder_key_count:
+    _log.error(
+        "ADTE startup — %d login key(s) hold a template placeholder and are refused; "
+        "GET /api/config lists which",
+        _placeholder_key_count,
+    )
 
 app = Flask(__name__)
 
@@ -2336,7 +2458,7 @@ def auth_login() -> Any:
     if role is None:
         return jsonify({"error": "Invalid API key"}), 401
 
-    token = _create_session(role)
+    token = _create_session(role, api_key)
     resp = jsonify({"authenticated": True, "role": role})
     resp.set_cookie(
         _SESSION_COOKIE,
@@ -2379,7 +2501,10 @@ def config() -> Any:
     Reads the six ADTE safety gate env vars and returns their current
     values without exposing any secret or credential material.  Boolean
     vars are coerced to Python bools; allowlist vars are returned as
-    lists of strings.
+    lists of strings.  Keys are reported as present or absent only: no
+    character of any key leaves the server (postmortem F10 — the old
+    first-4/last-4 mask let a senior analyst read 8 characters of the
+    admin key).
 
     NIST 800-61 Phase: Detection & Analysis — surfaces the reserved
     safety-gate env vars (read-only; reserved for a future execution layer,
@@ -2388,11 +2513,14 @@ def config() -> Any:
     Returns:
         JSON object with ``kill_switch``, ``dry_run``,
         ``execution_enabled``, ``tenant_allowlist``,
-        ``user_allowlist``, ``action_allowlist``.
+        ``user_allowlist``, ``action_allowlist``, ``api_keys`` and
+        ``intel_keys`` (name -> bool, True when a usable key is set),
+        ``placeholder_keys`` (env var names refused as template values)
+        and ``llm_available``.
     """
 
-    # _b, _l, _mask_key are defined locally and read the safety-config env
-    # vars directly. These vars are surfaced read-only here for analyst
+    # _b and _l are defined locally and read the safety-config env vars
+    # directly. These vars are surfaced read-only here for analyst
     # visibility; they are reserved for a future execution layer and do not
     # gate anything today (ADTE performs no automated actions).
     def _b(key: str, default: str = "false") -> bool:
@@ -2401,18 +2529,6 @@ def config() -> Any:
     def _l(key: str, default: str = "") -> list[str]:
         val = os.environ.get(key, default)
         return [x.strip() for x in val.split(",") if x.strip()]
-
-    def _mask_value(val: str | None) -> str:
-        # Show first-4/last-4 for keys longer than 8 chars so analysts can
-        # confirm which key is active without exposing the full secret.
-        if not val:
-            return ""
-        if len(val) <= 8:
-            return "****"
-        return val[:4] + "****" + val[-4:]
-
-    def _mask_key(env_var: str) -> str:
-        return _mask_value(os.environ.get(env_var, ""))
 
     return jsonify(
         {
@@ -2423,17 +2539,15 @@ def config() -> Any:
             "user_allowlist": _l("ADTE_USER_ALLOWLIST"),
             "action_allowlist": _l("ADTE_ACTION_ALLOWLIST", "CLOSE_INCIDENT,POST_COMMENT"),
             "api_keys": {
-                "admin": _mask_key("ADTE_API_KEY_ADMIN"),
-                "senior_analyst": _mask_key("ADTE_API_KEY_SENIOR"),
-                "analyst": _mask_key("ADTE_API_KEY_ANALYST"),
-                "readonly": _mask_key("ADTE_API_KEY_READONLY"),
+                role: bool(_usable_key(env_var)) for role, env_var in _ROLE_ENV_MAP.items()
             },
             "intel_keys": {
                 # Read like the aggregator reads them: a blank key shows as unset.
-                "abuseipdb": _mask_value(env_key("ADTE_ABUSEIPDB_KEY")),
-                "virustotal": _mask_value(env_key("ADTE_VT_API_KEY")),
-                "otx": _mask_value(env_key("ADTE_OTX_KEY")),
+                "abuseipdb": bool(env_key("ADTE_ABUSEIPDB_KEY")),
+                "virustotal": bool(env_key("ADTE_VT_API_KEY")),
+                "otx": bool(env_key("ADTE_OTX_KEY")),
             },
+            "placeholder_keys": _placeholder_key_envs(),
             "llm_available": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
         }
     ), 200
