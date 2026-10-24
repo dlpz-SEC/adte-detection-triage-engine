@@ -9,7 +9,7 @@ is a placeholder; none is estimated.
 | Service | ADTE (Flask API + React SPA), Railway service `adte-detection-triage-engine` |
 | Trigger | Third-party disclosure by the hosting platform |
 | Exposed set | 21 Railway service variables (19 names confirmed, 2 unconfirmed; Appendix A) |
-| Credentials in the exposed set | 9 confirmed (5 ADTE API keys, 1 Wazuh Indexer login pair, 3 provider keys), plus `ADTE_ABUSEIPDB_KEY` unconfirmed |
+| Credentials in the exposed set | 8 confirmed (5 ADTE API keys, 1 Wazuh Indexer login pair, 2 provider keys), plus `ADTE_ABUSEIPDB_KEY` unconfirmed. `ANTHROPIC_API_KEY` is set but holds no real key. |
 | Customer data | None. ADTE is a single-operator portfolio deployment. |
 | Severity | [TODO: final severity once the hunt closes] |
 
@@ -17,7 +17,14 @@ is a placeholder; none is estimated.
 
 On 2026-10-21 Railway disclosed that an unauthorized third party may have accessed customer
 environment variables, and for some customers obtained their decrypted contents
-[TODO: link to Railway's notice]. ADTE's production service keeps every credential it uses in
+[TODO: link to Railway's notice]. Railway's preliminary incident report
+[TODO: link to the report] confirms access to a subset of Railway's internal systems from
+2026-10-20 13:58 UTC to 2026-10-22 03:32 UTC. Per the report, the attacker pulled stored
+environment variables in encrypted form, then used credentials taken from Railway's CI
+environment to decrypt a subset of them. Railway cannot tell which variables inside an affected
+workspace were decrypted. It names the attacker's goal as AI provider API keys, puts the
+potentially affected share at no more than 1.85% of workspaces, and advises every customer who
+signed up before 2026-10-21 to rotate. ADTE's production service keeps every credential it uses in
 Railway variables. That includes the HTTP Basic login for the Wazuh Indexer, the SIEM data store
 that ADTE triages from.
 
@@ -30,20 +37,30 @@ The response treats every Railway variable as read by the third party:
    unapproved address;
 5. remove the design choices that widened the exposure.
 
-[TODO: whether Railway confirmed this project was among those affected.]
+Railway says it contacted the customers with definite impact directly, and also customers it rates
+high risk: workspaces with many environment variables or many AI provider keys.
+[TODO: whether David received a direct impact notice from Railway, as opposed to the general
+changelog email.]
 
 ## Timeline (UTC)
 
 | When | Event | Source |
 |---|---|---|
-| [TODO: Railway's detection time] | Railway detects unauthorized access | Railway notice |
-| 2026-10-21 [TODO: time] | Railway notifies customers | Railway notice / email |
+| 2026-10-20 13:58 | Railway monitoring pages on-call for abnormal activity; start of Railway's stated attack window | Railway report |
+| 2026-10-20 14:03 to 16:51 | Railway finds privilege escalation in its build infrastructure and halts builds | Railway report |
+| 2026-10-21 04:24 to 05:23 | Railway finds the attacker pulled secrets in encrypted form | Railway report |
+| 2026-10-21 05:27 to 09:18 | Attacker uses CI credentials to decrypt artifacts; Railway finds an unauthorized query of encrypted environment variables, a subset decrypted | Railway report |
+| 2026-10-21 09:25 | Railway asks vendors (GitHub, Anthropic and others) to revoke potentially compromised keys | Railway report |
+| 2026-10-21 20:19 to 22:10 | Railway invalidates user sessions, publishes its disclosure, notifies users | Railway report |
+| 2026-10-22 03:32 | Railway confirms the attacker no longer has access; end of the stated attack window | Railway report |
+| 2026-10-22 17:00 to 22:49 | Railway reports full API and deployment restoration | Railway report |
 | [TODO: time] | David reads the notice; response starts | David |
-| [TODO: exposure window start] to [TODO: exposure window end] | Period the variables may have been read | Railway notice |
+| 2026-10-20 13:58 to 2026-10-22 03:32 | Period the variables may have been read (Railway's stated attack window) | Railway report |
 | 2026-10-23 | Inventory of variables ADTE reads, and of the 21 set on Railway, completed | this document, Appendix A |
+| 2026-10-23 08:06 | Session-key binding and F10/F11 merged to `main` (PR #5) and deployed; `/version` answered `372a191` | GitHub, `/version` |
+| 2026-10-23 [TODO: time] | Railway changelog #0313 email with the four customer recommendations | email |
 | [TODO: rotation start] | First credential rotated | checklist below |
 | [TODO: rotation finish] | Last credential rotated and old value verified failing | checklist below |
-| [TODO: time] | Session-key binding deployed to production | `/version` commit |
 | [TODO: hunt complete] | Hunt closed | Hunt section |
 
 ## Impact and blast radius
@@ -63,11 +80,13 @@ The full table is Appendix A. In order of what an attacker could do with the val
 2. **`ADTE_API_KEY_ADMIN`.** Full control of ADTE, including the three admin-only deletes
    (verdict audit log, feedback, cases). That is the who/what/when/why trail that NIST SP 800-61
    expects to survive an incident.
-3. **`ANTHROPIC_API_KEY`.** Model usage billed to David's account, up to whatever limit the
-   account has [TODO: Anthropic spend limit at the time of exposure].
+3. **`ANTHROPIC_API_KEY`: nothing exposed.** The variable is set on Railway, but only as a
+   skeleton: David holds no Anthropic API key for this project (David, 2026-10-24). An AI provider
+   key is what Railway says the attacker was after, and this service had none to give. Nothing to
+   rotate or hunt. The variable should still go (F12).
 4. **`ADTE_API_KEY_SENIOR`.** Adds false-positive registry promotion, which suppresses future
    detections for an IP, and `GET /api/config`. That route returned the first 4 and last 4
-   characters of every configured key, the admin key included (fixed on branch: F10).
+   characters of every configured key, the admin key included (fixed by F10, deployed 2026-10-23).
 5. **Provider keys `ADTE_VT_API_KEY`, `ADTE_OTX_KEY` (and `ADTE_ABUSEIPDB_KEY` if set).** Free-tier
    quota drain under David's identity, and, where the provider allows it, submissions (AbuseIPDB
    reports, OTX pulses) attributed to his account.
@@ -92,8 +111,8 @@ the one-line "old value fails" check for each row are in the
 | # | Credential | Rotate at | Side effect | Old value fails when | rotated_at | verified_at |
 |---|---|---|---|---|---|---|
 | 1 | `ADTE_WAZUH_PASS` | Wazuh VM (`wazuh-passwords-tool.sh`) + Railway | Other clients on the same indexer user break until updated (Dashboard, Filebeat if `admin`) | `/_plugins/_security/authinfo` answers 401 | [TODO] | [TODO] |
-| 2 | `ADTE_API_KEY_ADMIN` | Railway Variables | Redeploy; old browser sessions live up to 8 h on a Volume unless key binding is deployed | `/api/auth-check` with old key answers 401 | [TODO] | [TODO] |
-| 3 | `ANTHROPIC_API_KEY` | Anthropic Console | LLM narrative falls back during the swap | `/v1/models` answers 401 | [TODO] | [TODO] |
+| 2 | `ADTE_API_KEY_ADMIN` | Railway Variables | Redeploy; key binding (deployed 2026-10-23) ends the old key's browser sessions | `/api/auth-check` with old key answers 401 | [TODO] | [TODO] |
+| 3 | `ANTHROPIC_API_KEY` | n/a: skeleton value, no real key exists | none | n/a | n/a | n/a |
 | 4 | `ADTE_API_KEY_SENIOR` | Railway Variables | as #2 | as #2 | [TODO] | [TODO] |
 | 5 | `ADTE_VT_API_KEY` | VirusTotal profile | VT lookups abstain during the swap | `/api/v3/ip_addresses/8.8.8.8` answers 401 | [TODO] | [TODO] |
 | 6 | `ADTE_API_KEY_ANALYST` | Railway Variables | as #2 | as #2 | [TODO] | [TODO] |
@@ -106,7 +125,7 @@ the one-line "old value fails" check for each row are in the
 Batching the five Railway variables (#2, #4, #6, #9 and `ADTE_WAZUH_PASS`) into one edit costs a
 single redeploy instead of five.
 
-Code shipped as part of the response (branch `docs/incident-2026-10-21-railway`):
+Code shipped as part of the response (PR #5, deployed 2026-10-23 as `372a191`):
 
 - **Sessions bound to their key.** Each browser session now stores a PBKDF2 fingerprint of the key
   that minted it, and is refused once that key is no longer the configured key for its role.
@@ -115,6 +134,7 @@ Code shipped as part of the response (branch `docs/incident-2026-10-21-railway`)
   before the change are refused (one re-login). Tests: `tests/test_session_key_binding.py`.
 - **IP enrichment for the hunt.** `scripts/enrich_unknown_ips.py` runs addresses through ADTE's
   existing threat-intel wrappers. It is a dry run by default and calls no provider.
+- **Placeholder keys refused, key display cut to presence only (F10, F11).** See Follow-ups.
 
 ## Hunt method and findings
 
@@ -129,17 +149,36 @@ its time range.
 | 3 | Indexer audit log coverage (Step 0) | n/a | audit logging off, or `AUTHENTICATED` disabled: checks 1 and 2 then prove nothing | [TODO: on/off; AUTHENTICATED logged?] |
 | 4 | Indexer reachability from outside the VM | n/a | 9200 forwarded or exposed | [TODO] |
 | 5 | Indexer node log `/var/log/wazuh-indexer/` | same | auth errors from unknown addresses | [TODO] |
-| 6 | Anthropic Console: usage and cost by day and by key | from 2026-10-20 | requests or spend on days ADTE had no traffic; models ADTE never calls | [TODO] |
+| 6 | Anthropic Console: usage and cost by day and by key | n/a | n/a | Not applicable: no Anthropic API key exists for this project |
 | 7 | VirusTotal API usage graph | same | lookups above ADTE's own volume (quota capped at 450/day in ADTE) | [TODO] |
 | 8 | OTX account: API activity, pulses, subscriptions | same | pulses or subscriptions David did not create | [TODO] |
 | 9 | AbuseIPDB: API usage and reports submitted (if the key was set) | same | any report submitted; checks above 900/day | [TODO] |
 | 10 | Railway: project activity / audit log, deployments, variable edits | from 2026-10-20 | deploys or variable changes David did not make | [TODO] |
 | 11 | ADTE audit log: verdict/feedback/case deletions, logins | from 2026-10-20 | admin deletes or logins David did not make (ephemeral if no Volume) | [TODO] |
+| 12 | GitHub: account security log; installed apps and the repositories the Railway app can read; deploy keys, webhooks and branches on this repo | from 2026-10-20 | app grants, keys, hooks, pushes or branches David did not make; Railway app access to private repositories | [TODO] |
+| 13 | Railway deploy history for this service | 2026-10-20 13:58 to 2026-10-22 03:32 | any build or deploy inside the attack window | [TODO: confirm none] |
 
 Queries for checks 1 to 5: [hunt/indexer-auth-queries.md](hunt/indexer-auth-queries.md). Any
 unknown address goes through `scripts/enrich_unknown_ips.py`, dry run first.
 
 Slack and Linear audit logs are not part of this hunt: neither credential was on Railway.
+
+Railway's other customer recommendations, checked against this service:
+
+- **Build integrity.** Railway's entry point was its build infrastructure. No push to `main`
+  happened in the attack window: `main` stayed at `c18719d` (committed 2026-10-17 22:00 UTC) until
+  PR #5 merged on 2026-10-23 08:06 UTC, so no push-triggered build of ADTE ran inside the window
+  (check 13 rules out a manual redeploy). The image now running was built after Railway rebuilt its
+  builders. `/version` reads a value Railway sets at build time, so it shows the commit but cannot
+  prove the image was untampered.
+- **Databases.** ADTE has no Railway database. Its SQLite file sits on the container disk (or a
+  Volume, if `ADTE_AUDIT_DB` points at one) and has no network listener.
+- **Container registries.** ADTE pushes no image to Docker Hub, GHCR or any other registry;
+  Railway builds from the `Dockerfile`. Railway's internal builder registry is not visible to
+  customers, so there is no registry log to review.
+- **Source code.** Railway does not yet rule out access to customer source code. This repository
+  is public, so that adds nothing here; check 12 covers private repositories the Railway app could
+  read.
 
 Unknown addresses found: [TODO: none / list with enrichment result].
 
@@ -168,8 +207,11 @@ Limits:
 
 ## Root cause and architectural lessons
 
-**Root cause (of the exposure):** a third-party platform's compromise
-[TODO: Railway's stated cause]. ADTE's code and configuration were not the entry point.
+**Root cause (of the exposure):** a third-party platform's compromise. Per Railway's preliminary
+report, the attacker escalated privilege in Railway's build infrastructure, then reached
+credentials for Railway's CI environment that let it decrypt a subset of stored environment
+variables. Railway is withholding the specific exploits until its forensic investigation ends.
+ADTE's code and configuration were not the entry point.
 
 **Contributing factors (why the exposure reached this far), all within this project's control:**
 
@@ -186,7 +228,7 @@ Limits:
 3. **One value in more than one place.** Values shared between Railway and the local `.env` mean
    one exposure forces rotation in both.
 4. **Rotation did not end sessions.** Sessions were not tied to the key that created them (fixed
-   on this branch).
+   by F8).
 5. **No usable login trail at the indexer** [TODO: confirm via Step 0]. If the audit log was off,
    or `AUTHENTICATED` was not recorded, the hunt can bound the risk only by reachability, not by
    evidence.
@@ -194,7 +236,9 @@ Limits:
 **Supply-chain lesson:** a PaaS is a dependency with the same standing as a pinned package. Its
 compromise is in scope for threat modeling, and every secret placed there should be the least
 privileged one that does the job on that platform. A secret that does nothing on the platform
-should not be there.
+should not be there. The platform can also force a rotation from outside: Railway asked vendors to
+revoke keys before most customers knew, so a provider can kill a production key with no warning to
+the operator. Each key needs an owner who can replace it quickly.
 
 ## Follow-ups
 
@@ -206,13 +250,15 @@ should not be there.
 | F4 | If live Wazuh data on the hosted app is ever wanted: Tailscale or Cloudflare Tunnel from the VM, plus the F3 role. Do not allowlist Railway egress, which is shared across Railway customers. | about half a day | Proposed |
 | F5 | Enable the indexer security audit log with `AUTHENTICATED` recorded, then deploy the Sigma rule with real CIDRs | about 1 h | Open |
 | F6 | Separate keys per environment (local, Railway); note each key's home in a private inventory | about 30 min | Open |
-| F7 | Provider caps: Anthropic monthly spend limit; VT/AbuseIPDB ADTE quotas are already set below the free tiers (450 / 900 per day) | about 15 min | Open |
-| F8 | Session-key binding | done on branch | In Review (not deployed) |
-| F9 | Rotation runbook | done on branch | In Review |
-| F10 | `/api/config` shows 8 characters of every key to `senior_analyst`; reduce it to presence only or the last 4 | done on branch: presence only | In Review (not deployed) |
-| F11 | Startup check that refuses placeholder secrets (`changeme-*`, `your-*`) on a hosted deploy | done on branch: a placeholder login key is refused everywhere (header, login, session) yet keeps the app locked; startup logs the count | In Review (not deployed) |
-| F12 | Delete `AZURE_TENANT_ID` from Railway (read nowhere) and confirm `ADTE_CORS_ORIGINS` is meant to be set | about 5 min | Open |
+| F7 | Provider caps: VT/AbuseIPDB ADTE quotas are already set below the free tiers (450 / 900 per day); an Anthropic spend limit only if a real key is ever added | about 15 min | Open |
+| F8 | Session-key binding | done | Deployed 2026-10-23 (`372a191`) |
+| F9 | Rotation runbook | done | Merged 2026-10-23 |
+| F10 | `/api/config` shows 8 characters of every key to `senior_analyst`; reduce it to presence only or the last 4 | done: presence only | Deployed 2026-10-23 (`372a191`) |
+| F11 | Startup check that refuses placeholder secrets (`changeme-*`, `your-*`) on a hosted deploy | done: a placeholder login key is refused everywhere (header, login, session) yet keeps the app locked; startup logs the count | Deployed 2026-10-23 (`372a191`) |
+| F12 | Delete `AZURE_TENANT_ID` (read nowhere) and the skeleton `ANTHROPIC_API_KEY` from Railway, and confirm `ADTE_CORS_ORIGINS` is meant to be set | about 5 min | Open |
 | F13 | Confirm the two Railway variables not visible in the inventory screenshot | about 5 min | Open |
+| F14 | GitHub review (hunt check 12): limit the Railway GitHub app to the repositories it deploys, remove anything unexpected | about 30 min | Open |
+| F15 | The same rotation for David's other Railway services (domainaudit, adaptive-investing), whose variables sat on the same platform; tracked in those projects, not here | per service | Open |
 
 ## Appendix A: secret inventory
 
@@ -234,7 +280,7 @@ design.
 | `ADTE_API_KEY_ANALYST` | ADTE API | Run triage (spends TI quota), write feedback labels, read cases | write (limited) | Med | same |
 | `ADTE_API_KEY_READONLY` | ADTE API | Read verdicts, feedback, intel, queue | read | Low | same |
 | `ADTE_API_KEY_RECRUITER` | ADTE API (analyst alias) | Same as analyst; already public | write (limited) | Low (no new exposure) | same, after F1 #10 |
-| `ANTHROPIC_API_KEY` | Anthropic API | Spend on David's account, any model | account API key | High | `/v1/models` gets 401 |
+| `ANTHROPIC_API_KEY` | none (skeleton value; no Anthropic key exists) | nothing | n/a | None | n/a; delete (F12) |
 | `ADTE_VT_API_KEY` | VirusTotal API v3 | Use the daily quota under David's account | read (lookups) | Med | `/api/v3/...` gets 401 |
 | `ADTE_OTX_KEY` | AlienVault OTX | Use quota; act as David's OTX account [TODO: can this key create pulses?] | read, possibly write | Med | `/api/v1/user/me` non-200 |
 | `ADTE_ABUSEIPDB_KEY` | AbuseIPDB API v2 | Use quota; submit reports as David's account | read + report | Med | `/api/v2/check` gets 401 |
@@ -265,7 +311,8 @@ confirmed: [TODO: the 2 Railway variable names not visible in the inventory scre
 
 - **Over-privileged:** the indexer login, recorded as `admin`, where ADTE needs search on one
   index pattern (F3).
-- **Unused where stored:** `ADTE_WAZUH_*` on Railway (F2); `AZURE_TENANT_ID` (F12).
+- **Unused where stored:** `ADTE_WAZUH_*` on Railway (F2); `AZURE_TENANT_ID` and the skeleton
+  `ANTHROPIC_API_KEY` (F12).
 - **Shared across environments:** at least one value is the same locally and on Railway
   [TODO: which] (F6).
-- **Cross-tier leak inside ADTE:** `senior_analyst` can read 8 characters of the admin key (F10; fixed on branch).
+- **Cross-tier leak inside ADTE:** `senior_analyst` could read 8 characters of the admin key (F10; fixed, deployed 2026-10-23).
